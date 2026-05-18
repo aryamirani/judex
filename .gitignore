@@ -1,0 +1,17 @@
+# Dependency directories
+**/node_modules/
+**/venv/
+**/.env
+**/.DS_Store
+
+# Generated files/directories in streaming simulator
+**/serve/
+*.pyc
+__pycache__/
+
+# Provided raw data/media assets (not coded by us)
+**/bounce_clips_share/
+**/sync_reports/
+*.mp4
+*.ts
+*.pdf
