@@ -11,7 +11,5 @@ __pycache__/
 
 # Provided raw data/media assets (not coded by us)
 **/bounce_clips_share/
-**/sync_reports/
 *.mp4
 *.ts
-*.pdf
