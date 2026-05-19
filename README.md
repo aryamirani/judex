@@ -14,7 +14,7 @@ A professional, broadcast-grade sports review interface featuring synchronized t
 
 1. **Backend Setup (Python):**
    ```bash
-   cd Question/Assignment/streaming-move-main
+   cd streaming-move-main
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
@@ -22,7 +22,7 @@ A professional, broadcast-grade sports review interface featuring synchronized t
 
 2. **Frontend Setup (Node):**
    ```bash
-   cd Question/Assignment/streaming-move-main/player
+   cd streaming-move-main/player
    npm install
    ```
 
@@ -30,7 +30,6 @@ A professional, broadcast-grade sports review interface featuring synchronized t
 Since heavy media files (`.ts`, `.mp4`) are excluded from version control via `.gitignore`, you must manually place the provided raw data folders in the following structure before running the server:
 
 ```text
-Question/Assignment/
 ├── sync_reports/
 │   ├── ts_segments_hq/1645/     # Place HQ .ts chunks and playlist.m3u8 here
 │   ├── ts_segments_sink/1645/   # Place SINK .ts chunks and playlist.m3u8 here
@@ -50,7 +49,7 @@ You need to run both the backend server and the frontend client simultaneously.
 ### 1. Start the Backend Server
 This single FastAPI server simulates the live rolling HLS windows, computes $O(1)$ synchronization lookups, and serves the static MP4 clips.
 ```bash
-cd Question/Assignment/streaming-move-main
+cd streaming-move-main
 source venv/bin/activate
 python3 tri_stream_server.py --port 8000
 ```
@@ -58,7 +57,7 @@ python3 tri_stream_server.py --port 8000
 ### 2. Start the Frontend Application
 In a new terminal window, start the React/Vite app:
 ```bash
-cd Question/Assignment/streaming-move-main/player
+cd streaming-move-main/player
 npm run dev
 ```
 The interface will be accessible at `http://localhost:3000`.

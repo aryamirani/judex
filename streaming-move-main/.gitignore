@@ -1,0 +1,6 @@
+/serve
+/hello1
+/hello1old
+/player/node_modules
+.mypy_cache
+*.DS_Store
