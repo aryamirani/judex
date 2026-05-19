@@ -27,7 +27,9 @@ A professional, broadcast-grade sports review interface featuring synchronized t
    ```
 
 ### Media Assets & Data Folders
-Since heavy media files (`.ts`, `.mp4`) are excluded from version control via `.gitignore`, you must manually place the provided raw data folders in the following structure before running the server:
+Because raw media files and heavy folders (`.ts`, `.mp4`, `bounce_clips_share/`, etc.) are ignored via `.gitignore`, you must manually download and place them into the root of this repository before running the server. 
+
+Your root directory should look exactly like this:
 
 ```text
 ├── sync_reports/
@@ -39,6 +41,8 @@ Since heavy media files (`.ts`, `.mp4`) are excluded from version control via `.
 │   ├── sink/                    # Place SINK bounce_*.mp4 clips here
 │   └── source/                  # Place SOURCE bounce_*.mp4 clips here
 ```
+
+*(Note: The `streaming-move-main/serve/` directory is **automatically generated** by the backend at runtime. You do not need to create it or download anything into it.)*
 
 ---
 
