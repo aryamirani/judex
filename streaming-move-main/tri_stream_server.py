@@ -158,68 +158,120 @@ def write_playlist(cam, window, media_sequence, done=False):
         f.write("\n".join(lines) + "\n")
     os.rename(temp_path, playlist_path)
 
-def stream_worker(cam):
-    source_dir = CAM_PATHS[cam]
-    serve_dir = SERVE_DIRS[cam]
-    for f in os.listdir(serve_dir):
-        if f.endswith(".ts") or f.endswith(".m3u8"):
-            try:
-                os.remove(os.path.join(serve_dir, f))
-            except:
-                pass
-    all_segs = parse_playlist(os.path.join(source_dir, "playlist.m3u8"))
-    write_playlist(cam, [], 0)
+def master_stream_worker():
+    # Parse all playlists
+    all_segs = {
+        cam: parse_playlist(os.path.join(CAM_PATHS[cam], "playlist.m3u8"))
+        for cam in ["source", "sink", "hq"]
+    }
     
-    # Pre-fill the window so clients can start instantly
-    initial_window = all_segs[:WINDOW_SIZE]
-    released = []
+    # Clean up serve dirs
+    for cam in ["source", "sink", "hq"]:
+        serve_dir = SERVE_DIRS[cam]
+        for f in os.listdir(serve_dir):
+            if f.endswith(".ts") or f.endswith(".m3u8"):
+                try: os.remove(os.path.join(serve_dir, f))
+                except: pass
+        write_playlist(cam, [], 0)
+        
+    released = {"source": [], "sink": [], "hq": []}
+    media_seq = {"source": 0, "sink": 0, "hq": 0}
+    current_idx = {"source": WINDOW_SIZE, "sink": WINDOW_SIZE, "hq": WINDOW_SIZE}
     
-    for duration, name in initial_window:
-        released.append((duration, name))
-        src = os.path.join(source_dir, name)
-        dst = os.path.join(serve_dir, name)
+    # Pre-fill windows
+    for cam in ["source", "sink", "hq"]:
+        for i in range(WINDOW_SIZE):
+            if i >= len(all_segs[cam]): break
+            duration, name = all_segs[cam][i]
+            released[cam].append((duration, name))
+            src = os.path.join(CAM_PATHS[cam], name)
+            dst = os.path.join(SERVE_DIRS[cam], name)
+            if not os.path.exists(dst) and os.path.exists(src):
+                try: os.link(src, dst)
+                except: shutil.copy2(src, dst)
+        write_playlist(cam, released[cam], media_seq[cam])
+        server_state[cam] = {"media_sequence": 0, "window": released[cam], "done": False, "current_index": WINDOW_SIZE - 1}
+
+    master_idx = WINDOW_SIZE
+    
+    while True:
+        if master_idx >= len(all_segs["source"]):
+            # Wrap around to simulate continuous live
+            master_idx = WINDOW_SIZE
+            current_idx = {"source": WINDOW_SIZE, "sink": WINDOW_SIZE, "hq": WINDOW_SIZE}
+            
+        duration, name = all_segs["source"][master_idx]
+        
+        # Advance source
+        released["source"].append((duration, name))
+        src = os.path.join(CAM_PATHS["source"], name)
+        dst = os.path.join(SERVE_DIRS["source"], name)
         if not os.path.exists(dst) and os.path.exists(src):
             try: os.link(src, dst)
             except: shutil.copy2(src, dst)
             
-    media_sequence = 0
-    write_playlist(cam, released, media_sequence)
-    
-    # Loop indefinitely
-    while True:
-        for i in range(WINDOW_SIZE, len(all_segs)):
-            duration, name = all_segs[i]
-            released.append((duration, name))
+        if len(released["source"]) > WINDOW_SIZE:
+            media_seq["source"] += 1
+            released["source"] = released["source"][-WINDOW_SIZE:]
             
-            src = os.path.join(source_dir, name)
-            dst = os.path.join(serve_dir, name)
-            if not os.path.exists(dst) and os.path.exists(src):
-                try: os.link(src, dst)
-                except: shutil.copy2(src, dst)
+        server_state["source"]["media_sequence"] = media_seq["source"]
+        server_state["source"]["window"] = released["source"]
+        server_state["source"]["current_index"] = master_idx
+        write_playlist("source", released["source"], media_seq["source"])
+        
+        # Synchronize sink and hq using the CSV lookup tables
+        start_frame = seg_to_frame["source"].get(master_idx)
+        if start_frame is not None:
+            for cam in ["sink", "hq"]:
+                map_key = f"source_to_{cam}"
+                if start_frame in sync_maps[map_key]:
+                    target_frame = sync_maps[map_key][start_frame]
+                else:
+                    if sync_maps[map_key]:
+                        closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - start_frame))
+                        target_frame = sync_maps[map_key][closest]
+                    else:
+                        target_frame = start_frame
+                        
+                if target_frame in frame_to_seg[cam]:
+                    target_seg = frame_to_seg[cam][target_frame][0]
+                else:
+                    if frame_to_seg[cam]:
+                        available = list(frame_to_seg[cam].keys())
+                        target_frame = min(available, key=lambda x: abs(x - target_frame))
+                        target_seg = frame_to_seg[cam][target_frame][0]
+                    else:
+                        target_seg = current_idx[cam]
+                
+                # Advance cam to match the target segment dictated by the lookup table
+                while current_idx[cam] <= target_seg and current_idx[cam] < len(all_segs[cam]):
+                    d, n = all_segs[cam][current_idx[cam]]
+                    released[cam].append((d, n))
+                    c_src = os.path.join(CAM_PATHS[cam], n)
+                    c_dst = os.path.join(SERVE_DIRS[cam], n)
+                    if not os.path.exists(c_dst) and os.path.exists(c_src):
+                        try: os.link(c_src, c_dst)
+                        except: shutil.copy2(c_src, c_dst)
+                        
+                    if len(released[cam]) > WINDOW_SIZE:
+                        media_seq[cam] += 1
+                        released[cam] = released[cam][-WINDOW_SIZE:]
+                    current_idx[cam] += 1
                     
-            if len(released) > WINDOW_SIZE:
-                media_sequence += 1
-                released = released[-WINDOW_SIZE:]
-            window = released
-            
-            server_state[cam]["media_sequence"] = media_sequence
-            server_state[cam]["window"] = window
-            server_state[cam]["current_index"] = i
-            server_state[cam]["done"] = False
-            
-            write_playlist(cam, window, media_sequence, False)
-            time.sleep(duration / SPEED)
-            
-        # Wrap-around: Reset index and keep pushing segments continuously
-        # Pre-fill is not needed since the window is already full and sliding forward!
+                server_state[cam]["media_sequence"] = media_seq[cam]
+                server_state[cam]["window"] = released[cam]
+                server_state[cam]["current_index"] = current_idx[cam] - 1
+                write_playlist(cam, released[cam], media_seq[cam])
+                
+        time.sleep(duration / SPEED)
+        master_idx += 1
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_data()
-    # Start stream workers
-    for cam in ["source", "sink", "hq"]:
-        t = threading.Thread(target=stream_worker, args=(cam,), daemon=True)
-        t.start()
+    # Start single synchronized master thread instead of 3 independent ones
+    t = threading.Thread(target=master_stream_worker, daemon=True)
+    t.start()
     yield
 
 app = FastAPI(lifespan=lifespan)
