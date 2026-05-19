@@ -26,6 +26,21 @@ A professional, broadcast-grade sports review interface featuring synchronized t
    npm install
    ```
 
+### Media Assets & Data Folders
+Since heavy media files (`.ts`, `.mp4`) are excluded from version control via `.gitignore`, you must manually place the provided raw data folders in the following structure before running the server:
+
+```text
+Question/Assignment/
+├── sync_reports/
+│   ├── ts_segments_hq/1645/     # Place HQ .ts chunks and playlist.m3u8 here
+│   ├── ts_segments_sink/1645/   # Place SINK .ts chunks and playlist.m3u8 here
+│   └── ts_segments_source/1645/ # Place SOURCE .ts chunks and playlist.m3u8 here
+├── bounce_clips_share/
+│   ├── hq/                      # Place HQ bounce_*.mp4 clips here
+│   ├── sink/                    # Place SINK bounce_*.mp4 clips here
+│   └── source/                  # Place SOURCE bounce_*.mp4 clips here
+```
+
 ---
 
 ## Running the Application
