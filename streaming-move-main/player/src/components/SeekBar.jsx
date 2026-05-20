@@ -14,7 +14,9 @@ export default function SeekBar({
   events = [],
   onSeek,
   onEventSelect,
-  mode
+  mode,
+  isPlaying,
+  onTogglePlay
 }) {
   const trackRef = useRef(null)
   const dragging = useRef(false)
@@ -65,6 +67,7 @@ export default function SeekBar({
         const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
         const prevEvents = validEvents.filter(ev => ev.time < referenceTime - 0.5).sort((a, b) => b.time - a.time);
         if (prevEvents.length > 0) {
+          if (mode === 'review' && onSeek) onSeek(prevEvents[0].time);
           setInternalEventTime(prevEvents[0].time);
           if (onEventSelect) onEventSelect(prevEvents[0]);
         }
@@ -73,14 +76,19 @@ export default function SeekBar({
         const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
         const nextEvents = validEvents.filter(ev => ev.time > referenceTime + 0.5).sort((a, b) => a.time - b.time);
         if (nextEvents.length > 0) {
+          if (mode === 'review' && onSeek) onSeek(nextEvents[0].time);
           setInternalEventTime(nextEvents[0].time);
           if (onEventSelect) onEventSelect(nextEvents[0]);
         }
+      } else if (e.key === ' ') {
+        // Prevent browser scrolling
+        e.preventDefault();
+        if (onTogglePlay) onTogglePlay();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentTime, events, onEventSelect, mode, liveEdge, internalEventTime]);
+  }, [currentTime, events, onSeek, onEventSelect, mode, liveEdge, internalEventTime, onTogglePlay]);
 
   const playedFrac = toFraction(currentTime, rangeStart, rangeEnd)
   const bufferedFrac = toFraction(bufferedEnd ?? currentTime, rangeStart, rangeEnd)
@@ -114,6 +122,7 @@ export default function SeekBar({
                 const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
                 const prevEvents = validEvents.filter(ev => ev.time < referenceTime - 0.5).sort((a, b) => b.time - a.time);
                 if (prevEvents.length > 0) {
+                  if (mode === 'review' && onSeek) onSeek(prevEvents[0].time);
                   setInternalEventTime(prevEvents[0].time);
                   if (onEventSelect) onEventSelect(prevEvents[0]);
                 }
@@ -125,10 +134,30 @@ export default function SeekBar({
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                if (onTogglePlay) onTogglePlay();
+              }}
+              style={{
+                background: 'var(--amber, #f5a623)',
+                border: 'none',
+                color: '#000',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '9px',
+                padding: '2px 8px',
+                fontWeight: 'bold',
+                minWidth: '55px'
+              }}
+            >
+              {isPlaying ? 'PAUSE' : 'PLAY'}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
                 const referenceTime = internalEventTime !== null ? internalEventTime : currentTime;
                 const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
                 const nextEvents = validEvents.filter(ev => ev.time > referenceTime + 0.5).sort((a, b) => a.time - b.time);
                 if (nextEvents.length > 0) {
+                  if (mode === 'review' && onSeek) onSeek(nextEvents[0].time);
                   setInternalEventTime(nextEvents[0].time);
                   if (onEventSelect) onEventSelect(nextEvents[0]);
                 }
@@ -202,17 +231,20 @@ export default function SeekBar({
           const isHovered = hoveredEvent?.id === ev.id
           // highlight if close to current time
           const isCurrent = Math.abs(currentTime - ev.time) < 1.0
+          const isPast = ev.time <= currentTime
  
           return (
             <div
               key={i}
-              onMouseEnter={() => setHoveredEvent(ev)}
+              onMouseEnter={() => { if (isPast) setHoveredEvent(ev); }}
               onMouseLeave={() => setHoveredEvent(null)}
               onMouseDown={(e) => {
                 e.stopPropagation();
               }}
               onClick={(e) => { 
+                if (!isPast) return;
                 e.stopPropagation(); 
+                if (mode === 'review' && onSeek) onSeek(ev.time);
                 setInternalEventTime(ev.time);
                 if (onEventSelect) onEventSelect(ev); 
               }}
@@ -220,9 +252,14 @@ export default function SeekBar({
                 position: 'absolute', left: `${frac * 100}%`,
                 width: isCurrent ? '12px' : '8px', height: isCurrent ? '12px' : '8px',
                 borderRadius: '50%', background: isCurrent ? '#fff' : 'var(--amber)',
-                transform: 'translate(-50%, 0)', cursor: 'pointer',
+                transform: 'translate(-50%, 0)', 
+                cursor: isPast ? 'pointer' : 'default',
                 boxShadow: isCurrent ? '0 0 10px rgba(255,255,255,0.8)' : 'none',
-                zIndex: 3, transition: 'all 0.2s', border: '1px solid #000'
+                zIndex: 3, 
+                transition: 'all 0.2s', 
+                border: '1px solid #000',
+                opacity: isPast ? 1 : 0.25,
+                pointerEvents: isPast ? 'auto' : 'none'
               }}>
               {isHovered && (
                 <div style={{

@@ -45,10 +45,28 @@ export default function App() {
   const [reviewSegs, setReviewSegs] = useState({ source: [], sink: [], hq: [] })
   const [syncMap, setSyncMap] = useState(null)
   const [liveSyncMap, setLiveSyncMap] = useState({})
-  
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const [isPlaying, setIsPlaying] = useState(true)
+
+  const handleTogglePlay = useCallback(() => {
+    setIsPlaying(prev => {
+      const nextPlaying = !prev
+      CAMERAS.forEach(cam => {
+        const video = videoRefs[cam].current
+        if (video) {
+          if (nextPlaying) {
+            video.play().catch(e => console.log('play failed', e))
+          } else {
+            video.pause()
+          }
+        }
+      })
+      return nextPlaying
+    })
+  }, [])
 
   const activeCamRef = useRef(activeCam)
+  const ignoreSyncRef = useRef(false)
   useEffect(() => {
     activeCamRef.current = activeCam
     if (mode === 'live') {
@@ -189,13 +207,15 @@ export default function App() {
         setBufferStart(video.buffered.start(0))
         setBufferedEnd(video.buffered.end(video.buffered.length - 1))
       }
-      if (modeRef.current === 'review') {
-        syncReviewVideos(video.currentTime)
-      } else if (modeRef.current === 'live') {
-        const livePos = hls?.liveSyncPosition
-        const isCurrentlyLive = livePos !== null && livePos !== undefined && video.currentTime >= livePos - 1.5
-        if (!isCurrentlyLive) {
-          syncLiveVideos(video.currentTime)
+      if (!video.seeking && !ignoreSyncRef.current) {
+        if (modeRef.current === 'review') {
+          syncReviewVideos(video.currentTime)
+        } else if (modeRef.current === 'live') {
+          const livePos = hls?.liveSyncPosition
+          const isCurrentlyLive = livePos !== null && livePos !== undefined && video.currentTime >= livePos - 1.5
+          if (!isCurrentlyLive) {
+            syncLiveVideos(video.currentTime)
+          }
         }
       }
     }
@@ -203,6 +223,7 @@ export default function App() {
   }, [activeCam, syncReviewVideos, syncLiveVideos])
 
   const initLive = useCallback(() => {
+    setIsPlaying(true)
     CAMERAS.forEach(cam => {
       const video = videoRefs[cam].current
       if (!video) return
@@ -291,6 +312,7 @@ export default function App() {
     })
 
     setReviewSegs(newReviewSegs)
+    setIsPlaying(false)
 
     // Fetch sync map
     const activeSnapshot = rollingBuffers[activeCam].current
@@ -340,6 +362,8 @@ export default function App() {
     const currentVideo = videoRefs[activeCam].current
     const targetVideo = videoRefs[targetCam].current
     if (!currentVideo || !targetVideo) return
+    
+    ignoreSyncRef.current = true
     
     // Sync API Logic
     if (mode === 'live') {
@@ -409,6 +433,9 @@ export default function App() {
     
     // update state
     setActiveCam(targetCam)
+    setTimeout(() => {
+      ignoreSyncRef.current = false
+    }, 300)
   }
 
   const handleSeek = (time) => {
@@ -478,17 +505,19 @@ export default function App() {
         )}
 
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '40px 32px 20px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))' }}>
-           <SeekBar
-            currentTime={currentTime}
-            liveEdge={displayLiveEdge}
-            bufferStart={displayBufferStart}
-            bufferedEnd={displayBufferedEnd}
-            segments={displaySegments}
-            events={mappedEvents}
-            onSeek={handleSeek}
-            onEventSelect={setSelectedEvent}
-            mode={mode}
-          />
+            <SeekBar
+             currentTime={currentTime}
+             liveEdge={displayLiveEdge}
+             bufferStart={displayBufferStart}
+             bufferedEnd={displayBufferedEnd}
+             segments={displaySegments}
+             events={mappedEvents}
+             onSeek={handleSeek}
+             onEventSelect={setSelectedEvent}
+             mode={mode}
+             isPlaying={isPlaying}
+             onTogglePlay={handleTogglePlay}
+           />
         </div>
 
         <EventPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />
