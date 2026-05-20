@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Hls from 'hls.js'
 import SeekBar from './components/SeekBar.jsx'
 import LiveBadge from './components/LiveBadge.jsx'
@@ -44,8 +44,30 @@ export default function App() {
   const [liveSegments, setLiveSegments] = useState([])
   const [reviewSegs, setReviewSegs] = useState({ source: [], sink: [], hq: [] })
   const [syncMap, setSyncMap] = useState(null)
+  const [liveSyncMap, setLiveSyncMap] = useState({})
   
   const [selectedEvent, setSelectedEvent] = useState(null)
+
+  const activeCamRef = useRef(activeCam)
+  useEffect(() => {
+    activeCamRef.current = activeCam
+    if (mode === 'live') {
+      const buf = rollingBuffers[activeCam].current
+      setLiveSegments(buf.map(s => ({
+        sn: s.sn,
+        absSegIdx: s.absSegIdx,
+        start: s.originalStart,
+        end: s.originalStart + s.duration
+      })))
+      const absSns = buf.map(s => s.absSegIdx).filter(x => x !== undefined).join(',')
+      if (absSns) {
+        fetch(`http://localhost:8000/sync_map?from_camera=${activeCam}&sns=${absSns}`)
+          .then(res => res.json())
+          .then(data => setLiveSyncMap(data))
+          .catch(e => console.warn('Failed to fetch live sync map on camera switch', e))
+      }
+    }
+  }, [activeCam, mode])
 
   const isLive = mode === 'live' && liveEdge !== null && currentTime >= liveEdge - LIVE_THRESHOLD
 
@@ -53,17 +75,38 @@ export default function App() {
     try {
       const res = await fetch('http://localhost:8000/events')
       const data = await res.json()
-      // map to { time, id, metadata, hq_frame }
-      setEvents(data.map(d => ({
-        time: d.hq_segment * 6.0 + d.hq_offset, // assuming 6s segments
-        id: d.id,
-        metadata: d.metadata,
-        hq_frame: d.hq_frame
-      })))
+      setEvents(data)
     } catch (e) { console.warn('Failed to fetch events', e) }
   }
 
   useEffect(() => { fetchEvents() }, [])
+
+  const mappedEvents = useMemo(() => {
+    const currentSegs = mode === 'live' ? liveSegments : reviewSegs[activeCam]
+    if (!currentSegs || currentSegs.length === 0) {
+      return events.map(ev => ({
+        ...ev,
+        time: (ev.segments?.[activeCam] ?? 0) * 6.0 + (ev.offsets?.[activeCam] ?? 0)
+      }))
+    }
+    const anchor = currentSegs[0]
+    return events.map(ev => {
+      const segNum = ev.segments?.[activeCam] ?? 0
+      const offset = ev.offsets?.[activeCam] ?? 0
+      
+      const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
+      let playbackTime
+      if (matchingSeg) {
+        playbackTime = matchingSeg.start + offset
+      } else {
+        playbackTime = anchor.start + (segNum - (anchor.absSegIdx ?? anchor.sn)) * 6.0 + offset
+      }
+      return {
+        ...ev,
+        time: playbackTime
+      }
+    })
+  }, [events, activeCam, mode, liveSegments, reviewSegs])
 
   const syncReviewVideos = useCallback((activeTime) => {
     if (!syncMap) return
@@ -74,7 +117,7 @@ export default function App() {
     if (!activeSeg) return
     
     const offsetInSeg = activeTime - activeSeg.start
-    const sn = activeSeg.sn
+    const sn = activeSeg.absSegIdx
     
     CAMERAS.forEach(cam => {
       if (cam === activeCam) return
@@ -83,7 +126,7 @@ export default function App() {
       
       const targetList = reviewSegs[cam]
       if (!targetList) return
-      const targetSeg = targetList.find(s => s.sn === mapping.segment)
+      const targetSeg = targetList.find(s => s.absSegIdx === mapping.segment)
       if (targetSeg) {
         const targetTime = targetSeg.start + mapping.offset + offsetInSeg
         const targetVideo = videoRefs[cam].current
@@ -96,6 +139,43 @@ export default function App() {
       }
     })
   }, [syncMap, reviewSegs, activeCam])
+
+  const syncLiveVideos = useCallback((activeTime) => {
+    if (!liveSyncMap) return
+    const activeList = liveSegments
+    if (!activeList || activeList.length === 0) return
+    
+    const activeSeg = activeList.find(s => activeTime >= s.start && activeTime <= s.end)
+    if (!activeSeg) return
+    
+    const offsetInSeg = activeTime - activeSeg.start
+    const sn = activeSeg.absSegIdx
+    
+    CAMERAS.forEach(cam => {
+      if (cam === activeCam) return
+      const mapping = liveSyncMap[sn]?.[cam]
+      if (!mapping) return
+      
+      const targetHls = hlsRefs[cam].current
+      const tDetails = targetHls?.levels?.[targetHls.currentLevel]?.details
+      const targetVideo = videoRefs[cam].current
+      if (tDetails && targetVideo) {
+        const targetSeg = tDetails.fragments.find(f => {
+          const fUrl = f.relurl || f.url || ''
+          const fMatch = fUrl.match(/seg_(\d+)\.ts/)
+          const fAbs = fMatch ? parseInt(fMatch[1], 10) : f.sn
+          return fAbs === mapping.segment
+        })
+        if (targetSeg) {
+          const targetTime = targetSeg.start + mapping.offset + offsetInSeg
+          const cur = targetVideo.currentTime
+          if (Math.abs(cur - targetTime) > 0.15) {
+            targetVideo.currentTime = targetTime
+          }
+        }
+      }
+    })
+  }, [activeCam, liveSegments, liveSyncMap])
 
   const tick = useCallback(() => {
     const video = videoRefs[activeCam].current
@@ -111,10 +191,16 @@ export default function App() {
       }
       if (modeRef.current === 'review') {
         syncReviewVideos(video.currentTime)
+      } else if (modeRef.current === 'live') {
+        const livePos = hls?.liveSyncPosition
+        const isCurrentlyLive = livePos !== null && livePos !== undefined && video.currentTime >= livePos - 1.5
+        if (!isCurrentlyLive) {
+          syncLiveVideos(video.currentTime)
+        }
       }
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [activeCam, syncReviewVideos])
+  }, [activeCam, syncReviewVideos, syncLiveVideos])
 
   const initLive = useCallback(() => {
     CAMERAS.forEach(cam => {
@@ -133,24 +219,37 @@ export default function App() {
 
       hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
         if (!data.payload || !data.payload.byteLength) return
+        const url = data.frag.relurl || data.frag.url || ''
+        const match = url.match(/seg_(\d+)\.ts/)
+        const absSegIdx = match ? parseInt(match[1], 10) : data.frag.sn
         const entry = {
           sn: data.frag.sn,
+          absSegIdx: absSegIdx,
           originalStart: data.frag.start,
           duration: data.frag.duration,
           bytes: data.payload.slice(0)
         }
         rollingBuffers[cam].current = [...rollingBuffers[cam].current, entry].slice(-REVIEW_BUFFER_SIZE)
         
-        if (cam === activeCam) {
+        if (cam === activeCamRef.current) {
           setLiveSegments(rollingBuffers[cam].current.map(s => ({
-            sn: s.sn, start: s.originalStart, end: s.originalStart + s.duration
+            sn: s.sn,
+            absSegIdx: s.absSegIdx,
+            start: s.originalStart,
+            end: s.originalStart + s.duration
           })))
+          fetch(`http://localhost:8000/sync_map?from_camera=${cam}&sns=${absSegIdx}`)
+            .then(res => res.json())
+            .then(data => {
+              setLiveSyncMap(prev => ({ ...prev, ...data }))
+            })
+            .catch(e => console.warn('Failed to fetch live sync segment map', e))
         }
       })
     })
     modeRef.current = 'live'
     setMode('live')
-  }, [activeCam])
+  }, [])
 
   const enterReview = useCallback(() => {
     if (rollingBuffers[activeCam].current.length === 0) return false
@@ -178,7 +277,14 @@ export default function App() {
       
       let t = 0
       newReviewSegs[cam] = snapshot.map(s => {
-        const seg = { sn: s.sn, start: t, end: t + s.duration, duration: s.duration, originalStart: s.originalStart }
+        const seg = {
+          sn: s.sn,
+          absSegIdx: s.absSegIdx,
+          start: t,
+          end: t + s.duration,
+          duration: s.duration,
+          originalStart: s.originalStart
+        }
         t += s.duration
         return seg
       })
@@ -188,7 +294,7 @@ export default function App() {
 
     // Fetch sync map
     const activeSnapshot = rollingBuffers[activeCam].current
-    const sns = activeSnapshot.map(s => s.sn).join(',')
+    const sns = activeSnapshot.map(s => s.absSegIdx).join(',')
     if (sns) {
       fetch(`http://localhost:8000/sync_map?from_camera=${activeCam}&sns=${sns}`)
         .then(res => res.json())
@@ -241,18 +347,33 @@ export default function App() {
       const details = hls?.levels?.[hls.currentLevel]?.details
       if (details) {
         const ct = currentVideo.currentTime
-        const frag = details.fragments.find(f => f.start <= ct && f.start + f.duration >= ct)
+        let frag = details.fragments.find(f => f.start <= ct && f.start + f.duration >= ct)
+        if (!frag && details.fragments.length > 0) {
+          frag = details.fragments.reduce((prev, curr) => {
+            const prevDist = Math.abs((prev.start + prev.duration/2) - ct)
+            const currDist = Math.abs((curr.start + curr.duration/2) - ct)
+            return currDist < prevDist ? curr : prev
+          })
+        }
         if (frag) {
           const offset = ct - frag.start
+          const url = frag.relurl || frag.url || ''
+          const match = url.match(/seg_(\d+)\.ts/)
+          const absSegIdx = match ? parseInt(match[1], 10) : frag.sn
           try {
-            const res = await fetch(`http://localhost:8000/sync?from_camera=${activeCam}&from_seg=${frag.sn}&from_offset=${offset}`)
+            const res = await fetch(`http://localhost:8000/sync?from_camera=${activeCam}&from_seg=${absSegIdx}&from_offset=${offset}`)
             if (res.ok) {
               const data = await res.json()
               const targetSync = data[targetCam]
               const targetHls = hlsRefs[targetCam].current
               const tDetails = targetHls?.levels?.[targetHls.currentLevel]?.details
               if (tDetails) {
-                const tFrag = tDetails.fragments.find(f => f.sn === targetSync.segment)
+                const tFrag = tDetails.fragments.find(f => {
+                  const fUrl = f.relurl || f.url || ''
+                  const fMatch = fUrl.match(/seg_(\d+)\.ts/)
+                  const fAbs = fMatch ? parseInt(fMatch[1], 10) : f.sn
+                  return fAbs === targetSync.segment
+                })
                 if (tFrag) {
                   const newTime = tFrag.start + targetSync.offset
                   if (Math.abs(targetVideo.currentTime - newTime) > 0.15) {
@@ -271,12 +392,12 @@ export default function App() {
         const activeSeg = activeList.find(s => currentVideo.currentTime >= s.start && currentVideo.currentTime <= s.end)
         if (activeSeg) {
           const offsetInSeg = currentVideo.currentTime - activeSeg.start
-          const sn = activeSeg.sn
+          const sn = activeSeg.absSegIdx
           const mapping = syncMap?.[sn]?.[targetCam]
           if (mapping) {
             const targetList = reviewSegs[targetCam]
             if (targetList) {
-              const targetSeg = targetList.find(s => s.sn === mapping.segment)
+              const targetSeg = targetList.find(s => s.absSegIdx === mapping.segment)
               if (targetSeg) {
                 targetVideo.currentTime = targetSeg.start + mapping.offset + offsetInSeg
               }
@@ -296,6 +417,8 @@ export default function App() {
       video.currentTime = time
       if (mode === 'review') {
         syncReviewVideos(time)
+      } else {
+        syncLiveVideos(time)
       }
     }
   }
@@ -361,7 +484,7 @@ export default function App() {
             bufferStart={displayBufferStart}
             bufferedEnd={displayBufferedEnd}
             segments={displaySegments}
-            events={events}
+            events={mappedEvents}
             onSeek={handleSeek}
             onEventSelect={setSelectedEvent}
             mode={mode}

@@ -19,6 +19,12 @@ export default function SeekBar({
   const trackRef = useRef(null)
   const dragging = useRef(false)
   const [hoveredEvent, setHoveredEvent] = useState(null)
+  const [internalEventTime, setInternalEventTime] = useState(null)
+
+  // Clear internal pointer when mode changes
+  useEffect(() => {
+    setInternalEventTime(null)
+  }, [mode])
 
   const segs = segments ?? []
   const segsStart = segs.length > 0 ? segs[0].start : null
@@ -30,12 +36,14 @@ export default function SeekBar({
   const seekFromEvent = useCallback((e) => {
     const rect = trackRef.current.getBoundingClientRect()
     const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    const targetTime = rangeStart + frac * (rangeEnd - rangeStart)
+    let targetTime = rangeStart + frac * (rangeEnd - rangeStart)
+    if (mode === 'live' && liveEdge !== null) {
+      targetTime = Math.min(targetTime, liveEdge)
+    }
     onSeek(targetTime)
-  }, [rangeStart, rangeEnd, onSeek])
+  }, [rangeStart, rangeEnd, onSeek, mode, liveEdge])
 
   const onMouseDown = (e) => {
-    if (mode !== 'review') return;
     dragging.current = true
     seekFromEvent(e)
     window.addEventListener('mousemove', onMouseMove)
@@ -53,22 +61,26 @@ export default function SeekBar({
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowLeft') {
-        const prevEvents = events.filter(ev => ev.time < currentTime - 0.5).sort((a, b) => b.time - a.time);
+        const referenceTime = internalEventTime !== null ? internalEventTime : currentTime;
+        const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
+        const prevEvents = validEvents.filter(ev => ev.time < referenceTime - 0.5).sort((a, b) => b.time - a.time);
         if (prevEvents.length > 0) {
-          if (mode === 'review') onSeek(prevEvents[0].time);
+          setInternalEventTime(prevEvents[0].time);
           if (onEventSelect) onEventSelect(prevEvents[0]);
         }
       } else if (e.key === 'ArrowRight') {
-        const nextEvents = events.filter(ev => ev.time > currentTime + 0.5).sort((a, b) => a.time - b.time);
+        const referenceTime = internalEventTime !== null ? internalEventTime : currentTime;
+        const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
+        const nextEvents = validEvents.filter(ev => ev.time > referenceTime + 0.5).sort((a, b) => a.time - b.time);
         if (nextEvents.length > 0) {
-          if (mode === 'review') onSeek(nextEvents[0].time);
+          setInternalEventTime(nextEvents[0].time);
           if (onEventSelect) onEventSelect(nextEvents[0]);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentTime, events, onSeek, onEventSelect, mode]);
+  }, [currentTime, events, onEventSelect, mode, liveEdge, internalEventTime]);
 
   const playedFrac = toFraction(currentTime, rangeStart, rangeEnd)
   const bufferedFrac = toFraction(bufferedEnd ?? currentTime, rangeStart, rangeEnd)
@@ -98,9 +110,11 @@ export default function SeekBar({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const prevEvents = events.filter(ev => ev.time < currentTime - 0.5).sort((a, b) => b.time - a.time);
+                const referenceTime = internalEventTime !== null ? internalEventTime : currentTime;
+                const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
+                const prevEvents = validEvents.filter(ev => ev.time < referenceTime - 0.5).sort((a, b) => b.time - a.time);
                 if (prevEvents.length > 0) {
-                  if (mode === 'review') onSeek(prevEvents[0].time);
+                  setInternalEventTime(prevEvents[0].time);
                   if (onEventSelect) onEventSelect(prevEvents[0]);
                 }
               }}
@@ -111,9 +125,11 @@ export default function SeekBar({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const nextEvents = events.filter(ev => ev.time > currentTime + 0.5).sort((a, b) => a.time - b.time);
+                const referenceTime = internalEventTime !== null ? internalEventTime : currentTime;
+                const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
+                const nextEvents = validEvents.filter(ev => ev.time > referenceTime + 0.5).sort((a, b) => a.time - b.time);
                 if (nextEvents.length > 0) {
-                  if (mode === 'review') onSeek(nextEvents[0].time);
+                  setInternalEventTime(nextEvents[0].time);
                   if (onEventSelect) onEventSelect(nextEvents[0]);
                 }
               }}
@@ -123,15 +139,39 @@ export default function SeekBar({
             </button>
           </div>
         </div>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: 'var(--amber)' }}>
-          {behind !== null && behind > 1 ? `−${behind}s` : 'LIVE'}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {mode === 'live' && behind !== null && behind > 3 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (liveEdge !== null) onSeek(liveEdge);
+              }}
+              style={{
+                background: 'var(--red)',
+                border: 'none',
+                color: '#fff',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                padding: '4px 12px',
+                fontWeight: 'bold',
+                letterSpacing: '0.05em',
+                transition: 'all 0.2s'
+              }}
+            >
+              GO LIVE
+            </button>
+          )}
+          <span style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: (mode === 'live' && behind !== null && behind > 3) ? 'var(--muted)' : 'var(--amber)' }}>
+            {(mode === 'live' && behind !== null && behind > 3) ? `−${behind}s` : 'LIVE'}
+          </span>
+        </div>
       </div>
-
+ 
       <div
         ref={trackRef}
         onMouseDown={onMouseDown}
-        style={{ position: 'relative', height: '24px', cursor: mode === 'review' ? 'col-resize' : 'default', display: 'flex', alignItems: 'center' }}
+        style={{ position: 'relative', height: '24px', cursor: 'col-resize', display: 'flex', alignItems: 'center' }}
       >
         <div style={{
           position: 'absolute', left: 0, right: 0, height: '4px',
@@ -146,7 +186,7 @@ export default function SeekBar({
             background: 'var(--amber)',
           }} />
         </div>
-
+ 
         {visibleTicks.map((seg, i) => {
           const frac = toFraction(seg.start, rangeStart, rangeEnd)
           return (
@@ -156,19 +196,26 @@ export default function SeekBar({
             }} />
           )
         })}
-
+ 
         {visibleEvents.map((ev, i) => {
           const frac = toFraction(ev.time, rangeStart, rangeEnd)
           const isHovered = hoveredEvent?.id === ev.id
           // highlight if close to current time
           const isCurrent = Math.abs(currentTime - ev.time) < 1.0
-
+ 
           return (
             <div
               key={i}
               onMouseEnter={() => setHoveredEvent(ev)}
               onMouseLeave={() => setHoveredEvent(null)}
-              onClick={(e) => { e.stopPropagation(); if (mode === 'review') onSeek(ev.time); if (onEventSelect) onEventSelect(ev); }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setInternalEventTime(ev.time);
+                if (onEventSelect) onEventSelect(ev); 
+              }}
               style={{
                 position: 'absolute', left: `${frac * 100}%`,
                 width: isCurrent ? '12px' : '8px', height: isCurrent ? '12px' : '8px',
