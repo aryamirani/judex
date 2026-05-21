@@ -22,9 +22,9 @@ SPEED = 1.0
 
 # Global state for sliding windows
 server_state = {
-    "source": {"media_sequence": 0, "window": [], "done": False, "current_index": 0},
-    "sink":   {"media_sequence": 0, "window": [], "done": False, "current_index": 0},
-    "hq":     {"media_sequence": 0, "window": [], "done": False, "current_index": 0},
+    "source": {"media_sequence": 0, "window": [], "done": False, "current_index": 0, "is_gap": False},
+    "sink":   {"media_sequence": 0, "window": [], "done": False, "current_index": 0, "is_gap": False},
+    "hq":     {"media_sequence": 0, "window": [], "done": False, "current_index": 0, "is_gap": False},
 }
 
 # Pre-computed lookup tables
@@ -169,14 +169,24 @@ def write_playlist(cam, window, media_sequence, done=False):
     playlist_path = os.path.join(serve_dir, "live.m3u8")
     lines = [
         "#EXTM3U",
-        "#EXT-X-VERSION:3",
+        "#EXT-X-VERSION:4",
         "#EXT-X-TARGETDURATION:6",
         f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
         "#EXT-X-ALLOW-CACHE:NO"
     ]
-    for duration, name in window:
-        lines.append(f"#EXTINF:{duration:.6f},")
-        lines.append(name)
+    for item in window:
+        if isinstance(item, str) and item == "#EXT-X-DISCONTINUITY":
+            lines.append(item)
+        elif isinstance(item, tuple) and len(item) == 3 and item[2] == "GAP":
+            duration, name, _ = item
+            lines.append("#EXT-X-DISCONTINUITY")
+            lines.append(f"#EXTINF:{duration:.6f},")
+            lines.append(name)
+            lines.append("#EXT-X-DISCONTINUITY")
+        else:
+            duration, name = item
+            lines.append(f"#EXTINF:{duration:.6f},")
+            lines.append(name)
     if done:
         lines.append("#EXT-X-ENDLIST")
         
@@ -185,95 +195,122 @@ def write_playlist(cam, window, media_sequence, done=False):
         f.write("\n".join(lines) + "\n")
     os.rename(temp_path, playlist_path)
 
-def stream_worker(cam, start_idx):
-    source_dir = CAM_PATHS[cam]
-    serve_dir = SERVE_DIRS[cam]
-    for f in os.listdir(serve_dir):
-        if f.endswith(".ts") or f.endswith(".m3u8"):
-            try: os.remove(os.path.join(serve_dir, f))
-            except: pass
-            
-    all_segs = parse_playlist(os.path.join(source_dir, "playlist.m3u8"))
-    write_playlist(cam, [], 0)
-    
-    # Pre-fill the window up to start_idx + WINDOW_SIZE
-    initial_window = all_segs[start_idx : start_idx + WINDOW_SIZE]
-    released = []
-    
-    for duration, name in initial_window:
-        released.append((duration, name))
-        src = os.path.join(source_dir, name)
-        dst = os.path.join(serve_dir, name)
-        if not os.path.exists(dst) and os.path.exists(src):
-            try: os.link(src, dst)
-            except: shutil.copy2(src, dst)
-            
-    media_sequence = 0
-    write_playlist(cam, released, media_sequence)
-    
-    server_state[cam]["media_sequence"] = media_sequence
-    server_state[cam]["window"] = released
-    server_state[cam]["current_index"] = start_idx + WINDOW_SIZE - 1
-    server_state[cam]["done"] = False
-    
-    current_idx = start_idx + WINDOW_SIZE
-    
-    # Loop indefinitely
-    while True:
-        if current_idx >= len(all_segs):
-            current_idx = start_idx + WINDOW_SIZE
-            
-        duration, name = all_segs[current_idx]
-        released.append((duration, name))
-        
-        src = os.path.join(source_dir, name)
-        dst = os.path.join(serve_dir, name)
-        if not os.path.exists(dst) and os.path.exists(src):
-            try: os.link(src, dst)
-            except: shutil.copy2(src, dst)
+def master_stream_worker():
+    # Clean serve dirs
+    for cam in ["source", "sink", "hq"]:
+        serve_dir = SERVE_DIRS[cam]
+        for f in os.listdir(serve_dir):
+            if f.endswith(".ts") or f.endswith(".m3u8"):
+                try: os.remove(os.path.join(serve_dir, f))
+                except: pass
                 
-        if len(released) > WINDOW_SIZE:
-            media_sequence += 1
-            released = released[-WINDOW_SIZE:]
-            
-        server_state[cam]["media_sequence"] = media_sequence
-        server_state[cam]["window"] = released
-        server_state[cam]["current_index"] = current_idx
+    # Parse all playlists
+    all_segs = {}
+    for cam in ["source", "sink", "hq"]:
+        all_segs[cam] = parse_playlist(os.path.join(CAM_PATHS[cam], "playlist.m3u8"))
         
-        write_playlist(cam, released, media_sequence, False)
-        time.sleep(duration / SPEED)
+        # Create a gap filler video for this camera using its first segment
+        if len(all_segs[cam]) > 0:
+            first_seg = all_segs[cam][0][1]
+            first_src = os.path.join(CAM_PATHS[cam], first_seg)
+            gap_dst = os.path.join(SERVE_DIRS[cam], f"gap_{cam}.ts")
+            if not os.path.exists(gap_dst) and os.path.exists(first_src):
+                try: os.link(first_src, gap_dst)
+                except: shutil.copy2(first_src, gap_dst)
+            
+    released = {"source": [], "sink": [], "hq": []}
+    media_sequence = {"source": 0, "sink": 0, "hq": 0}
+    
+    hq_segs = all_segs["hq"]
+    max_len = len(hq_segs)
+    current_idx = 0
+    
+    # Pre-build timeline map for fast iteration
+    # Since HQ is perfectly contiguous (no missing internal segments), it is our Master Clock.
+    timeline = []
+    prev_seg = {"source": -1, "sink": -1}
+    for hq_idx in range(max_len):
+        hq_dur, hq_name = hq_segs[hq_idx]
+        hq_start_frame = seg_to_frame["hq"].get(hq_idx)
+        
+        row = {"hq": (hq_dur, hq_name), "source": None, "sink": None}
+        
+        for cam in ["source", "sink"]:
+            map_key = f"hq_to_{cam}"
+            target_f = None
+            if hq_start_frame is not None:
+                if hq_start_frame in sync_maps[map_key]:
+                    target_f = sync_maps[map_key][hq_start_frame]
+                elif sync_maps[map_key]:
+                    closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - hq_start_frame))
+                    # Reduce from 500 to 120 so we don't repeat frames across long gaps
+                    if abs(closest - hq_start_frame) < 120:
+                        target_f = sync_maps[map_key][closest]
+            
+            if target_f is not None and target_f in frame_to_seg[cam]:
+                cam_seg_idx = frame_to_seg[cam][target_f][0]
+                
+                # Check if we are incorrectly repeating a segment which freezes the player
+                # If the camera hasn't advanced, we emit a GAP!
+                if cam_seg_idx != prev_seg[cam]:
+                    row[cam] = all_segs[cam][cam_seg_idx]
+                    prev_seg[cam] = cam_seg_idx
+                else:
+                    row[cam] = (hq_dur, f"gap_{cam}.ts", "GAP")
+            else:
+                row[cam] = (hq_dur, f"gap_{cam}.ts", "GAP")
+                
+        timeline.append(row)
+    
+    while True:
+        # Loop wrap around
+        if current_idx >= max_len:
+            current_idx = 0
+            for cam in ["source", "sink", "hq"]:
+                released[cam].append("#EXT-X-DISCONTINUITY")
+        
+        step_duration = timeline[current_idx]["hq"][0]
+        
+        for cam in ["source", "sink", "hq"]:
+            item = timeline[current_idx][cam]
+            released[cam].append(item)
+            
+            is_gap_item = (isinstance(item, tuple) and len(item) == 3 and item[2] == "GAP")
+            server_state[cam]["is_gap"] = is_gap_item
+
+            if len(item) == 2: # Physical file
+                name = item[1]
+                src = os.path.join(CAM_PATHS[cam], name)
+                dst = os.path.join(SERVE_DIRS[cam], name)
+                if not os.path.exists(dst) and os.path.exists(src):
+                    try: os.link(src, dst)
+                    except: shutil.copy2(src, dst)
+                    
+        # Manage sliding window and write playlists
+        for cam in ["source", "sink", "hq"]:
+            media_items_count = sum(1 for x in released[cam] if isinstance(x, tuple))
+            while media_items_count > WINDOW_SIZE:
+                popped = released[cam].pop(0)
+                if isinstance(popped, tuple):
+                    media_items_count -= 1
+                    media_sequence[cam] += 1
+            
+            server_state[cam]["media_sequence"] = media_sequence[cam]
+            server_state[cam]["window"] = [x for x in released[cam] if isinstance(x, tuple)]
+            server_state[cam]["current_index"] = current_idx
+            
+            write_playlist(cam, released[cam], media_sequence[cam], False)
+
+        if step_duration == 0:
+            step_duration = 4.0
+        time.sleep(step_duration / SPEED)
         current_idx += 1
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_data()
-    # Calculate aligned starting indices
-    start_indices = {"source": 0, "sink": 0, "hq": 0}
-    
-    # Use source segment 0 as the master timeline reference
-    src_start_frame = seg_to_frame["source"].get(0)
-    if src_start_frame is not None:
-        for cam in ["sink", "hq"]:
-            map_key = f"source_to_{cam}"
-            if src_start_frame in sync_maps[map_key]:
-                t_frame = sync_maps[map_key][src_start_frame]
-            elif sync_maps[map_key]:
-                closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - src_start_frame))
-                t_frame = sync_maps[map_key][closest]
-            else:
-                t_frame = src_start_frame
-                
-            if t_frame in frame_to_seg[cam]:
-                start_indices[cam] = frame_to_seg[cam][t_frame][0]
-            elif frame_to_seg[cam]:
-                available = list(frame_to_seg[cam].keys())
-                closest_avail = min(available, key=lambda x: abs(x - t_frame))
-                start_indices[cam] = frame_to_seg[cam][closest_avail][0]
-    
-    # Start stream workers
-    for cam in ["source", "sink", "hq"]:
-        t = threading.Thread(target=stream_worker, args=(cam, start_indices[cam]), daemon=True)
-        t.start()
+    t = threading.Thread(target=master_stream_worker, daemon=True)
+    t.start()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -393,7 +430,8 @@ def get_status():
         cam: {
             "media_sequence": server_state[cam]["media_sequence"],
             "current_index": server_state[cam]["current_index"],
-            "done": server_state[cam]["done"]
+            "done": server_state[cam]["done"],
+            "is_gap": server_state[cam]["is_gap"]
         } for cam in ["source", "sink", "hq"]
     }
 

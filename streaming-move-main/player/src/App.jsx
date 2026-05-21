@@ -67,6 +67,8 @@ export default function App() {
 
   const activeCamRef = useRef(activeCam)
   const ignoreSyncRef = useRef(false)
+  const [gapState, setGapState] = useState({ source: false, sink: false, hq: false })
+
   useEffect(() => {
     activeCamRef.current = activeCam
     if (mode === 'live') {
@@ -219,8 +221,38 @@ export default function App() {
         }
       }
     }
+
+    // Check for GAP segments to show "NO FRAMES" precisely aligned with playhead
+    let updatedGap = false;
+    const newGap = { ...gapState }
+    CAMERAS.forEach(cam => {
+      const v = videoRefs[cam].current
+      const h = hlsRefs[cam].current
+      if (v && h && v.readyState >= 2) { // Ensure there is enough data
+        const ct = v.currentTime
+        const details = h.levels?.[h.currentLevel]?.details
+        if (details) {
+          const frag = details.fragments.find(f => f.start <= ct && f.start + f.duration >= ct + 0.1) || 
+                       details.fragments.find(f => Math.abs(f.start - ct) < 1.0)
+          
+          if (frag) {
+            const url = frag.relurl || frag.url || ''
+            const isGap = url.includes(`gap_${cam}.ts`)
+            if (newGap[cam] !== isGap) {
+              newGap[cam] = isGap
+              updatedGap = true
+            }
+          }
+        }
+      }
+    })
+    
+    if (updatedGap) {
+      setGapState(newGap)
+    }
+
     rafRef.current = requestAnimationFrame(tick)
-  }, [activeCam, syncReviewVideos, syncLiveVideos])
+  }, [activeCam, syncReviewVideos, syncLiveVideos, gapState])
 
   const initLive = useCallback(() => {
     setIsPlaying(true)
@@ -481,19 +513,34 @@ export default function App() {
 
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {CAMERAS.map(cam => (
-          <video
-            key={cam}
-            ref={videoRefs[cam]}
-            muted={true}
-            playsInline
+          <div 
+            key={cam} 
             style={{
-              width: '100%', height: '100%', objectFit: 'contain',
               position: 'absolute', inset: 0,
               opacity: cam === activeCam ? 1 : 0,
               pointerEvents: cam === activeCam ? 'auto' : 'none',
               transition: 'opacity 0.1s ease-in-out'
             }}
-          />
+          >
+            <video
+              ref={videoRefs[cam]}
+              muted={true}
+              playsInline
+              style={{
+                width: '100%', height: '100%', objectFit: 'contain'
+              }}
+            />
+            {/* NO FRAMES OVERLAY */}
+            {gapState[cam] && (
+              <div style={{
+                position: 'absolute', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.95)',
+                display: 'flex', justifyContent: 'center', alignItems: 'center',
+                color: '#ff4444', fontSize: '32px', fontWeight: 'bold', letterSpacing: '4px', zIndex: 10
+              }}>
+                NO FRAMES AVAILABLE
+              </div>
+            )}
+          </div>
         ))}
 
         {inReview && (
