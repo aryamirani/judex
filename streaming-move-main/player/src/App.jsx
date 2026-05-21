@@ -12,6 +12,11 @@ const LIVE_CONFIG = { backBufferLength: 60, maxBufferLength: 60, liveSyncDuratio
 const REVIEW_CONFIG = { enableWorker: true, maxBufferLength: 60, backBufferLength: 60 }
 
 const CAMERAS = ['source', 'sink', 'hq']
+const CAM_STREAM_URLS = {
+  source: 'http://192.168.0.111:8083/live.m3u8',
+  sink:   'http://192.168.0.113:8083/live.m3u8',
+  hq:     'http://192.168.0.112:8083/live.m3u8',
+}
 
 function buildReviewPlaylist(segments, blobUrls) {
   const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:6', '#EXT-X-MEDIA-SEQUENCE:0', '#EXT-X-PLAYLIST-TYPE:VOD']
@@ -47,6 +52,7 @@ export default function App() {
   const [liveSyncMap, setLiveSyncMap] = useState({})
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [isPlaying, setIsPlaying] = useState(true)
+  const [syncVerify, setSyncVerify] = useState(null)
 
   const handleTogglePlay = useCallback(() => {
     setIsPlaying(prev => {
@@ -262,7 +268,7 @@ export default function App() {
 
       const hls = new Hls(LIVE_CONFIG)
       hlsRefs[cam].current = hls
-      hls.loadSource(`http://localhost:8000/stream/${cam}/live.m3u8`)
+      hls.loadSource(CAM_STREAM_URLS[cam])
       hls.attachMedia(video)
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -389,6 +395,101 @@ export default function App() {
     }
   }, []) // run once on mount
 
+  const getAllCamPositions = useCallback(() => {
+    const pos = {}
+    CAMERAS.forEach(cam => {
+      const hls = hlsRefs[cam].current
+      const video = videoRefs[cam].current
+      if (!hls || !video) return
+      const details = hls.levels?.[hls.currentLevel]?.details
+      if (!details || details.fragments.length === 0) return
+      const ct = video.currentTime
+      let frag = details.fragments.find(f => f.start <= ct && f.start + f.duration > ct)
+      if (!frag) frag = details.fragments.reduce((p, c) =>
+        Math.abs(c.start + c.duration / 2 - ct) < Math.abs(p.start + p.duration / 2 - ct) ? c : p
+      )
+      if (!frag) return
+      const url = frag.relurl || frag.url || ''
+      const m = url.match(/seg_(\d+)\.ts/)
+      const seg = m ? parseInt(m[1], 10) : frag.sn
+      pos[cam] = { seg, offset: parseFloat(Math.max(0, ct - frag.start).toFixed(3)) }
+    })
+    return pos
+  }, [])
+
+  const doLiveSync = useCallback(async () => {
+    if (modeRef.current !== 'live') return
+    const hls = hlsRefs['source'].current
+    const video = videoRefs['source'].current
+    if (!hls || !video) return
+    const details = hls.levels?.[hls.currentLevel]?.details
+    if (!details?.fragments?.length) return
+    const ct = video.currentTime
+    let frag = details.fragments.find(f => f.start <= ct && f.start + f.duration > ct)
+              || details.fragments[details.fragments.length - 1]
+    if (!frag) return
+    const url = frag.relurl || frag.url || ''
+    const m = url.match(/seg_(\d+)\.ts/)
+    const absSegIdx = m ? parseInt(m[1], 10) : frag.sn
+    const offset = Math.max(0, ct - frag.start)
+    try {
+      const res = await fetch(`http://localhost:8000/sync?from_camera=source&from_seg=${absSegIdx}&from_offset=${offset}`)
+      if (!res.ok) return
+      const data = await res.json()
+      for (const targetCam of ['sink', 'hq']) {
+        const targetSync = data[targetCam]
+        if (!targetSync) continue
+        const tHls = hlsRefs[targetCam].current
+        const tVideo = videoRefs[targetCam].current
+        if (!tHls || !tVideo) continue
+        const tDetails = tHls.levels?.[tHls.currentLevel]?.details
+        if (!tDetails) continue
+        const tFrag = tDetails.fragments.find(f => {
+          const fu = f.relurl || f.url || ''
+          const fm = fu.match(/seg_(\d+)\.ts/)
+          return (fm ? parseInt(fm[1], 10) : f.sn) === targetSync.segment
+        })
+        if (tFrag) {
+          const newTime = tFrag.start + targetSync.offset
+          if (Math.abs(tVideo.currentTime - newTime) > 0.5)
+            tVideo.currentTime = newTime
+        }
+      }
+    } catch(e) { console.warn('doLiveSync failed', e) }
+  }, [])
+
+  // Initial sync 2s after mount (lets manifests parse), then every 4s
+  useEffect(() => {
+    let intervalId
+    const t0 = setTimeout(() => {
+      doLiveSync()
+      intervalId = setInterval(doLiveSync, 4000)
+    }, 2000)
+    return () => { clearTimeout(t0); clearInterval(intervalId) }
+  }, [doLiveSync])
+
+  // Continuously poll check_sync every 500ms
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const pos = getAllCamPositions()
+        if (!pos.source || !pos.sink || !pos.hq) return
+        const p = new URLSearchParams({
+          source_seg: pos.source.seg, source_off: pos.source.offset,
+          sink_seg:   pos.sink.seg,   sink_off:   pos.sink.offset,
+          hq_seg:     pos.hq.seg,     hq_off:     pos.hq.offset,
+          tolerance:  15,
+        })
+        const res = await fetch(`http://localhost:8000/check_sync?${p}`)
+        if (!res.ok) return
+        const v = await res.json()
+        if (v?.checks) setSyncVerify(v)
+      } catch (_) {}
+    }
+    const id = setInterval(poll, 500)
+    return () => clearInterval(id)
+  }, [getAllCamPositions])
+
   const handleSwitchCam = async (targetCam) => {
     if (targetCam === activeCam) return
     const currentVideo = videoRefs[activeCam].current
@@ -437,6 +538,31 @@ export default function App() {
                   }
                 }
               }
+
+              // Verify sync: read all cameras' actual positions and check against CSV
+              setTimeout(async () => {
+                try {
+                  const pos = getAllCamPositions()
+                  if (!pos.source || !pos.sink || !pos.hq) return
+                  const p = new URLSearchParams({
+                    source_seg: pos.source.seg, source_off: pos.source.offset,
+                    sink_seg:   pos.sink.seg,   sink_off:   pos.sink.offset,
+                    hq_seg:     pos.hq.seg,     hq_off:     pos.hq.offset,
+                    tolerance:  15,
+                  })
+                  const vRes = await fetch(`http://localhost:8000/check_sync?${p}`)
+                  const v = await vRes.json()
+                  setSyncVerify(v)
+                  console.log(
+                    `[SYNC SWITCH] ${activeCam} → ${targetCam}\n` +
+                    `  frames: source=${v.frames.source} sink=${v.frames.sink} hq=${v.frames.hq}\n` +
+                    Object.entries(v.checks).map(([k, c]) =>
+                      `  ${k}: expected=${c.expected_target_frame} actual=${c.actual_target_frame} diff=${c.diff_frames}f exact=${c.exact_hit} ${c.match ? '✓' : '✗'}`
+                    ).join('\n') +
+                    `\n  overall: ${v.overall_match ? '✓ IN SYNC' : '✗ OUT OF SYNC'} (tolerance ±${v.tolerance} frames)`
+                  )
+                } catch(e) { console.warn('check_sync failed', e) }
+              }, 200)
             }
           } catch(e) { console.error('Sync failed', e) }
         }
@@ -492,12 +618,41 @@ export default function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0a0a0a', color: '#fff' }}>
       <header style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span style={{ fontWeight: 'bold', letterSpacing: '2px', fontSize: '18px' }}>TRIPLE-CAM REVIEW</span>
           <CameraSelector active={activeCam} onSwitch={handleSwitchCam} />
+          {syncVerify?.checks && (() => {
+            const ok = syncVerify.overall_match
+            const maxDiff = Math.max(...Object.values(syncVerify.checks).map(c => c.diff_frames ?? 0))
+            const f = syncVerify.frames
+            return (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                background: ok ? '#0d2e0d' : '#2e0d0d',
+                border: `2px solid ${ok ? '#4caf50' : '#f44336'}`,
+                borderRadius: '10px', padding: '7px 14px',
+                cursor: 'default', userSelect: 'none',
+                boxShadow: `0 0 16px ${ok ? 'rgba(76,175,80,0.6)' : 'rgba(244,67,54,0.6)'}`,
+              }}>
+                <span style={{ fontSize: '30px', color: ok ? '#4caf50' : '#f44336', lineHeight: 1, fontWeight: 'bold' }}>
+                  {ok ? '✓' : '✗'}
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 'bold', color: ok ? '#7ee87e' : '#ff7070', letterSpacing: '0.05em' }}>
+                    {ok ? `IN SYNC  ±${maxDiff}f` : `OUT OF SYNC  Δ${maxDiff}f`}
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px', fontFamily: 'monospace', fontSize: '11px' }}>
+                    <span style={{ color: '#f5a623' }}>SRC {f.source ?? '—'}</span>
+                    <span style={{ color: '#4a90e2' }}>SNK {f.sink ?? '—'}</span>
+                    <span style={{ color: '#50e3c2' }}>HQ {f.hq ?? '—'}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
         </div>
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <button 
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <button
             onClick={inReview ? exitReview : enterReview}
             style={{
               padding: '8px 24px', borderRadius: '4px', border: 'none', cursor: 'pointer',
