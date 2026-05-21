@@ -595,6 +595,3 @@ def get_status():
 if __name__ == "__main__":
     print(f"Starting server on port {_args.port} at {SPEED}x speed (session {SESSION_ID}).")
     uvicorn.run(app, host="0.0.0.0", port=_args.port, log_level="error")
-
-
-///what i am trying to tell you is basically in teh reader folder, there are 3 files that continuously update the cameras' frame and the segment correct? it mentions each segment and the frames in that segment. each frame captures the same amount of information across all 3 cameras. if one camera's segment only has 53 frames and the other 2 camera's same segment number had 120 frames, then there will be a mismatch right? answer to me ///
