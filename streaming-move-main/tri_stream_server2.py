@@ -121,10 +121,12 @@ def _ingest_sync_rows(csv_text, has_header=True):
     return count
 
 def sync_csv_poller():
-    """Background thread: polls the remote sync CSV every 4 s and ingests new rows."""
+    """
+    Background thread: polls the remote sync CSV every 4 seconds and ingests new rows.
+    """
     global _sync_rows_loaded
     while True:
-        time.sleep(4)
+        time.sleep(4)  # Reintroduce 4-second delay
         try:
             new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded)
             added = _ingest_sync_rows(new_text, has_header=False)
@@ -592,6 +594,10 @@ def get_status():
         } for cam in ["source", "sink", "hq"]
     }
 
+# Start the synchronization thread before running the server
+sync_thread = threading.Thread(target=synchronize_streams, daemon=True)
+sync_thread.start()
+
 if __name__ == "__main__":
     print(f"Starting server on port {_args.port} at {SPEED}x speed (session {SESSION_ID}).")
     uvicorn.run(app, host="0.0.0.0", port=_args.port, log_level="error")
@@ -655,7 +661,3 @@ def synchronize_streams():
                                     print(f"Synchronizing {cam1} (Segment {seg1}) with {cam2} (Segment {seg2})")
                                     server_state[cam1]["current_index"] = seg1
                                     server_state[cam2]["current_index"] = seg2
-
-# Start the synchronization thread
-sync_thread = threading.Thread(target=synchronize_streams, daemon=True)
-sync_thread.start()
