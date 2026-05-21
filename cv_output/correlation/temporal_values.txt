@@ -1,0 +1,8184 @@
+Frame 0
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+src=0, sink=2, cost=0.00
+src=0, sink=3, cost=0.00
+
+Frame 1
+src=0, sink=0, cost=10.97
+src=0, sink=1, cost=3.81
+
+Frame 2
+src=0, sink=0, cost=810.32
+
+Frame 3
+src=0, sink=0, cost=12.94
+
+Frame 4
+src=0, sink=0, cost=18.78
+
+Frame 5
+src=0, sink=0, cost=11.67
+
+Frame 6
+src=0, sink=0, cost=22.92
+
+Frame 7
+src=0, sink=0, cost=17.46
+
+Frame 8
+src=0, sink=0, cost=13.31
+
+Frame 9
+src=0, sink=0, cost=14.34
+
+Frame 10
+src=0, sink=0, cost=18.56
+
+Frame 11
+src=0, sink=0, cost=14.02
+
+Frame 12
+src=0, sink=0, cost=10.07
+
+Frame 13
+src=0, sink=0, cost=19.72
+
+Frame 14
+src=0, sink=0, cost=11.48
+
+Frame 15
+src=0, sink=0, cost=11.70
+
+Frame 16
+src=0, sink=0, cost=621.98
+src=0, sink=1, cost=11.64
+
+Frame 17
+src=0, sink=0, cost=614.39
+src=0, sink=1, cost=11.93
+
+Frame 18
+src=0, sink=0, cost=7.24
+src=0, sink=1, cost=606.23
+
+Frame 19
+src=0, sink=0, cost=607.37
+src=0, sink=1, cost=7.71
+
+Frame 20
+src=0, sink=0, cost=609.53
+src=0, sink=1, cost=0.00
+
+Frame 21
+src=0, sink=0, cost=614.07
+src=0, sink=1, cost=2.84
+
+Frame 22
+src=0, sink=0, cost=611.23
+src=0, sink=1, cost=3.75
+
+Frame 23
+src=0, sink=0, cost=611.33
+src=0, sink=1, cost=0.00
+
+Frame 24
+src=0, sink=0, cost=4.04
+
+Frame 25
+src=0, sink=0, cost=2.86
+
+Frame 26
+src=0, sink=0, cost=2.86
+
+Frame 27
+src=0, sink=0, cost=0.00
+
+Frame 28
+src=0, sink=0, cost=2.84
+
+Frame 29
+src=0, sink=0, cost=2.82
+
+Frame 30
+src=0, sink=0, cost=4.71
+
+Frame 31
+src=0, sink=0, cost=0.00
+
+Frame 32
+src=0, sink=0, cost=573.23
+
+Frame 33
+src=0, sink=0, cost=9.72
+
+Frame 34
+src=0, sink=0, cost=15.39
+
+Frame 35
+src=0, sink=0, cost=15.52
+
+Frame 36
+src=0, sink=0, cost=14.56
+
+Frame 37
+src=0, sink=0, cost=12.43
+
+Frame 38
+src=0, sink=0, cost=16.71
+
+Frame 39
+src=0, sink=0, cost=15.77
+
+Frame 40
+src=0, sink=0, cost=21.73
+src=0, sink=1, cost=664.04
+
+Frame 41
+src=0, sink=0, cost=684.78
+src=0, sink=1, cost=10.38
+
+Frame 42
+src=0, sink=0, cost=696.73
+src=0, sink=1, cost=18.63
+
+Frame 43
+src=0, sink=0, cost=710.70
+src=0, sink=1, cost=23.11
+
+Frame 44
+src=0, sink=0, cost=717.61
+src=0, sink=1, cost=19.85
+
+Frame 45
+src=0, sink=0, cost=723.95
+src=0, sink=1, cost=25.77
+
+Frame 46
+src=0, sink=0, cost=728.23
+src=0, sink=1, cost=22.54
+
+Frame 47
+src=0, sink=0, cost=740.84
+src=0, sink=1, cost=23.00
+src=0, sink=2, cost=676.97
+
+Frame 48
+src=0, sink=0, cost=742.93
+src=0, sink=1, cost=17.98
+
+Frame 49
+src=0, sink=0, cost=750.27
+src=0, sink=1, cost=18.10
+
+Frame 50
+src=0, sink=0, cost=753.62
+src=0, sink=1, cost=17.51
+
+Frame 51
+src=0, sink=0, cost=760.19
+src=0, sink=1, cost=21.39
+
+Frame 52
+src=0, sink=0, cost=12.34
+src=0, sink=1, cost=755.35
+
+Frame 53
+src=0, sink=0, cost=763.54
+src=0, sink=1, cost=9.42
+
+Frame 54
+src=0, sink=0, cost=770.72
+src=0, sink=1, cost=15.20
+
+Frame 55
+src=0, sink=0, cost=772.08
+src=0, sink=1, cost=12.27
+
+Frame 56
+src=0, sink=0, cost=17.90
+src=0, sink=1, cost=170.16
+
+Frame 57
+src=0, sink=0, cost=11.31
+src=0, sink=1, cost=163.71
+
+Frame 58
+src=0, sink=0, cost=16.01
+src=0, sink=1, cost=164.24
+
+Frame 59
+src=0, sink=0, cost=14.58
+src=0, sink=1, cost=158.63
+
+Frame 60
+src=0, sink=0, cost=15.16
+src=0, sink=1, cost=157.05
+
+Frame 61
+src=0, sink=0, cost=16.93
+src=0, sink=1, cost=158.39
+
+Frame 62
+src=0, sink=0, cost=21.76
+src=0, sink=1, cost=148.22
+
+Frame 63
+src=0, sink=0, cost=20.80
+
+Frame 64
+src=0, sink=0, cost=17.31
+
+Frame 65
+src=0, sink=0, cost=30.25
+
+Frame 66
+src=0, sink=0, cost=27.30
+
+Frame 67
+src=0, sink=0, cost=28.71
+
+Frame 68
+src=0, sink=0, cost=35.50
+
+Frame 69
+src=0, sink=0, cost=27.60
+
+Frame 70
+src=0, sink=0, cost=38.69
+
+Frame 71
+src=0, sink=0, cost=33.14
+src=1, sink=0, cost=63.74
+
+Frame 72
+src=0, sink=0, cost=41.24
+src=0, sink=1, cost=653.49
+
+Frame 73
+src=0, sink=0, cost=45.03
+src=0, sink=1, cost=654.40
+src=0, sink=2, cost=70.33
+
+Frame 74
+src=0, sink=0, cost=47.76
+src=0, sink=1, cost=653.93
+
+Frame 75
+src=0, sink=0, cost=42.60
+src=0, sink=1, cost=639.55
+
+Frame 76
+src=0, sink=0, cost=33.58
+src=0, sink=1, cost=637.63
+
+Frame 77
+src=0, sink=0, cost=30.02
+
+Frame 78
+src=0, sink=0, cost=20.74
+
+Frame 79
+src=0, sink=0, cost=18.33
+
+Frame 80
+src=0, sink=0, cost=24.01
+
+Frame 81
+src=0, sink=0, cost=18.30
+
+Frame 82
+src=0, sink=0, cost=13.82
+
+Frame 83
+src=0, sink=0, cost=16.43
+
+Frame 84
+src=0, sink=0, cost=12.41
+
+Frame 85
+src=0, sink=0, cost=15.07
+
+Frame 86
+src=0, sink=0, cost=15.96
+
+Frame 87
+src=0, sink=0, cost=8.45
+
+Frame 88
+src=0, sink=0, cost=18.35
+
+Frame 89
+src=0, sink=0, cost=15.77
+
+Frame 90
+src=0, sink=0, cost=17.92
+
+Frame 91
+src=0, sink=0, cost=14.94
+
+Frame 92
+src=0, sink=0, cost=21.53
+
+Frame 93
+src=0, sink=0, cost=25.46
+
+Frame 94
+src=0, sink=0, cost=27.88
+
+Frame 95
+src=0, sink=0, cost=23.60
+
+Frame 96
+src=0, sink=0, cost=0.00
+
+Frame 97
+src=0, sink=0, cost=26.40
+
+Frame 98
+src=0, sink=0, cost=7.25
+
+Frame 99
+src=0, sink=0, cost=27.75
+
+Frame 100
+src=0, sink=0, cost=19.87
+
+Frame 101
+src=0, sink=0, cost=17.05
+
+Frame 102
+src=0, sink=0, cost=21.61
+
+Frame 103
+src=0, sink=0, cost=18.80
+
+Frame 104
+src=0, sink=0, cost=12.37
+
+Frame 105
+src=0, sink=0, cost=12.32
+
+Frame 106
+src=0, sink=0, cost=14.10
+
+Frame 107
+src=0, sink=0, cost=15.75
+
+Frame 108
+src=0, sink=0, cost=17.42
+
+Frame 109
+src=0, sink=0, cost=18.01
+
+Frame 110
+src=0, sink=0, cost=24.29
+
+Frame 111
+src=0, sink=0, cost=21.65
+
+Frame 112
+src=0, sink=0, cost=25.55
+
+Frame 113
+src=0, sink=0, cost=16.57
+
+Frame 114
+src=0, sink=0, cost=13.24
+
+Frame 115
+src=0, sink=0, cost=17.87
+
+Frame 116
+src=0, sink=0, cost=15.05
+
+Frame 117
+src=0, sink=0, cost=20.88
+
+Frame 118
+src=0, sink=0, cost=21.31
+
+Frame 119
+src=0, sink=0, cost=15.44
+
+Frame 120
+src=0, sink=0, cost=10.34
+
+Frame 121
+src=0, sink=0, cost=20.18
+
+Frame 122
+src=0, sink=0, cost=24.67
+
+Frame 123
+src=0, sink=0, cost=22.63
+
+Frame 124
+src=0, sink=0, cost=15.51
+
+Frame 125
+src=0, sink=0, cost=14.13
+
+Frame 126
+src=0, sink=0, cost=13.48
+
+Frame 127
+
+Frame 128
+src=0, sink=0, cost=0.00
+
+Frame 129
+src=0, sink=0, cost=19.44
+
+Frame 130
+src=0, sink=0, cost=18.34
+
+Frame 131
+src=0, sink=0, cost=19.27
+
+Frame 132
+src=0, sink=0, cost=21.19
+
+Frame 133
+
+Frame 134
+src=0, sink=0, cost=0.00
+
+Frame 135
+src=0, sink=0, cost=13.13
+
+Frame 136
+src=0, sink=0, cost=1055.95
+
+Frame 137
+src=0, sink=0, cost=15.54
+
+Frame 138
+src=0, sink=0, cost=9.56
+
+Frame 139
+src=0, sink=0, cost=11.29
+
+Frame 140
+src=0, sink=0, cost=13.74
+
+Frame 141
+src=0, sink=0, cost=8.09
+
+Frame 142
+src=0, sink=0, cost=8.78
+
+Frame 143
+src=0, sink=0, cost=12.45
+
+Frame 144
+
+Frame 145
+
+Frame 146
+
+Frame 147
+
+Frame 148
+
+Frame 149
+
+Frame 150
+
+Frame 151
+
+Frame 152
+
+Frame 153
+
+Frame 154
+
+Frame 155
+
+Frame 156
+
+Frame 157
+
+Frame 158
+
+Frame 159
+
+Frame 160
+
+Frame 161
+
+Frame 162
+
+Frame 163
+
+Frame 164
+
+Frame 165
+
+Frame 166
+
+Frame 167
+
+Frame 168
+
+Frame 169
+
+Frame 170
+
+Frame 171
+
+Frame 172
+
+Frame 173
+
+Frame 174
+
+Frame 175
+
+Frame 176
+
+Frame 177
+
+Frame 178
+
+Frame 179
+
+Frame 180
+
+Frame 181
+
+Frame 182
+
+Frame 183
+
+Frame 184
+
+Frame 185
+
+Frame 186
+
+Frame 187
+
+Frame 188
+
+Frame 189
+
+Frame 190
+
+Frame 191
+
+Frame 192
+
+Frame 193
+
+Frame 194
+
+Frame 195
+
+Frame 196
+
+Frame 197
+
+Frame 198
+
+Frame 199
+
+Frame 200
+
+Frame 201
+
+Frame 202
+
+Frame 203
+
+Frame 204
+
+Frame 205
+
+Frame 206
+
+Frame 207
+
+Frame 208
+
+Frame 209
+
+Frame 210
+
+Frame 211
+
+Frame 212
+
+Frame 213
+
+Frame 214
+
+Frame 215
+
+Frame 216
+
+Frame 217
+
+Frame 218
+
+Frame 219
+
+Frame 220
+
+Frame 221
+
+Frame 222
+
+Frame 223
+
+Frame 224
+
+Frame 225
+
+Frame 226
+
+Frame 227
+
+Frame 228
+
+Frame 229
+
+Frame 230
+
+Frame 231
+
+Frame 232
+
+Frame 233
+
+Frame 234
+
+Frame 235
+
+Frame 236
+
+Frame 237
+
+Frame 238
+
+Frame 239
+
+Frame 240
+
+Frame 241
+
+Frame 242
+
+Frame 243
+
+Frame 244
+
+Frame 245
+
+Frame 246
+
+Frame 247
+
+Frame 248
+
+Frame 249
+
+Frame 250
+
+Frame 251
+
+Frame 252
+
+Frame 253
+
+Frame 254
+
+Frame 255
+
+Frame 256
+
+Frame 257
+
+Frame 258
+
+Frame 259
+
+Frame 260
+
+Frame 261
+
+Frame 262
+
+Frame 263
+
+Frame 264
+
+Frame 265
+
+Frame 266
+
+Frame 267
+
+Frame 268
+
+Frame 269
+
+Frame 270
+
+Frame 271
+
+Frame 272
+
+Frame 273
+
+Frame 274
+
+Frame 275
+
+Frame 276
+
+Frame 277
+
+Frame 278
+
+Frame 279
+
+Frame 280
+
+Frame 281
+
+Frame 282
+
+Frame 283
+
+Frame 284
+
+Frame 285
+
+Frame 286
+
+Frame 287
+
+Frame 288
+
+Frame 289
+
+Frame 290
+
+Frame 291
+
+Frame 292
+
+Frame 293
+
+Frame 294
+
+Frame 295
+
+Frame 296
+
+Frame 297
+
+Frame 298
+
+Frame 299
+
+Frame 300
+
+Frame 301
+
+Frame 302
+
+Frame 303
+
+Frame 304
+
+Frame 305
+
+Frame 306
+
+Frame 307
+
+Frame 308
+
+Frame 309
+
+Frame 310
+
+Frame 311
+
+Frame 312
+
+Frame 313
+
+Frame 314
+
+Frame 315
+
+Frame 316
+
+Frame 317
+
+Frame 318
+
+Frame 319
+
+Frame 320
+
+Frame 321
+
+Frame 322
+
+Frame 323
+
+Frame 324
+
+Frame 325
+
+Frame 326
+
+Frame 327
+
+Frame 328
+
+Frame 329
+
+Frame 330
+
+Frame 331
+
+Frame 332
+
+Frame 333
+
+Frame 334
+
+Frame 335
+
+Frame 336
+
+Frame 337
+
+Frame 338
+
+Frame 339
+
+Frame 340
+
+Frame 341
+
+Frame 342
+
+Frame 343
+
+Frame 344
+
+Frame 345
+
+Frame 346
+
+Frame 347
+
+Frame 348
+
+Frame 349
+
+Frame 350
+
+Frame 351
+
+Frame 352
+
+Frame 353
+
+Frame 354
+
+Frame 355
+
+Frame 356
+
+Frame 357
+
+Frame 358
+
+Frame 359
+
+Frame 360
+
+Frame 361
+
+Frame 362
+
+Frame 363
+
+Frame 364
+
+Frame 365
+
+Frame 366
+
+Frame 367
+
+Frame 368
+
+Frame 369
+
+Frame 370
+
+Frame 371
+
+Frame 372
+
+Frame 373
+
+Frame 374
+
+Frame 375
+
+Frame 376
+
+Frame 377
+
+Frame 378
+
+Frame 379
+
+Frame 380
+
+Frame 381
+
+Frame 382
+
+Frame 383
+
+Frame 384
+
+Frame 385
+
+Frame 386
+
+Frame 387
+
+Frame 388
+
+Frame 389
+
+Frame 390
+
+Frame 391
+
+Frame 392
+
+Frame 393
+
+Frame 394
+
+Frame 395
+
+Frame 396
+
+Frame 397
+
+Frame 398
+
+Frame 399
+
+Frame 400
+
+Frame 401
+
+Frame 402
+
+Frame 403
+
+Frame 404
+
+Frame 405
+
+Frame 406
+
+Frame 407
+
+Frame 408
+
+Frame 409
+
+Frame 410
+
+Frame 411
+
+Frame 412
+
+Frame 413
+
+Frame 414
+
+Frame 415
+
+Frame 416
+
+Frame 417
+
+Frame 418
+
+Frame 419
+
+Frame 420
+
+Frame 421
+
+Frame 422
+
+Frame 423
+
+Frame 424
+
+Frame 425
+
+Frame 426
+
+Frame 427
+
+Frame 428
+
+Frame 429
+
+Frame 430
+
+Frame 431
+
+Frame 432
+
+Frame 433
+
+Frame 434
+
+Frame 435
+
+Frame 436
+
+Frame 437
+
+Frame 438
+
+Frame 439
+
+Frame 440
+
+Frame 441
+
+Frame 442
+
+Frame 443
+
+Frame 444
+
+Frame 445
+
+Frame 446
+
+Frame 447
+
+Frame 448
+
+Frame 449
+
+Frame 450
+
+Frame 451
+
+Frame 452
+
+Frame 453
+
+Frame 454
+
+Frame 455
+
+Frame 456
+
+Frame 457
+
+Frame 458
+
+Frame 459
+
+Frame 460
+
+Frame 461
+
+Frame 462
+
+Frame 463
+
+Frame 464
+
+Frame 465
+
+Frame 466
+
+Frame 467
+
+Frame 468
+
+Frame 469
+
+Frame 470
+
+Frame 471
+
+Frame 472
+
+Frame 473
+
+Frame 474
+
+Frame 475
+
+Frame 476
+
+Frame 477
+
+Frame 478
+
+Frame 479
+
+Frame 480
+
+Frame 481
+
+Frame 482
+
+Frame 483
+
+Frame 484
+
+Frame 485
+
+Frame 486
+
+Frame 487
+
+Frame 488
+
+Frame 489
+
+Frame 490
+
+Frame 491
+
+Frame 492
+
+Frame 493
+
+Frame 494
+
+Frame 495
+
+Frame 496
+
+Frame 497
+
+Frame 498
+
+Frame 499
+
+Frame 500
+
+Frame 501
+
+Frame 502
+
+Frame 503
+
+Frame 504
+
+Frame 505
+
+Frame 506
+
+Frame 507
+
+Frame 508
+
+Frame 509
+
+Frame 510
+
+Frame 511
+
+Frame 512
+
+Frame 513
+src=0, sink=0, cost=0.00
+
+Frame 514
+src=0, sink=0, cost=51.63
+
+Frame 515
+
+Frame 516
+
+Frame 517
+src=0, sink=0, cost=0.00
+
+Frame 518
+
+Frame 519
+
+Frame 520
+src=0, sink=0, cost=0.00
+
+Frame 521
+src=0, sink=0, cost=18.05
+
+Frame 522
+src=0, sink=0, cost=51.98
+
+Frame 523
+src=0, sink=0, cost=38.29
+
+Frame 524
+
+Frame 525
+
+Frame 526
+src=0, sink=0, cost=0.00
+
+Frame 527
+src=0, sink=0, cost=53.16
+
+Frame 528
+
+Frame 529
+
+Frame 530
+
+Frame 531
+
+Frame 532
+
+Frame 533
+
+Frame 534
+
+Frame 535
+
+Frame 536
+
+Frame 537
+
+Frame 538
+
+Frame 539
+
+Frame 540
+
+Frame 541
+
+Frame 542
+
+Frame 543
+
+Frame 544
+
+Frame 545
+
+Frame 546
+
+Frame 547
+
+Frame 548
+
+Frame 549
+
+Frame 550
+
+Frame 551
+
+Frame 552
+
+Frame 553
+
+Frame 554
+
+Frame 555
+
+Frame 556
+
+Frame 557
+
+Frame 558
+
+Frame 559
+
+Frame 560
+
+Frame 561
+
+Frame 562
+
+Frame 563
+
+Frame 564
+
+Frame 565
+
+Frame 566
+
+Frame 567
+
+Frame 568
+
+Frame 569
+
+Frame 570
+
+Frame 571
+
+Frame 572
+
+Frame 573
+
+Frame 574
+
+Frame 575
+
+Frame 576
+
+Frame 577
+
+Frame 578
+
+Frame 579
+
+Frame 580
+
+Frame 581
+
+Frame 582
+
+Frame 583
+
+Frame 584
+
+Frame 585
+
+Frame 586
+
+Frame 587
+
+Frame 588
+
+Frame 589
+
+Frame 590
+
+Frame 591
+
+Frame 592
+
+Frame 593
+
+Frame 594
+
+Frame 595
+
+Frame 596
+
+Frame 597
+
+Frame 598
+
+Frame 599
+
+Frame 600
+
+Frame 601
+
+Frame 602
+
+Frame 603
+
+Frame 604
+
+Frame 605
+
+Frame 606
+
+Frame 607
+
+Frame 608
+
+Frame 609
+
+Frame 610
+
+Frame 611
+
+Frame 612
+
+Frame 613
+
+Frame 614
+
+Frame 615
+
+Frame 616
+
+Frame 617
+
+Frame 618
+
+Frame 619
+
+Frame 620
+
+Frame 621
+
+Frame 622
+
+Frame 623
+
+Frame 624
+
+Frame 625
+
+Frame 626
+
+Frame 627
+
+Frame 628
+
+Frame 629
+
+Frame 630
+
+Frame 631
+
+Frame 632
+
+Frame 633
+
+Frame 634
+
+Frame 635
+
+Frame 636
+
+Frame 637
+
+Frame 638
+
+Frame 639
+
+Frame 640
+
+Frame 641
+
+Frame 642
+
+Frame 643
+
+Frame 644
+
+Frame 645
+
+Frame 646
+
+Frame 647
+
+Frame 648
+
+Frame 649
+
+Frame 650
+
+Frame 651
+
+Frame 652
+
+Frame 653
+
+Frame 654
+
+Frame 655
+
+Frame 656
+
+Frame 657
+
+Frame 658
+
+Frame 659
+
+Frame 660
+
+Frame 661
+
+Frame 662
+
+Frame 663
+
+Frame 664
+
+Frame 665
+
+Frame 666
+
+Frame 667
+
+Frame 668
+
+Frame 669
+
+Frame 670
+
+Frame 671
+
+Frame 672
+src=0, sink=0, cost=0.00
+
+Frame 673
+src=0, sink=0, cost=36.44
+
+Frame 674
+
+Frame 675
+src=0, sink=0, cost=0.00
+
+Frame 676
+
+Frame 677
+
+Frame 678
+src=0, sink=0, cost=0.00
+
+Frame 679
+src=0, sink=0, cost=26.21
+
+Frame 680
+src=0, sink=0, cost=7.78
+
+Frame 681
+src=0, sink=0, cost=33.44
+src=0, sink=1, cost=24.87
+
+Frame 682
+src=0, sink=0, cost=20.77
+src=0, sink=1, cost=55.13
+
+Frame 683
+src=0, sink=0, cost=13.22
+src=0, sink=1, cost=72.87
+
+Frame 684
+src=0, sink=0, cost=19.71
+
+Frame 685
+src=0, sink=0, cost=10.62
+
+Frame 686
+src=0, sink=0, cost=14.47
+
+Frame 687
+src=0, sink=0, cost=6.65
+
+Frame 688
+src=0, sink=0, cost=5.70
+
+Frame 689
+src=0, sink=0, cost=4.83
+
+Frame 690
+src=0, sink=0, cost=11.07
+
+Frame 691
+src=0, sink=0, cost=5.74
+
+Frame 692
+src=0, sink=0, cost=6.67
+
+Frame 693
+src=0, sink=0, cost=8.84
+
+Frame 694
+src=0, sink=0, cost=9.55
+
+Frame 695
+src=0, sink=0, cost=18.42
+
+Frame 696
+
+Frame 697
+
+Frame 698
+
+Frame 699
+
+Frame 700
+
+Frame 701
+
+Frame 702
+
+Frame 703
+
+Frame 704
+
+Frame 705
+
+Frame 706
+
+Frame 707
+
+Frame 708
+
+Frame 709
+
+Frame 710
+
+Frame 711
+
+Frame 712
+
+Frame 713
+
+Frame 714
+src=0, sink=0, cost=0.00
+
+Frame 715
+src=0, sink=0, cost=7.58
+
+Frame 716
+src=0, sink=0, cost=10.45
+
+Frame 717
+src=0, sink=0, cost=4.00
+
+Frame 718
+
+Frame 719
+
+Frame 720
+src=0, sink=0, cost=0.00
+
+Frame 721
+
+Frame 722
+
+Frame 723
+
+Frame 724
+
+Frame 725
+
+Frame 726
+
+Frame 727
+
+Frame 728
+
+Frame 729
+
+Frame 730
+
+Frame 731
+
+Frame 732
+
+Frame 733
+
+Frame 734
+
+Frame 735
+
+Frame 736
+
+Frame 737
+
+Frame 738
+
+Frame 739
+
+Frame 740
+
+Frame 741
+
+Frame 742
+
+Frame 743
+
+Frame 744
+
+Frame 745
+
+Frame 746
+
+Frame 747
+
+Frame 748
+
+Frame 749
+
+Frame 750
+
+Frame 751
+
+Frame 752
+src=0, sink=0, cost=0.00
+
+Frame 753
+src=0, sink=0, cost=9.58
+
+Frame 754
+
+Frame 755
+
+Frame 756
+
+Frame 757
+
+Frame 758
+
+Frame 759
+
+Frame 760
+src=0, sink=0, cost=0.00
+
+Frame 761
+src=0, sink=0, cost=4.73
+
+Frame 762
+src=0, sink=0, cost=6.84
+
+Frame 763
+
+Frame 764
+
+Frame 765
+
+Frame 766
+
+Frame 767
+
+Frame 768
+
+Frame 769
+
+Frame 770
+
+Frame 771
+
+Frame 772
+
+Frame 773
+
+Frame 774
+
+Frame 775
+
+Frame 776
+
+Frame 777
+
+Frame 778
+
+Frame 779
+
+Frame 780
+
+Frame 781
+
+Frame 782
+
+Frame 783
+
+Frame 784
+
+Frame 785
+
+Frame 786
+
+Frame 787
+
+Frame 788
+
+Frame 789
+
+Frame 790
+
+Frame 791
+
+Frame 792
+
+Frame 793
+
+Frame 794
+
+Frame 795
+
+Frame 796
+
+Frame 797
+
+Frame 798
+
+Frame 799
+
+Frame 800
+src=0, sink=0, cost=0.00
+
+Frame 801
+src=0, sink=0, cost=5.96
+
+Frame 802
+src=0, sink=0, cost=3.95
+
+Frame 803
+
+Frame 804
+
+Frame 805
+
+Frame 806
+
+Frame 807
+
+Frame 808
+
+Frame 809
+
+Frame 810
+
+Frame 811
+
+Frame 812
+
+Frame 813
+
+Frame 814
+
+Frame 815
+
+Frame 816
+
+Frame 817
+
+Frame 818
+
+Frame 819
+
+Frame 820
+
+Frame 821
+
+Frame 822
+
+Frame 823
+
+Frame 824
+
+Frame 825
+
+Frame 826
+
+Frame 827
+
+Frame 828
+
+Frame 829
+
+Frame 830
+
+Frame 831
+
+Frame 832
+
+Frame 833
+
+Frame 834
+
+Frame 835
+
+Frame 836
+
+Frame 837
+
+Frame 838
+
+Frame 839
+
+Frame 840
+
+Frame 841
+
+Frame 842
+
+Frame 843
+
+Frame 844
+
+Frame 845
+
+Frame 846
+
+Frame 847
+
+Frame 848
+
+Frame 849
+
+Frame 850
+
+Frame 851
+
+Frame 852
+
+Frame 853
+
+Frame 854
+
+Frame 855
+
+Frame 856
+
+Frame 857
+
+Frame 858
+
+Frame 859
+
+Frame 860
+
+Frame 861
+
+Frame 862
+
+Frame 863
+
+Frame 864
+
+Frame 865
+
+Frame 866
+
+Frame 867
+
+Frame 868
+
+Frame 869
+
+Frame 870
+
+Frame 871
+
+Frame 872
+
+Frame 873
+
+Frame 874
+
+Frame 875
+
+Frame 876
+
+Frame 877
+
+Frame 878
+
+Frame 879
+
+Frame 880
+
+Frame 881
+
+Frame 882
+
+Frame 883
+
+Frame 884
+
+Frame 885
+
+Frame 886
+
+Frame 887
+
+Frame 888
+
+Frame 889
+
+Frame 890
+
+Frame 891
+
+Frame 892
+
+Frame 893
+
+Frame 894
+
+Frame 895
+
+Frame 896
+
+Frame 897
+
+Frame 898
+
+Frame 899
+
+Frame 900
+
+Frame 901
+
+Frame 902
+
+Frame 903
+
+Frame 904
+
+Frame 905
+
+Frame 906
+
+Frame 907
+
+Frame 908
+
+Frame 909
+
+Frame 910
+
+Frame 911
+
+Frame 912
+
+Frame 913
+
+Frame 914
+
+Frame 915
+
+Frame 916
+
+Frame 917
+
+Frame 918
+
+Frame 919
+
+Frame 920
+
+Frame 921
+
+Frame 922
+
+Frame 923
+
+Frame 924
+
+Frame 925
+src=0, sink=0, cost=0.00
+
+Frame 926
+src=0, sink=0, cost=28.61
+
+Frame 927
+src=0, sink=0, cost=14.31
+
+Frame 928
+
+Frame 929
+
+Frame 930
+
+Frame 931
+
+Frame 932
+
+Frame 933
+
+Frame 934
+
+Frame 935
+
+Frame 936
+
+Frame 937
+
+Frame 938
+
+Frame 939
+
+Frame 940
+
+Frame 941
+
+Frame 942
+
+Frame 943
+
+Frame 944
+
+Frame 945
+
+Frame 946
+
+Frame 947
+
+Frame 948
+
+Frame 949
+
+Frame 950
+
+Frame 951
+
+Frame 952
+
+Frame 953
+
+Frame 954
+
+Frame 955
+
+Frame 956
+
+Frame 957
+
+Frame 958
+
+Frame 959
+
+Frame 960
+
+Frame 961
+
+Frame 962
+
+Frame 963
+
+Frame 964
+
+Frame 965
+
+Frame 966
+
+Frame 967
+
+Frame 968
+
+Frame 969
+
+Frame 970
+
+Frame 971
+
+Frame 972
+
+Frame 973
+
+Frame 974
+
+Frame 975
+
+Frame 976
+
+Frame 977
+
+Frame 978
+
+Frame 979
+
+Frame 980
+
+Frame 981
+
+Frame 982
+
+Frame 983
+
+Frame 984
+
+Frame 985
+
+Frame 986
+
+Frame 987
+
+Frame 988
+
+Frame 989
+
+Frame 990
+
+Frame 991
+
+Frame 992
+
+Frame 993
+
+Frame 994
+
+Frame 995
+
+Frame 996
+
+Frame 997
+
+Frame 998
+
+Frame 999
+
+Frame 1000
+
+Frame 1001
+
+Frame 1002
+
+Frame 1003
+
+Frame 1004
+
+Frame 1005
+
+Frame 1006
+
+Frame 1007
+
+Frame 1008
+
+Frame 1009
+
+Frame 1010
+
+Frame 1011
+
+Frame 1012
+
+Frame 1013
+
+Frame 1014
+
+Frame 1015
+
+Frame 1016
+
+Frame 1017
+
+Frame 1018
+
+Frame 1019
+
+Frame 1020
+
+Frame 1021
+
+Frame 1022
+
+Frame 1023
+
+Frame 1024
+
+Frame 1025
+
+Frame 1026
+
+Frame 1027
+
+Frame 1028
+
+Frame 1029
+
+Frame 1030
+
+Frame 1031
+
+Frame 1032
+
+Frame 1033
+
+Frame 1034
+
+Frame 1035
+
+Frame 1036
+
+Frame 1037
+
+Frame 1038
+
+Frame 1039
+
+Frame 1040
+
+Frame 1041
+
+Frame 1042
+
+Frame 1043
+
+Frame 1044
+
+Frame 1045
+
+Frame 1046
+
+Frame 1047
+
+Frame 1048
+
+Frame 1049
+
+Frame 1050
+
+Frame 1051
+
+Frame 1052
+
+Frame 1053
+
+Frame 1054
+
+Frame 1055
+
+Frame 1056
+
+Frame 1057
+
+Frame 1058
+
+Frame 1059
+
+Frame 1060
+
+Frame 1061
+
+Frame 1062
+
+Frame 1063
+
+Frame 1064
+
+Frame 1065
+
+Frame 1066
+
+Frame 1067
+
+Frame 1068
+
+Frame 1069
+
+Frame 1070
+
+Frame 1071
+
+Frame 1072
+
+Frame 1073
+
+Frame 1074
+
+Frame 1075
+
+Frame 1076
+
+Frame 1077
+
+Frame 1078
+
+Frame 1079
+
+Frame 1080
+
+Frame 1081
+
+Frame 1082
+
+Frame 1083
+
+Frame 1084
+
+Frame 1085
+
+Frame 1086
+
+Frame 1087
+
+Frame 1088
+
+Frame 1089
+
+Frame 1090
+
+Frame 1091
+
+Frame 1092
+
+Frame 1093
+
+Frame 1094
+
+Frame 1095
+
+Frame 1096
+
+Frame 1097
+
+Frame 1098
+
+Frame 1099
+
+Frame 1100
+
+Frame 1101
+
+Frame 1102
+
+Frame 1103
+
+Frame 1104
+
+Frame 1105
+
+Frame 1106
+
+Frame 1107
+
+Frame 1108
+
+Frame 1109
+
+Frame 1110
+
+Frame 1111
+
+Frame 1112
+
+Frame 1113
+
+Frame 1114
+
+Frame 1115
+
+Frame 1116
+
+Frame 1117
+
+Frame 1118
+
+Frame 1119
+
+Frame 1120
+
+Frame 1121
+
+Frame 1122
+
+Frame 1123
+
+Frame 1124
+
+Frame 1125
+
+Frame 1126
+
+Frame 1127
+
+Frame 1128
+
+Frame 1129
+
+Frame 1130
+
+Frame 1131
+
+Frame 1132
+
+Frame 1133
+
+Frame 1134
+
+Frame 1135
+
+Frame 1136
+
+Frame 1137
+
+Frame 1138
+
+Frame 1139
+
+Frame 1140
+
+Frame 1141
+
+Frame 1142
+
+Frame 1143
+
+Frame 1144
+
+Frame 1145
+
+Frame 1146
+
+Frame 1147
+
+Frame 1148
+
+Frame 1149
+
+Frame 1150
+
+Frame 1151
+
+Frame 1152
+
+Frame 1153
+
+Frame 1154
+
+Frame 1155
+
+Frame 1156
+
+Frame 1157
+
+Frame 1158
+
+Frame 1159
+
+Frame 1160
+
+Frame 1161
+
+Frame 1162
+
+Frame 1163
+
+Frame 1164
+
+Frame 1165
+
+Frame 1166
+
+Frame 1167
+
+Frame 1168
+
+Frame 1169
+
+Frame 1170
+
+Frame 1171
+
+Frame 1172
+
+Frame 1173
+
+Frame 1174
+
+Frame 1175
+
+Frame 1176
+
+Frame 1177
+
+Frame 1178
+
+Frame 1179
+
+Frame 1180
+
+Frame 1181
+
+Frame 1182
+
+Frame 1183
+
+Frame 1184
+
+Frame 1185
+
+Frame 1186
+
+Frame 1187
+
+Frame 1188
+
+Frame 1189
+
+Frame 1190
+
+Frame 1191
+
+Frame 1192
+
+Frame 1193
+
+Frame 1194
+
+Frame 1195
+
+Frame 1196
+
+Frame 1197
+
+Frame 1198
+
+Frame 1199
+
+Frame 1200
+
+Frame 1201
+
+Frame 1202
+
+Frame 1203
+
+Frame 1204
+
+Frame 1205
+
+Frame 1206
+
+Frame 1207
+
+Frame 1208
+
+Frame 1209
+
+Frame 1210
+
+Frame 1211
+
+Frame 1212
+
+Frame 1213
+
+Frame 1214
+
+Frame 1215
+
+Frame 1216
+
+Frame 1217
+
+Frame 1218
+
+Frame 1219
+
+Frame 1220
+
+Frame 1221
+
+Frame 1222
+
+Frame 1223
+
+Frame 1224
+
+Frame 1225
+
+Frame 1226
+
+Frame 1227
+
+Frame 1228
+
+Frame 1229
+
+Frame 1230
+
+Frame 1231
+
+Frame 1232
+
+Frame 1233
+
+Frame 1234
+
+Frame 1235
+src=0, sink=0, cost=0.00
+
+Frame 1236
+src=0, sink=0, cost=59.36
+
+Frame 1237
+src=0, sink=0, cost=35.48
+
+Frame 1238
+src=0, sink=0, cost=41.97
+
+Frame 1239
+
+Frame 1240
+src=0, sink=0, cost=0.00
+
+Frame 1241
+
+Frame 1242
+
+Frame 1243
+
+Frame 1244
+
+Frame 1245
+
+Frame 1246
+
+Frame 1247
+
+Frame 1248
+src=0, sink=0, cost=0.00
+
+Frame 1249
+src=0, sink=0, cost=28.11
+
+Frame 1250
+src=0, sink=0, cost=31.89
+
+Frame 1251
+src=0, sink=0, cost=22.16
+
+Frame 1252
+src=0, sink=0, cost=20.22
+
+Frame 1253
+
+Frame 1254
+
+Frame 1255
+src=0, sink=0, cost=0.00
+
+Frame 1256
+
+Frame 1257
+
+Frame 1258
+
+Frame 1259
+
+Frame 1260
+
+Frame 1261
+
+Frame 1262
+
+Frame 1263
+
+Frame 1264
+
+Frame 1265
+
+Frame 1266
+
+Frame 1267
+
+Frame 1268
+
+Frame 1269
+
+Frame 1270
+
+Frame 1271
+
+Frame 1272
+
+Frame 1273
+
+Frame 1274
+
+Frame 1275
+
+Frame 1276
+
+Frame 1277
+src=0, sink=0, cost=0.00
+
+Frame 1278
+src=0, sink=0, cost=22.12
+
+Frame 1279
+src=0, sink=0, cost=31.13
+src=0, sink=1, cost=332.95
+
+Frame 1280
+src=0, sink=0, cost=34.03
+
+Frame 1281
+src=0, sink=0, cost=36.71
+
+Frame 1282
+src=0, sink=0, cost=34.14
+
+Frame 1283
+src=0, sink=0, cost=41.78
+
+Frame 1284
+src=0, sink=0, cost=44.41
+
+Frame 1285
+src=0, sink=0, cost=40.26
+
+Frame 1286
+src=0, sink=0, cost=49.17
+
+Frame 1287
+src=0, sink=0, cost=45.53
+
+Frame 1288
+src=0, sink=0, cost=50.35
+
+Frame 1289
+src=0, sink=0, cost=43.56
+
+Frame 1290
+src=0, sink=0, cost=71.86
+
+Frame 1291
+src=0, sink=0, cost=42.76
+
+Frame 1292
+src=0, sink=0, cost=11.40
+
+Frame 1293
+src=0, sink=0, cost=25.51
+
+Frame 1294
+src=0, sink=0, cost=21.49
+src=0, sink=1, cost=526.99
+
+Frame 1295
+src=0, sink=0, cost=540.69
+
+Frame 1296
+
+Frame 1297
+
+Frame 1298
+
+Frame 1299
+
+Frame 1300
+
+Frame 1301
+
+Frame 1302
+
+Frame 1303
+
+Frame 1304
+
+Frame 1305
+
+Frame 1306
+
+Frame 1307
+
+Frame 1308
+
+Frame 1309
+
+Frame 1310
+
+Frame 1311
+
+Frame 1312
+src=0, sink=0, cost=0.00
+
+Frame 1313
+src=0, sink=0, cost=27.35
+
+Frame 1314
+src=0, sink=0, cost=23.95
+
+Frame 1315
+
+Frame 1316
+
+Frame 1317
+
+Frame 1318
+
+Frame 1319
+
+Frame 1320
+
+Frame 1321
+
+Frame 1322
+
+Frame 1323
+
+Frame 1324
+
+Frame 1325
+
+Frame 1326
+
+Frame 1327
+
+Frame 1328
+
+Frame 1329
+
+Frame 1330
+
+Frame 1331
+
+Frame 1332
+
+Frame 1333
+
+Frame 1334
+
+Frame 1335
+
+Frame 1336
+
+Frame 1337
+
+Frame 1338
+
+Frame 1339
+
+Frame 1340
+
+Frame 1341
+
+Frame 1342
+
+Frame 1343
+
+Frame 1344
+
+Frame 1345
+
+Frame 1346
+
+Frame 1347
+
+Frame 1348
+
+Frame 1349
+
+Frame 1350
+
+Frame 1351
+
+Frame 1352
+
+Frame 1353
+
+Frame 1354
+
+Frame 1355
+
+Frame 1356
+
+Frame 1357
+
+Frame 1358
+
+Frame 1359
+
+Frame 1360
+
+Frame 1361
+
+Frame 1362
+
+Frame 1363
+
+Frame 1364
+
+Frame 1365
+
+Frame 1366
+
+Frame 1367
+
+Frame 1368
+
+Frame 1369
+
+Frame 1370
+
+Frame 1371
+
+Frame 1372
+
+Frame 1373
+
+Frame 1374
+
+Frame 1375
+
+Frame 1376
+
+Frame 1377
+
+Frame 1378
+
+Frame 1379
+
+Frame 1380
+
+Frame 1381
+
+Frame 1382
+
+Frame 1383
+
+Frame 1384
+
+Frame 1385
+
+Frame 1386
+
+Frame 1387
+
+Frame 1388
+
+Frame 1389
+
+Frame 1390
+
+Frame 1391
+
+Frame 1392
+
+Frame 1393
+
+Frame 1394
+
+Frame 1395
+
+Frame 1396
+
+Frame 1397
+
+Frame 1398
+
+Frame 1399
+
+Frame 1400
+
+Frame 1401
+
+Frame 1402
+
+Frame 1403
+
+Frame 1404
+
+Frame 1405
+
+Frame 1406
+
+Frame 1407
+
+Frame 1408
+
+Frame 1409
+
+Frame 1410
+
+Frame 1411
+
+Frame 1412
+
+Frame 1413
+
+Frame 1414
+
+Frame 1415
+
+Frame 1416
+
+Frame 1417
+
+Frame 1418
+
+Frame 1419
+
+Frame 1420
+
+Frame 1421
+
+Frame 1422
+
+Frame 1423
+
+Frame 1424
+
+Frame 1425
+
+Frame 1426
+
+Frame 1427
+
+Frame 1428
+
+Frame 1429
+
+Frame 1430
+
+Frame 1431
+
+Frame 1432
+
+Frame 1433
+
+Frame 1434
+
+Frame 1435
+
+Frame 1436
+
+Frame 1437
+
+Frame 1438
+
+Frame 1439
+
+Frame 1440
+
+Frame 1441
+
+Frame 1442
+
+Frame 1443
+
+Frame 1444
+
+Frame 1445
+
+Frame 1446
+
+Frame 1447
+
+Frame 1448
+
+Frame 1449
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+src=0, sink=2, cost=0.00
+src=0, sink=3, cost=0.00
+src=1, sink=0, cost=0.00
+src=1, sink=1, cost=0.00
+src=1, sink=2, cost=0.00
+src=1, sink=3, cost=0.00
+
+Frame 1450
+src=0, sink=0, cost=135.97
+src=1, sink=0, cost=180.71
+
+Frame 1451
+
+Frame 1452
+src=0, sink=0, cost=0.00
+
+Frame 1453
+src=0, sink=0, cost=126.57
+src=0, sink=1, cost=483.81
+
+Frame 1454
+src=0, sink=0, cost=166.96
+
+Frame 1455
+src=0, sink=0, cost=50.81
+
+Frame 1456
+
+Frame 1457
+src=0, sink=0, cost=0.00
+src=1, sink=0, cost=0.00
+src=2, sink=0, cost=0.00
+
+Frame 1458
+src=0, sink=0, cost=79.94
+
+Frame 1459
+src=0, sink=0, cost=56.60
+
+Frame 1460
+src=0, sink=0, cost=50.70
+
+Frame 1461
+src=0, sink=0, cost=32.50
+
+Frame 1462
+src=0, sink=0, cost=28.77
+
+Frame 1463
+src=0, sink=0, cost=34.62
+
+Frame 1464
+src=0, sink=0, cost=29.23
+
+Frame 1465
+src=0, sink=0, cost=21.67
+
+Frame 1466
+src=0, sink=0, cost=22.28
+
+Frame 1467
+src=0, sink=0, cost=19.48
+
+Frame 1468
+src=0, sink=0, cost=14.74
+
+Frame 1469
+src=0, sink=0, cost=21.43
+
+Frame 1470
+src=0, sink=0, cost=19.68
+
+Frame 1471
+src=0, sink=0, cost=17.72
+
+Frame 1472
+src=0, sink=0, cost=12.91
+
+Frame 1473
+src=0, sink=0, cost=17.58
+
+Frame 1474
+src=0, sink=0, cost=10.11
+
+Frame 1475
+src=0, sink=0, cost=14.89
+
+Frame 1476
+src=0, sink=0, cost=18.56
+
+Frame 1477
+src=0, sink=0, cost=26.47
+
+Frame 1478
+src=0, sink=0, cost=17.23
+
+Frame 1479
+src=0, sink=0, cost=16.88
+src=0, sink=1, cost=60.20
+
+Frame 1480
+
+Frame 1481
+
+Frame 1482
+
+Frame 1483
+
+Frame 1484
+
+Frame 1485
+
+Frame 1486
+
+Frame 1487
+
+Frame 1488
+src=0, sink=0, cost=0.00
+
+Frame 1489
+src=0, sink=0, cost=8.95
+
+Frame 1490
+src=0, sink=0, cost=8.51
+
+Frame 1491
+
+Frame 1492
+
+Frame 1493
+
+Frame 1494
+src=0, sink=0, cost=0.00
+
+Frame 1495
+src=0, sink=0, cost=7.44
+
+Frame 1496
+
+Frame 1497
+src=0, sink=0, cost=0.00
+
+Frame 1498
+src=0, sink=0, cost=6.63
+
+Frame 1499
+src=0, sink=0, cost=6.63
+
+Frame 1500
+src=0, sink=0, cost=11.26
+
+Frame 1501
+src=0, sink=0, cost=19.29
+
+Frame 1502
+src=0, sink=0, cost=18.62
+
+Frame 1503
+src=0, sink=0, cost=20.08
+
+Frame 1504
+src=0, sink=0, cost=26.84
+
+Frame 1505
+src=0, sink=0, cost=26.85
+
+Frame 1506
+src=0, sink=0, cost=22.21
+
+Frame 1507
+src=0, sink=0, cost=40.00
+
+Frame 1508
+src=0, sink=0, cost=33.95
+
+Frame 1509
+src=0, sink=0, cost=49.67
+
+Frame 1510
+src=0, sink=0, cost=35.50
+
+Frame 1511
+src=0, sink=0, cost=46.86
+
+Frame 1512
+src=0, sink=0, cost=53.68
+
+Frame 1513
+src=0, sink=0, cost=68.69
+
+Frame 1514
+src=0, sink=0, cost=51.34
+src=0, sink=1, cost=70.90
+
+Frame 1515
+src=0, sink=0, cost=68.53
+
+Frame 1516
+src=0, sink=0, cost=70.76
+
+Frame 1517
+src=0, sink=0, cost=71.24
+
+Frame 1518
+src=0, sink=0, cost=81.37
+
+Frame 1519
+src=0, sink=0, cost=55.10
+
+Frame 1520
+src=0, sink=0, cost=8.53
+
+Frame 1521
+src=0, sink=0, cost=4.77
+
+Frame 1522
+src=0, sink=0, cost=5.70
+
+Frame 1523
+src=0, sink=0, cost=6.87
+
+Frame 1524
+src=0, sink=0, cost=11.62
+
+Frame 1525
+src=0, sink=0, cost=12.15
+
+Frame 1526
+src=0, sink=0, cost=16.03
+
+Frame 1527
+src=0, sink=0, cost=29.97
+
+Frame 1528
+src=0, sink=0, cost=28.32
+
+Frame 1529
+src=0, sink=0, cost=25.84
+
+Frame 1530
+src=0, sink=0, cost=22.94
+
+Frame 1531
+
+Frame 1532
+src=0, sink=0, cost=0.00
+
+Frame 1533
+src=0, sink=0, cost=96.13
+
+Frame 1534
+src=0, sink=0, cost=87.99
+
+Frame 1535
+src=0, sink=0, cost=64.11
+
+Frame 1536
+src=0, sink=0, cost=0.00
+
+Frame 1537
+src=0, sink=0, cost=74.62
+
+Frame 1538
+src=0, sink=0, cost=45.85
+
+Frame 1539
+src=0, sink=0, cost=38.03
+
+Frame 1540
+src=0, sink=0, cost=31.79
+
+Frame 1541
+src=0, sink=0, cost=28.33
+
+Frame 1542
+src=0, sink=0, cost=26.75
+
+Frame 1543
+src=0, sink=0, cost=19.10
+
+Frame 1544
+src=0, sink=0, cost=12.74
+src=1, sink=0, cost=498.29
+
+Frame 1545
+src=0, sink=0, cost=10.94
+
+Frame 1546
+src=0, sink=0, cost=12.66
+
+Frame 1547
+src=0, sink=0, cost=9.43
+
+Frame 1548
+src=0, sink=0, cost=5.64
+
+Frame 1549
+src=0, sink=0, cost=4.24
+
+Frame 1550
+src=0, sink=0, cost=0.00
+
+Frame 1551
+src=0, sink=0, cost=5.68
+
+Frame 1552
+src=0, sink=0, cost=6.60
+
+Frame 1553
+src=0, sink=0, cost=7.55
+
+Frame 1554
+src=0, sink=0, cost=10.41
+
+Frame 1555
+src=0, sink=0, cost=7.58
+
+Frame 1556
+src=0, sink=0, cost=7.99
+
+Frame 1557
+src=0, sink=0, cost=14.16
+
+Frame 1558
+src=0, sink=0, cost=11.33
+
+Frame 1559
+src=0, sink=0, cost=15.12
+
+Frame 1560
+src=0, sink=0, cost=2.85
+
+Frame 1561
+src=0, sink=0, cost=19.52
+
+Frame 1562
+
+Frame 1563
+
+Frame 1564
+
+Frame 1565
+src=0, sink=0, cost=0.00
+
+Frame 1566
+src=0, sink=0, cost=11.34
+
+Frame 1567
+src=0, sink=0, cost=8.49
+
+Frame 1568
+
+Frame 1569
+
+Frame 1570
+
+Frame 1571
+
+Frame 1572
+
+Frame 1573
+src=0, sink=0, cost=0.00
+
+Frame 1574
+src=0, sink=0, cost=13.24
+
+Frame 1575
+src=0, sink=0, cost=20.08
+
+Frame 1576
+src=0, sink=0, cost=19.14
+
+Frame 1577
+src=0, sink=0, cost=18.02
+
+Frame 1578
+src=0, sink=0, cost=17.01
+
+Frame 1579
+src=0, sink=0, cost=21.02
+
+Frame 1580
+src=0, sink=0, cost=18.86
+
+Frame 1581
+src=0, sink=0, cost=21.08
+
+Frame 1582
+src=0, sink=0, cost=24.56
+
+Frame 1583
+src=0, sink=0, cost=10.42
+
+Frame 1584
+src=0, sink=0, cost=8.72
+
+Frame 1585
+src=0, sink=0, cost=18.01
+
+Frame 1586
+src=0, sink=0, cost=15.51
+
+Frame 1587
+src=0, sink=0, cost=18.32
+
+Frame 1588
+src=0, sink=0, cost=16.84
+
+Frame 1589
+src=0, sink=0, cost=21.17
+
+Frame 1590
+src=0, sink=0, cost=4.68
+
+Frame 1591
+src=0, sink=0, cost=14.20
+
+Frame 1592
+src=0, sink=0, cost=15.18
+
+Frame 1593
+src=0, sink=0, cost=8.51
+
+Frame 1594
+src=0, sink=0, cost=10.38
+
+Frame 1595
+src=0, sink=0, cost=7.54
+
+Frame 1596
+src=0, sink=0, cost=11.32
+
+Frame 1597
+src=0, sink=0, cost=0.00
+
+Frame 1598
+src=0, sink=0, cost=7.57
+
+Frame 1599
+src=0, sink=0, cost=2.82
+
+Frame 1600
+src=0, sink=0, cost=4.76
+
+Frame 1601
+src=0, sink=0, cost=2.85
+
+Frame 1602
+src=0, sink=0, cost=4.68
+
+Frame 1603
+src=0, sink=0, cost=8.95
+
+Frame 1604
+src=0, sink=0, cost=0.00
+
+Frame 1605
+src=0, sink=0, cost=14.40
+
+Frame 1606
+src=0, sink=0, cost=8.00
+
+Frame 1607
+src=0, sink=0, cost=3.75
+
+Frame 1608
+
+Frame 1609
+
+Frame 1610
+src=0, sink=0, cost=0.00
+
+Frame 1611
+src=0, sink=0, cost=48.60
+
+Frame 1612
+src=0, sink=0, cost=70.32
+
+Frame 1613
+src=0, sink=0, cost=35.26
+
+Frame 1614
+src=0, sink=0, cost=31.17
+
+Frame 1615
+src=0, sink=0, cost=30.81
+
+Frame 1616
+src=0, sink=0, cost=30.66
+
+Frame 1617
+src=0, sink=0, cost=38.36
+
+Frame 1618
+src=0, sink=0, cost=21.28
+
+Frame 1619
+src=0, sink=0, cost=17.01
+
+Frame 1620
+
+Frame 1621
+
+Frame 1622
+
+Frame 1623
+src=0, sink=0, cost=0.00
+
+Frame 1624
+src=0, sink=0, cost=38.29
+src=1, sink=0, cost=630.88
+src=2, sink=0, cost=82.85
+
+Frame 1625
+src=0, sink=0, cost=39.92
+src=1, sink=0, cost=604.14
+
+Frame 1626
+src=0, sink=0, cost=19.83
+src=1, sink=0, cost=574.74
+
+Frame 1627
+
+Frame 1628
+
+Frame 1629
+
+Frame 1630
+
+Frame 1631
+
+Frame 1632
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+src=1, sink=0, cost=0.00
+src=1, sink=1, cost=0.00
+
+Frame 1633
+src=0, sink=0, cost=462.54
+src=0, sink=1, cost=6.68
+src=1, sink=0, cost=14.99
+src=1, sink=1, cost=469.10
+
+Frame 1634
+src=0, sink=0, cost=468.61
+
+Frame 1635
+src=0, sink=0, cost=7.42
+
+Frame 1636
+src=0, sink=0, cost=10.49
+
+Frame 1637
+src=0, sink=0, cost=75.87
+
+Frame 1638
+src=0, sink=0, cost=10.04
+
+Frame 1639
+src=0, sink=0, cost=25.25
+src=1, sink=0, cost=525.88
+
+Frame 1640
+src=0, sink=0, cost=145.14
+
+Frame 1641
+src=0, sink=0, cost=5.67
+
+Frame 1642
+src=0, sink=0, cost=8.33
+
+Frame 1643
+src=0, sink=0, cost=9.45
+
+Frame 1644
+src=0, sink=0, cost=11.82
+
+Frame 1645
+src=0, sink=0, cost=13.48
+
+Frame 1646
+src=0, sink=0, cost=17.49
+
+Frame 1647
+src=0, sink=0, cost=22.60
+
+Frame 1648
+src=0, sink=0, cost=26.39
+
+Frame 1649
+src=0, sink=0, cost=15.09
+
+Frame 1650
+
+Frame 1651
+
+Frame 1652
+src=0, sink=0, cost=0.00
+
+Frame 1653
+src=0, sink=0, cost=25.83
+
+Frame 1654
+src=0, sink=0, cost=24.96
+
+Frame 1655
+src=0, sink=0, cost=13.22
+
+Frame 1656
+src=0, sink=0, cost=21.73
+src=1, sink=0, cost=886.60
+
+Frame 1657
+src=0, sink=0, cost=14.11
+src=1, sink=0, cost=894.76
+
+Frame 1658
+src=0, sink=0, cost=10.37
+src=1, sink=0, cost=893.85
+
+Frame 1659
+src=0, sink=0, cost=15.11
+
+Frame 1660
+
+Frame 1661
+
+Frame 1662
+
+Frame 1663
+
+Frame 1664
+src=0, sink=0, cost=0.00
+src=1, sink=0, cost=0.00
+
+Frame 1665
+src=0, sink=0, cost=11.34
+src=1, sink=0, cost=508.47
+
+Frame 1666
+src=0, sink=0, cost=12.77
+src=1, sink=0, cost=514.85
+
+Frame 1667
+src=0, sink=0, cost=14.98
+
+Frame 1668
+src=0, sink=0, cost=17.57
+
+Frame 1669
+src=0, sink=0, cost=22.44
+
+Frame 1670
+src=0, sink=0, cost=23.09
+
+Frame 1671
+src=0, sink=0, cost=21.41
+
+Frame 1672
+
+Frame 1673
+
+Frame 1674
+
+Frame 1675
+
+Frame 1676
+
+Frame 1677
+
+Frame 1678
+
+Frame 1679
+
+Frame 1680
+
+Frame 1681
+
+Frame 1682
+
+Frame 1683
+
+Frame 1684
+
+Frame 1685
+
+Frame 1686
+
+Frame 1687
+
+Frame 1688
+
+Frame 1689
+
+Frame 1690
+
+Frame 1691
+
+Frame 1692
+
+Frame 1693
+
+Frame 1694
+
+Frame 1695
+
+Frame 1696
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+src=1, sink=0, cost=0.00
+src=1, sink=1, cost=0.00
+
+Frame 1697
+src=0, sink=0, cost=20.43
+src=0, sink=1, cost=516.66
+src=1, sink=0, cost=518.09
+src=1, sink=1, cost=34.23
+
+Frame 1698
+src=0, sink=0, cost=33.26
+src=0, sink=1, cost=542.16
+src=1, sink=0, cost=537.17
+src=1, sink=1, cost=17.49
+
+Frame 1699
+src=0, sink=0, cost=12.93
+src=0, sink=1, cost=566.32
+src=1, sink=0, cost=557.29
+src=1, sink=1, cost=42.02
+
+Frame 1700
+src=0, sink=0, cost=28.97
+src=0, sink=1, cost=598.16
+src=1, sink=0, cost=607.68
+src=1, sink=1, cost=55.21
+
+Frame 1701
+src=0, sink=0, cost=27.88
+src=0, sink=1, cost=627.33
+src=1, sink=0, cost=635.42
+src=1, sink=1, cost=45.61
+
+Frame 1702
+src=0, sink=0, cost=665.97
+src=0, sink=1, cost=30.84
+
+Frame 1703
+src=0, sink=0, cost=1553.35
+src=0, sink=1, cost=897.79
+src=1, sink=0, cost=698.59
+src=1, sink=1, cost=43.02
+
+Frame 1704
+src=0, sink=0, cost=730.02
+src=0, sink=1, cost=41.81
+
+Frame 1705
+src=0, sink=0, cost=749.47
+src=0, sink=1, cost=41.41
+
+Frame 1706
+src=0, sink=0, cost=56.26
+src=0, sink=1, cost=802.95
+
+Frame 1707
+src=0, sink=0, cost=47.96
+src=0, sink=1, cost=826.93
+
+Frame 1708
+src=0, sink=0, cost=54.87
+
+Frame 1709
+src=0, sink=0, cost=69.21
+
+Frame 1710
+src=0, sink=0, cost=435.96
+
+Frame 1711
+src=0, sink=0, cost=459.88
+src=0, sink=1, cost=23.08
+
+Frame 1712
+
+Frame 1713
+
+Frame 1714
+
+Frame 1715
+
+Frame 1716
+
+Frame 1717
+
+Frame 1718
+
+Frame 1719
+
+Frame 1720
+
+Frame 1721
+
+Frame 1722
+
+Frame 1723
+
+Frame 1724
+
+Frame 1725
+
+Frame 1726
+
+Frame 1727
+
+Frame 1728
+
+Frame 1729
+
+Frame 1730
+
+Frame 1731
+
+Frame 1732
+
+Frame 1733
+
+Frame 1734
+
+Frame 1735
+
+Frame 1736
+
+Frame 1737
+
+Frame 1738
+
+Frame 1739
+
+Frame 1740
+
+Frame 1741
+
+Frame 1742
+
+Frame 1743
+
+Frame 1744
+
+Frame 1745
+
+Frame 1746
+
+Frame 1747
+
+Frame 1748
+
+Frame 1749
+
+Frame 1750
+
+Frame 1751
+
+Frame 1752
+
+Frame 1753
+
+Frame 1754
+
+Frame 1755
+src=0, sink=0, cost=0.00
+
+Frame 1756
+src=0, sink=0, cost=28.67
+
+Frame 1757
+
+Frame 1758
+
+Frame 1759
+
+Frame 1760
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+src=0, sink=2, cost=0.00
+
+Frame 1761
+src=0, sink=0, cost=48.30
+src=1, sink=0, cost=80.29
+
+Frame 1762
+src=0, sink=0, cost=45.75
+
+Frame 1763
+src=0, sink=0, cost=6.86
+src=1, sink=0, cost=36.23
+
+Frame 1764
+src=0, sink=0, cost=8.39
+
+Frame 1765
+src=0, sink=0, cost=10.30
+
+Frame 1766
+
+Frame 1767
+
+Frame 1768
+
+Frame 1769
+
+Frame 1770
+
+Frame 1771
+
+Frame 1772
+
+Frame 1773
+
+Frame 1774
+
+Frame 1775
+
+Frame 1776
+
+Frame 1777
+src=0, sink=0, cost=0.00
+src=1, sink=0, cost=0.00
+
+Frame 1778
+src=0, sink=0, cost=36.97
+
+Frame 1779
+
+Frame 1780
+
+Frame 1781
+
+Frame 1782
+
+Frame 1783
+
+Frame 1784
+
+Frame 1785
+
+Frame 1786
+
+Frame 1787
+
+Frame 1788
+
+Frame 1789
+
+Frame 1790
+
+Frame 1791
+
+Frame 1792
+
+Frame 1793
+
+Frame 1794
+
+Frame 1795
+
+Frame 1796
+
+Frame 1797
+
+Frame 1798
+
+Frame 1799
+
+Frame 1800
+
+Frame 1801
+
+Frame 1802
+
+Frame 1803
+
+Frame 1804
+
+Frame 1805
+
+Frame 1806
+
+Frame 1807
+
+Frame 1808
+
+Frame 1809
+
+Frame 1810
+
+Frame 1811
+
+Frame 1812
+
+Frame 1813
+
+Frame 1814
+
+Frame 1815
+
+Frame 1816
+
+Frame 1817
+
+Frame 1818
+
+Frame 1819
+
+Frame 1820
+
+Frame 1821
+
+Frame 1822
+
+Frame 1823
+
+Frame 1824
+
+Frame 1825
+
+Frame 1826
+
+Frame 1827
+
+Frame 1828
+
+Frame 1829
+
+Frame 1830
+
+Frame 1831
+
+Frame 1832
+src=0, sink=0, cost=0.00
+
+Frame 1833
+src=0, sink=0, cost=31.83
+
+Frame 1834
+src=0, sink=0, cost=32.68
+
+Frame 1835
+src=0, sink=0, cost=40.44
+
+Frame 1836
+src=0, sink=0, cost=29.84
+
+Frame 1837
+src=0, sink=0, cost=26.52
+
+Frame 1838
+src=0, sink=0, cost=51.23
+
+Frame 1839
+src=0, sink=0, cost=18.26
+
+Frame 1840
+
+Frame 1841
+
+Frame 1842
+
+Frame 1843
+
+Frame 1844
+
+Frame 1845
+
+Frame 1846
+
+Frame 1847
+
+Frame 1848
+
+Frame 1849
+
+Frame 1850
+
+Frame 1851
+
+Frame 1852
+
+Frame 1853
+
+Frame 1854
+
+Frame 1855
+
+Frame 1856
+src=0, sink=0, cost=0.00
+
+Frame 1857
+src=0, sink=0, cost=28.14
+
+Frame 1858
+src=0, sink=0, cost=36.73
+
+Frame 1859
+src=0, sink=0, cost=27.26
+
+Frame 1860
+src=0, sink=0, cost=32.84
+
+Frame 1861
+src=0, sink=0, cost=32.76
+
+Frame 1862
+src=0, sink=0, cost=29.80
+
+Frame 1863
+src=0, sink=0, cost=26.86
+
+Frame 1864
+src=0, sink=0, cost=18.68
+
+Frame 1865
+src=0, sink=0, cost=34.16
+
+Frame 1866
+src=0, sink=0, cost=22.95
+src=0, sink=1, cost=1388.84
+
+Frame 1867
+src=0, sink=0, cost=1405.43
+src=0, sink=1, cost=14.15
+
+Frame 1868
+src=0, sink=0, cost=1416.99
+
+Frame 1869
+
+Frame 1870
+
+Frame 1871
+
+Frame 1872
+
+Frame 1873
+
+Frame 1874
+
+Frame 1875
+
+Frame 1876
+
+Frame 1877
+
+Frame 1878
+
+Frame 1879
+
+Frame 1880
+
+Frame 1881
+
+Frame 1882
+
+Frame 1883
+
+Frame 1884
+
+Frame 1885
+src=0, sink=0, cost=0.00
+
+Frame 1886
+src=0, sink=0, cost=30.59
+
+Frame 1887
+src=0, sink=0, cost=15.10
+
+Frame 1888
+
+Frame 1889
+
+Frame 1890
+
+Frame 1891
+
+Frame 1892
+
+Frame 1893
+
+Frame 1894
+
+Frame 1895
+
+Frame 1896
+
+Frame 1897
+
+Frame 1898
+
+Frame 1899
+
+Frame 1900
+
+Frame 1901
+
+Frame 1902
+
+Frame 1903
+
+Frame 1904
+
+Frame 1905
+
+Frame 1906
+
+Frame 1907
+
+Frame 1908
+
+Frame 1909
+
+Frame 1910
+
+Frame 1911
+
+Frame 1912
+
+Frame 1913
+
+Frame 1914
+
+Frame 1915
+
+Frame 1916
+
+Frame 1917
+
+Frame 1918
+
+Frame 1919
+
+Frame 1920
+
+Frame 1921
+
+Frame 1922
+
+Frame 1923
+
+Frame 1924
+
+Frame 1925
+
+Frame 1926
+
+Frame 1927
+
+Frame 1928
+
+Frame 1929
+
+Frame 1930
+
+Frame 1931
+
+Frame 1932
+
+Frame 1933
+
+Frame 1934
+
+Frame 1935
+
+Frame 1936
+
+Frame 1937
+
+Frame 1938
+
+Frame 1939
+
+Frame 1940
+
+Frame 1941
+
+Frame 1942
+
+Frame 1943
+
+Frame 1944
+
+Frame 1945
+
+Frame 1946
+
+Frame 1947
+
+Frame 1948
+
+Frame 1949
+
+Frame 1950
+
+Frame 1951
+
+Frame 1952
+
+Frame 1953
+
+Frame 1954
+
+Frame 1955
+
+Frame 1956
+
+Frame 1957
+
+Frame 1958
+
+Frame 1959
+
+Frame 1960
+
+Frame 1961
+
+Frame 1962
+
+Frame 1963
+
+Frame 1964
+
+Frame 1965
+
+Frame 1966
+
+Frame 1967
+
+Frame 1968
+src=0, sink=0, cost=0.00
+
+Frame 1969
+src=0, sink=0, cost=11.79
+
+Frame 1970
+src=0, sink=0, cost=8.90
+
+Frame 1971
+src=0, sink=0, cost=6.76
+
+Frame 1972
+src=0, sink=0, cost=20.96
+
+Frame 1973
+src=0, sink=0, cost=21.79
+
+Frame 1974
+src=0, sink=0, cost=49.98
+
+Frame 1975
+src=0, sink=0, cost=50.00
+
+Frame 1976
+
+Frame 1977
+
+Frame 1978
+
+Frame 1979
+
+Frame 1980
+
+Frame 1981
+
+Frame 1982
+
+Frame 1983
+
+Frame 1984
+
+Frame 1985
+
+Frame 1986
+
+Frame 1987
+
+Frame 1988
+
+Frame 1989
+
+Frame 1990
+
+Frame 1991
+
+Frame 1992
+
+Frame 1993
+
+Frame 1994
+
+Frame 1995
+
+Frame 1996
+
+Frame 1997
+
+Frame 1998
+
+Frame 1999
+
+Frame 2000
+
+Frame 2001
+
+Frame 2002
+
+Frame 2003
+
+Frame 2004
+
+Frame 2005
+
+Frame 2006
+
+Frame 2007
+
+Frame 2008
+
+Frame 2009
+
+Frame 2010
+
+Frame 2011
+
+Frame 2012
+
+Frame 2013
+
+Frame 2014
+
+Frame 2015
+
+Frame 2016
+src=0, sink=0, cost=0.00
+
+Frame 2017
+src=0, sink=0, cost=8.42
+
+Frame 2018
+src=0, sink=0, cost=19.67
+
+Frame 2019
+src=0, sink=0, cost=22.64
+
+Frame 2020
+src=0, sink=0, cost=20.90
+
+Frame 2021
+src=0, sink=0, cost=13.36
+
+Frame 2022
+
+Frame 2023
+
+Frame 2024
+src=0, sink=0, cost=0.00
+
+Frame 2025
+src=0, sink=0, cost=13.14
+
+Frame 2026
+src=0, sink=0, cost=12.55
+
+Frame 2027
+src=0, sink=0, cost=27.79
+
+Frame 2028
+src=0, sink=0, cost=18.03
+
+Frame 2029
+src=0, sink=0, cost=25.82
+
+Frame 2030
+src=0, sink=0, cost=31.42
+
+Frame 2031
+src=0, sink=0, cost=27.83
+
+Frame 2032
+src=0, sink=0, cost=33.04
+
+Frame 2033
+src=0, sink=0, cost=54.24
+src=0, sink=1, cost=94.58
+src=1, sink=0, cost=20.12
+src=1, sink=1, cost=60.47
+
+Frame 2034
+src=0, sink=0, cost=147.44
+src=1, sink=0, cost=180.47
+
+Frame 2035
+src=0, sink=0, cost=242.95
+
+Frame 2036
+src=0, sink=0, cost=159.42
+
+Frame 2037
+src=0, sink=0, cost=120.32
+
+Frame 2038
+src=0, sink=0, cost=115.27
+
+Frame 2039
+src=0, sink=0, cost=87.84
+
+Frame 2040
+src=0, sink=0, cost=74.45
+
+Frame 2041
+src=0, sink=0, cost=50.84
+
+Frame 2042
+src=0, sink=0, cost=39.56
+
+Frame 2043
+src=0, sink=0, cost=47.27
+
+Frame 2044
+src=0, sink=0, cost=30.67
+
+Frame 2045
+src=0, sink=0, cost=28.11
+
+Frame 2046
+src=0, sink=0, cost=22.95
+
+Frame 2047
+src=0, sink=0, cost=13.95
+
+Frame 2048
+src=0, sink=0, cost=28.30
+
+Frame 2049
+src=0, sink=0, cost=7.02
+
+Frame 2050
+src=0, sink=0, cost=13.17
+src=1, sink=0, cost=752.77
+
+Frame 2051
+src=0, sink=0, cost=7.53
+
+Frame 2052
+src=0, sink=0, cost=7.51
+
+Frame 2053
+src=0, sink=0, cost=8.47
+
+Frame 2054
+src=0, sink=0, cost=6.59
+
+Frame 2055
+src=0, sink=0, cost=11.52
+
+Frame 2056
+src=0, sink=0, cost=19.20
+
+Frame 2057
+src=0, sink=0, cost=3.75
+
+Frame 2058
+src=0, sink=0, cost=8.22
+
+Frame 2059
+src=0, sink=0, cost=754.44
+src=0, sink=1, cost=10.93
+src=1, sink=0, cost=1552.80
+src=1, sink=1, cost=809.30
+
+Frame 2060
+src=0, sink=0, cost=737.69
+src=0, sink=1, cost=13.15
+src=1, sink=0, cost=52.38
+src=1, sink=1, cost=783.97
+
+Frame 2061
+src=0, sink=0, cost=711.54
+src=0, sink=1, cost=14.09
+src=1, sink=0, cost=49.07
+src=1, sink=1, cost=765.31
+
+Frame 2062
+src=0, sink=0, cost=692.94
+src=1, sink=0, cost=54.05
+
+Frame 2063
+src=0, sink=0, cost=39.73
+src=1, sink=0, cost=767.94
+
+Frame 2064
+
+Frame 2065
+
+Frame 2066
+
+Frame 2067
+
+Frame 2068
+
+Frame 2069
+
+Frame 2070
+
+Frame 2071
+
+Frame 2072
+src=0, sink=0, cost=0.00
+
+Frame 2073
+src=0, sink=0, cost=2.83
+
+Frame 2074
+src=0, sink=0, cost=6.59
+
+Frame 2075
+src=0, sink=0, cost=2.82
+
+Frame 2076
+src=0, sink=0, cost=5.65
+
+Frame 2077
+src=0, sink=0, cost=3.77
+
+Frame 2078
+src=0, sink=0, cost=10.63
+
+Frame 2079
+src=0, sink=0, cost=7.03
+
+Frame 2080
+src=0, sink=0, cost=14.91
+
+Frame 2081
+src=0, sink=0, cost=11.56
+
+Frame 2082
+src=0, sink=0, cost=15.61
+
+Frame 2083
+src=0, sink=0, cost=19.22
+
+Frame 2084
+src=0, sink=0, cost=22.04
+
+Frame 2085
+src=0, sink=0, cost=18.41
+
+Frame 2086
+src=0, sink=0, cost=25.56
+
+Frame 2087
+src=0, sink=0, cost=25.25
+
+Frame 2088
+src=0, sink=0, cost=30.54
+
+Frame 2089
+src=0, sink=0, cost=36.03
+
+Frame 2090
+src=0, sink=0, cost=32.66
+
+Frame 2091
+src=0, sink=0, cost=37.13
+
+Frame 2092
+src=0, sink=0, cost=51.11
+
+Frame 2093
+src=0, sink=0, cost=47.67
+
+Frame 2094
+src=0, sink=0, cost=54.05
+
+Frame 2095
+src=0, sink=0, cost=53.70
+
+Frame 2096
+src=0, sink=0, cost=53.55
+
+Frame 2097
+src=0, sink=0, cost=74.49
+
+Frame 2098
+src=0, sink=0, cost=54.01
+
+Frame 2099
+src=0, sink=0, cost=44.72
+
+Frame 2100
+src=0, sink=0, cost=2.85
+
+Frame 2101
+src=0, sink=0, cost=2.85
+
+Frame 2102
+src=0, sink=0, cost=6.88
+
+Frame 2103
+src=0, sink=0, cost=2.85
+
+Frame 2104
+src=0, sink=0, cost=6.28
+
+Frame 2105
+src=0, sink=0, cost=12.40
+
+Frame 2106
+src=0, sink=0, cost=12.34
+
+Frame 2107
+src=0, sink=0, cost=13.92
+
+Frame 2108
+src=0, sink=0, cost=11.85
+
+Frame 2109
+src=0, sink=0, cost=21.72
+
+Frame 2110
+src=0, sink=0, cost=30.94
+
+Frame 2111
+src=0, sink=0, cost=29.78
+
+Frame 2112
+
+Frame 2113
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+
+Frame 2114
+src=0, sink=0, cost=86.79
+
+Frame 2115
+
+Frame 2116
+src=0, sink=0, cost=0.00
+
+Frame 2117
+src=0, sink=0, cost=71.82
+
+Frame 2118
+src=0, sink=0, cost=57.66
+
+Frame 2119
+src=0, sink=0, cost=54.50
+
+Frame 2120
+src=0, sink=0, cost=31.66
+
+Frame 2121
+src=0, sink=0, cost=31.59
+
+Frame 2122
+src=0, sink=0, cost=29.17
+
+Frame 2123
+src=0, sink=0, cost=28.60
+
+Frame 2124
+src=0, sink=0, cost=22.25
+
+Frame 2125
+src=0, sink=0, cost=12.07
+
+Frame 2126
+src=0, sink=0, cost=14.69
+
+Frame 2127
+src=0, sink=0, cost=18.35
+
+Frame 2128
+src=0, sink=0, cost=22.71
+
+Frame 2129
+src=0, sink=0, cost=43.80
+
+Frame 2130
+src=0, sink=0, cost=19.18
+
+Frame 2131
+src=0, sink=0, cost=29.16
+
+Frame 2132
+src=0, sink=0, cost=34.47
+
+Frame 2133
+src=0, sink=0, cost=21.30
+
+Frame 2134
+src=0, sink=0, cost=24.69
+
+Frame 2135
+src=0, sink=0, cost=13.12
+
+Frame 2136
+
+Frame 2137
+
+Frame 2138
+
+Frame 2139
+
+Frame 2140
+
+Frame 2141
+
+Frame 2142
+
+Frame 2143
+
+Frame 2144
+
+Frame 2145
+
+Frame 2146
+
+Frame 2147
+
+Frame 2148
+
+Frame 2149
+
+Frame 2150
+src=0, sink=0, cost=0.00
+
+Frame 2151
+src=0, sink=0, cost=21.57
+
+Frame 2152
+src=0, sink=0, cost=33.92
+
+Frame 2153
+src=0, sink=0, cost=51.67
+
+Frame 2154
+src=0, sink=0, cost=50.29
+
+Frame 2155
+src=0, sink=0, cost=58.05
+
+Frame 2156
+src=0, sink=0, cost=60.50
+
+Frame 2157
+src=0, sink=0, cost=71.22
+
+Frame 2158
+src=0, sink=0, cost=80.54
+
+Frame 2159
+src=0, sink=0, cost=69.98
+
+Frame 2160
+src=0, sink=0, cost=105.59
+
+Frame 2161
+src=0, sink=0, cost=48.98
+
+Frame 2162
+
+Frame 2163
+src=0, sink=0, cost=0.00
+
+Frame 2164
+src=0, sink=0, cost=103.99
+
+Frame 2165
+src=0, sink=0, cost=95.23
+
+Frame 2166
+src=0, sink=0, cost=90.95
+
+Frame 2167
+src=0, sink=0, cost=264.68
+src=0, sink=1, cost=60.82
+src=1, sink=0, cost=433.18
+src=1, sink=1, cost=229.31
+
+Frame 2168
+src=0, sink=0, cost=59.75
+
+Frame 2169
+src=0, sink=0, cost=49.89
+
+Frame 2170
+src=0, sink=0, cost=51.87
+
+Frame 2171
+src=0, sink=0, cost=45.80
+
+Frame 2172
+src=0, sink=0, cost=30.99
+
+Frame 2173
+src=0, sink=0, cost=30.39
+
+Frame 2174
+src=0, sink=0, cost=19.57
+
+Frame 2175
+src=0, sink=0, cost=14.08
+
+Frame 2176
+
+Frame 2177
+
+Frame 2178
+
+Frame 2179
+
+Frame 2180
+
+Frame 2181
+src=0, sink=0, cost=0.00
+
+Frame 2182
+src=0, sink=0, cost=14.70
+
+Frame 2183
+src=0, sink=0, cost=17.90
+
+Frame 2184
+src=0, sink=0, cost=12.55
+
+Frame 2185
+src=0, sink=0, cost=18.45
+
+Frame 2186
+src=0, sink=0, cost=24.04
+
+Frame 2187
+src=0, sink=0, cost=22.91
+
+Frame 2188
+src=0, sink=0, cost=24.79
+
+Frame 2189
+src=0, sink=0, cost=22.40
+
+Frame 2190
+src=0, sink=0, cost=23.44
+
+Frame 2191
+src=0, sink=0, cost=23.49
+
+Frame 2192
+src=0, sink=0, cost=26.26
+
+Frame 2193
+src=0, sink=0, cost=22.05
+
+Frame 2194
+src=0, sink=0, cost=34.16
+
+Frame 2195
+src=0, sink=0, cost=21.81
+
+Frame 2196
+src=0, sink=0, cost=21.56
+
+Frame 2197
+src=0, sink=0, cost=28.90
+
+Frame 2198
+src=0, sink=0, cost=20.77
+
+Frame 2199
+src=0, sink=0, cost=13.76
+
+Frame 2200
+src=0, sink=0, cost=16.41
+
+Frame 2201
+src=0, sink=0, cost=13.56
+
+Frame 2202
+src=0, sink=0, cost=18.65
+
+Frame 2203
+src=0, sink=0, cost=12.83
+
+Frame 2204
+src=0, sink=0, cost=19.38
+
+Frame 2205
+src=0, sink=0, cost=21.51
+
+Frame 2206
+src=0, sink=0, cost=26.01
+
+Frame 2207
+src=0, sink=0, cost=23.97
+
+Frame 2208
+src=0, sink=0, cost=0.00
+
+Frame 2209
+src=0, sink=0, cost=26.59
+
+Frame 2210
+src=0, sink=0, cost=12.84
+
+Frame 2211
+src=0, sink=0, cost=7.56
+
+Frame 2212
+src=0, sink=0, cost=7.17
+
+Frame 2213
+src=0, sink=0, cost=2.81
+
+Frame 2214
+src=0, sink=0, cost=11.88
+
+Frame 2215
+src=0, sink=0, cost=4.71
+
+Frame 2216
+src=0, sink=0, cost=15.57
+
+Frame 2217
+src=0, sink=0, cost=2.82
+
+Frame 2218
+
+Frame 2219
+
+Frame 2220
+
+Frame 2221
+
+Frame 2222
+
+Frame 2223
+
+Frame 2224
+src=0, sink=0, cost=0.00
+
+Frame 2225
+
+Frame 2226
+
+Frame 2227
+
+Frame 2228
+
+Frame 2229
+
+Frame 2230
+
+Frame 2231
+
+Frame 2232
+src=0, sink=0, cost=0.00
+
+Frame 2233
+src=0, sink=0, cost=2.81
+
+Frame 2234
+src=0, sink=0, cost=2.85
+
+Frame 2235
+src=0, sink=0, cost=0.00
+
+Frame 2236
+src=0, sink=0, cost=906.88
+src=0, sink=1, cost=5.64
+
+Frame 2237
+
+Frame 2238
+
+Frame 2239
+src=0, sink=0, cost=0.00
+
+Frame 2240
+src=0, sink=0, cost=41.79
+src=0, sink=1, cost=803.23
+src=0, sink=2, cost=327.16
+
+Frame 2241
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=732.79
+src=1, sink=0, cost=565.45
+src=1, sink=1, cost=1298.25
+
+Frame 2242
+src=0, sink=0, cost=590.92
+src=0, sink=1, cost=0.00
+src=0, sink=2, cost=480.89
+src=1, sink=0, cost=31.34
+src=1, sink=1, cost=559.79
+src=1, sink=2, cost=264.92
+
+Frame 2243
+src=0, sink=0, cost=588.40
+src=0, sink=1, cost=475.68
+src=0, sink=2, cost=0.00
+src=1, sink=0, cost=31.54
+src=1, sink=1, cost=242.30
+src=1, sink=2, cost=556.97
+
+Frame 2244
+src=0, sink=0, cost=583.26
+src=0, sink=1, cost=474.69
+src=0, sink=2, cost=4.73
+src=1, sink=0, cost=28.49
+src=1, sink=1, cost=218.98
+src=1, sink=2, cost=554.89
+
+Frame 2245
+src=0, sink=0, cost=579.68
+src=0, sink=1, cost=470.44
+src=0, sink=2, cost=6.61
+src=1, sink=0, cost=33.51
+src=1, sink=1, cost=204.67
+src=1, sink=2, cost=550.86
+
+Frame 2246
+src=0, sink=0, cost=458.11
+src=0, sink=1, cost=614.87
+src=0, sink=2, cost=4.68
+src=1, sink=0, cost=18.64
+src=1, sink=1, cost=156.34
+src=1, sink=2, cost=477.23
+
+Frame 2247
+src=0, sink=0, cost=455.02
+src=0, sink=1, cost=601.86
+src=0, sink=2, cost=2.85
+src=1, sink=0, cost=174.29
+src=1, sink=1, cost=308.74
+src=1, sink=2, cost=625.82
+
+Frame 2248
+src=0, sink=0, cost=579.79
+src=1, sink=0, cost=144.50
+
+Frame 2249
+src=0, sink=0, cost=712.26
+src=1, sink=0, cost=60.96
+
+Frame 2250
+src=0, sink=0, cost=669.34
+src=1, sink=0, cost=34.93
+
+Frame 2251
+src=0, sink=0, cost=41.36
+src=1, sink=0, cost=654.62
+
+Frame 2252
+src=0, sink=0, cost=34.39
+src=1, sink=0, cost=627.01
+
+Frame 2253
+src=0, sink=0, cost=40.92
+src=1, sink=0, cost=611.03
+
+Frame 2254
+src=0, sink=0, cost=29.63
+src=1, sink=0, cost=584.53
+
+Frame 2255
+src=0, sink=0, cost=39.40
+src=1, sink=0, cost=572.86
+
+Frame 2256
+src=0, sink=0, cost=999.03
+src=0, sink=1, cost=546.09
+
+Frame 2257
+src=0, sink=0, cost=0.00
+
+Frame 2258
+src=0, sink=0, cost=5.69
+
+Frame 2259
+src=0, sink=0, cost=0.00
+
+Frame 2260
+src=0, sink=0, cost=0.00
+
+Frame 2261
+src=0, sink=0, cost=2.85
+src=0, sink=1, cost=466.56
+src=0, sink=2, cost=477.41
+
+Frame 2262
+src=0, sink=0, cost=481.30
+src=0, sink=1, cost=0.00
+
+Frame 2263
+src=0, sink=0, cost=503.33
+src=0, sink=1, cost=5.67
+src=1, sink=0, cost=1088.23
+src=1, sink=1, cost=590.56
+
+Frame 2264
+src=0, sink=0, cost=35.22
+src=0, sink=1, cost=289.86
+src=0, sink=2, cost=520.44
+src=0, sink=3, cost=505.51
+src=1, sink=0, cost=520.13
+src=1, sink=1, cost=259.87
+src=1, sink=2, cost=0.00
+src=1, sink=3, cost=49.76
+src=2, sink=0, cost=360.20
+src=2, sink=1, cost=532.20
+src=2, sink=2, cost=272.32
+src=2, sink=3, cost=322.08
+
+Frame 2265
+src=0, sink=0, cost=543.85
+src=0, sink=1, cost=257.80
+src=0, sink=2, cost=0.00
+
+Frame 2266
+src=0, sink=0, cost=562.53
+src=0, sink=1, cost=4.68
+src=1, sink=0, cost=1226.49
+src=1, sink=1, cost=668.64
+
+Frame 2267
+src=0, sink=0, cost=44.25
+src=0, sink=1, cost=586.07
+src=1, sink=0, cost=587.71
+src=1, sink=1, cost=2.82
+
+Frame 2268
+src=0, sink=0, cost=53.18
+src=0, sink=1, cost=622.15
+src=1, sink=0, cost=617.34
+src=1, sink=1, cost=8.52
+
+Frame 2269
+src=0, sink=0, cost=44.02
+src=0, sink=1, cost=636.20
+src=1, sink=0, cost=634.26
+src=1, sink=1, cost=3.75
+
+Frame 2270
+src=0, sink=0, cost=644.85
+src=0, sink=1, cost=2.82
+src=1, sink=0, cost=47.24
+src=1, sink=1, cost=668.61
+
+Frame 2271
+src=0, sink=0, cost=669.44
+src=0, sink=1, cost=8.49
+
+Frame 2272
+src=0, sink=0, cost=278.16
+src=1, sink=0, cost=14.15
+
+Frame 2273
+src=0, sink=0, cost=272.40
+
+Frame 2274
+src=0, sink=0, cost=3.75
+src=0, sink=1, cost=3.39
+
+Frame 2275
+
+Frame 2276
+
+Frame 2277
+
+Frame 2278
+
+Frame 2279
+
+Frame 2280
+
+Frame 2281
+
+Frame 2282
+
+Frame 2283
+
+Frame 2284
+
+Frame 2285
+
+Frame 2286
+
+Frame 2287
+
+Frame 2288
+src=0, sink=0, cost=0.00
+
+Frame 2289
+src=0, sink=0, cost=18.47
+
+Frame 2290
+src=0, sink=0, cost=15.62
+
+Frame 2291
+src=0, sink=0, cost=15.11
+
+Frame 2292
+src=0, sink=0, cost=19.55
+
+Frame 2293
+src=0, sink=0, cost=21.71
+src=0, sink=1, cost=121.79
+src=0, sink=2, cost=127.27
+
+Frame 2294
+src=0, sink=0, cost=18.86
+src=0, sink=1, cost=123.45
+
+Frame 2295
+src=0, sink=0, cost=15.64
+src=0, sink=1, cost=132.60
+
+Frame 2296
+src=0, sink=0, cost=17.35
+
+Frame 2297
+src=0, sink=0, cost=25.47
+
+Frame 2298
+src=0, sink=0, cost=24.54
+
+Frame 2299
+src=0, sink=0, cost=30.61
+
+Frame 2300
+src=0, sink=0, cost=30.79
+
+Frame 2301
+src=0, sink=0, cost=24.12
+
+Frame 2302
+src=0, sink=0, cost=50.10
+
+Frame 2303
+src=0, sink=0, cost=32.01
+
+Frame 2304
+src=0, sink=0, cost=0.00
+
+Frame 2305
+src=0, sink=0, cost=40.75
+
+Frame 2306
+src=0, sink=0, cost=48.94
+
+Frame 2307
+src=0, sink=0, cost=45.72
+
+Frame 2308
+src=0, sink=0, cost=54.55
+
+Frame 2309
+src=0, sink=0, cost=59.98
+
+Frame 2310
+src=0, sink=0, cost=48.25
+
+Frame 2311
+src=0, sink=0, cost=60.95
+
+Frame 2312
+src=0, sink=0, cost=37.13
+
+Frame 2313
+src=0, sink=0, cost=18.41
+
+Frame 2314
+src=0, sink=0, cost=15.77
+
+Frame 2315
+src=0, sink=0, cost=20.87
+
+Frame 2316
+src=0, sink=0, cost=15.75
+
+Frame 2317
+src=0, sink=0, cost=21.28
+
+Frame 2318
+src=0, sink=0, cost=19.96
+
+Frame 2319
+src=0, sink=0, cost=8.48
+
+Frame 2320
+src=0, sink=0, cost=23.68
+
+Frame 2321
+src=0, sink=0, cost=22.49
+src=0, sink=1, cost=14.94
+src=0, sink=2, cost=19.66
+
+Frame 2322
+src=0, sink=0, cost=39.02
+
+Frame 2323
+src=0, sink=0, cost=20.81
+
+Frame 2324
+src=0, sink=0, cost=19.53
+
+Frame 2325
+src=0, sink=0, cost=36.90
+
+Frame 2326
+src=0, sink=0, cost=34.13
+
+Frame 2327
+src=0, sink=0, cost=35.30
+
+Frame 2328
+src=0, sink=0, cost=26.43
+
+Frame 2329
+src=0, sink=0, cost=40.68
+
+Frame 2330
+src=0, sink=0, cost=46.35
+
+Frame 2331
+src=0, sink=0, cost=47.97
+
+Frame 2332
+src=0, sink=0, cost=51.30
+src=0, sink=1, cost=562.11
+
+Frame 2333
+src=0, sink=0, cost=30.35
+
+Frame 2334
+src=0, sink=0, cost=28.17
+src=0, sink=1, cost=533.32
+
+Frame 2335
+src=0, sink=0, cost=16.00
+src=0, sink=1, cost=519.97
+
+Frame 2336
+src=0, sink=0, cost=32.72
+src=0, sink=1, cost=522.93
+src=1, sink=0, cost=672.47
+src=1, sink=1, cost=1162.68
+
+Frame 2337
+src=0, sink=0, cost=24.84
+src=0, sink=1, cost=516.58
+src=1, sink=0, cost=527.57
+src=1, sink=1, cost=42.43
+
+Frame 2338
+src=0, sink=0, cost=33.63
+src=0, sink=1, cost=521.21
+src=1, sink=0, cost=561.10
+src=1, sink=1, cost=70.68
+
+Frame 2339
+src=0, sink=0, cost=27.27
+src=0, sink=1, cost=523.34
+
+Frame 2340
+src=0, sink=0, cost=1149.67
+src=0, sink=1, cost=638.34
+src=1, sink=0, cost=541.82
+src=1, sink=1, cost=30.48
+
+Frame 2341
+src=0, sink=0, cost=554.90
+src=1, sink=0, cost=46.84
+
+Frame 2342
+src=0, sink=0, cost=43.99
+src=1, sink=0, cost=687.19
+
+Frame 2343
+src=0, sink=0, cost=33.22
+src=1, sink=0, cost=692.50
+
+Frame 2344
+src=0, sink=0, cost=43.12
+src=0, sink=1, cost=617.26
+src=0, sink=2, cost=275.90
+
+Frame 2345
+src=0, sink=0, cost=623.45
+src=0, sink=1, cost=41.41
+
+Frame 2346
+src=0, sink=0, cost=607.13
+src=0, sink=1, cost=24.37
+
+Frame 2347
+src=0, sink=0, cost=620.23
+src=0, sink=1, cost=31.81
+
+Frame 2348
+src=0, sink=0, cost=614.35
+src=0, sink=1, cost=24.43
+
+Frame 2349
+src=0, sink=0, cost=617.73
+src=0, sink=1, cost=30.72
+
+Frame 2350
+src=0, sink=0, cost=31.10
+src=0, sink=1, cost=622.10
+src=1, sink=0, cost=679.29
+src=1, sink=1, cost=1270.29
+
+Frame 2351
+src=0, sink=0, cost=626.98
+src=0, sink=1, cost=25.48
+src=1, sink=0, cost=12.57
+src=1, sink=1, cost=618.24
+
+Frame 2352
+src=0, sink=0, cost=27.10
+src=0, sink=1, cost=637.48
+
+Frame 2353
+src=0, sink=0, cost=0.00
+
+Frame 2354
+src=0, sink=0, cost=2.83
+
+Frame 2355
+src=0, sink=0, cost=2.83
+
+Frame 2356
+src=0, sink=0, cost=9.48
+
+Frame 2357
+
+Frame 2358
+
+Frame 2359
+src=0, sink=0, cost=0.00
+
+Frame 2360
+src=0, sink=0, cost=652.97
+src=0, sink=1, cost=11.80
+src=1, sink=0, cost=1354.58
+src=1, sink=1, cost=713.41
+
+Frame 2361
+src=0, sink=0, cost=652.73
+src=0, sink=1, cost=7.79
+src=1, sink=0, cost=10.82
+src=1, sink=1, cost=643.88
+
+Frame 2362
+src=0, sink=0, cost=18.36
+src=0, sink=1, cost=654.30
+src=1, sink=0, cost=658.02
+src=1, sink=1, cost=3.81
+
+Frame 2363
+src=0, sink=0, cost=675.34
+src=0, sink=1, cost=7.57
+src=1, sink=0, cost=27.45
+src=1, sink=1, cost=662.88
+
+Frame 2364
+src=0, sink=0, cost=680.25
+src=0, sink=1, cost=6.59
+
+Frame 2365
+src=0, sink=0, cost=689.33
+
+Frame 2366
+
+Frame 2367
+
+Frame 2368
+
+Frame 2369
+
+Frame 2370
+
+Frame 2371
+
+Frame 2372
+
+Frame 2373
+
+Frame 2374
+
+Frame 2375
+
+Frame 2376
+
+Frame 2377
+
+Frame 2378
+
+Frame 2379
+
+Frame 2380
+
+Frame 2381
+
+Frame 2382
+
+Frame 2383
+
+Frame 2384
+src=0, sink=0, cost=0.00
+
+Frame 2385
+
+Frame 2386
+
+Frame 2387
+
+Frame 2388
+
+Frame 2389
+
+Frame 2390
+
+Frame 2391
+
+Frame 2392
+
+Frame 2393
+
+Frame 2394
+
+Frame 2395
+
+Frame 2396
+
+Frame 2397
+
+Frame 2398
+
+Frame 2399
+
+Frame 2400
+src=0, sink=0, cost=0.00
+
+Frame 2401
+src=0, sink=0, cost=0.00
+
+Frame 2402
+src=0, sink=0, cost=712.33
+src=0, sink=1, cost=5.11
+
+Frame 2403
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=718.17
+
+Frame 2404
+
+Frame 2405
+
+Frame 2406
+
+Frame 2407
+
+Frame 2408
+
+Frame 2409
+
+Frame 2410
+
+Frame 2411
+
+Frame 2412
+
+Frame 2413
+
+Frame 2414
+
+Frame 2415
+
+Frame 2416
+src=0, sink=0, cost=0.00
+
+Frame 2417
+
+Frame 2418
+src=0, sink=0, cost=0.00
+
+Frame 2419
+src=0, sink=0, cost=9.71
+
+Frame 2420
+src=0, sink=0, cost=7.81
+
+Frame 2421
+src=0, sink=0, cost=7.10
+
+Frame 2422
+src=0, sink=0, cost=8.53
+
+Frame 2423
+src=0, sink=0, cost=9.48
+
+Frame 2424
+src=0, sink=0, cost=16.41
+
+Frame 2425
+src=0, sink=0, cost=7.61
+
+Frame 2426
+src=0, sink=0, cost=13.71
+
+Frame 2427
+src=0, sink=0, cost=14.26
+
+Frame 2428
+src=0, sink=0, cost=6.81
+
+Frame 2429
+src=0, sink=0, cost=12.16
+
+Frame 2430
+
+Frame 2431
+
+Frame 2432
+src=0, sink=0, cost=0.00
+
+Frame 2433
+src=0, sink=0, cost=4.01
+
+Frame 2434
+src=0, sink=0, cost=14.34
+
+Frame 2435
+
+Frame 2436
+
+Frame 2437
+
+Frame 2438
+
+Frame 2439
+
+Frame 2440
+
+Frame 2441
+
+Frame 2442
+
+Frame 2443
+
+Frame 2444
+
+Frame 2445
+
+Frame 2446
+
+Frame 2447
+
+Frame 2448
+src=0, sink=0, cost=0.00
+
+Frame 2449
+src=0, sink=0, cost=10.89
+src=0, sink=1, cost=264.17
+
+Frame 2450
+src=0, sink=0, cost=264.50
+src=0, sink=1, cost=4.92
+
+Frame 2451
+
+Frame 2452
+
+Frame 2453
+
+Frame 2454
+
+Frame 2455
+
+Frame 2456
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+src=0, sink=2, cost=0.00
+src=1, sink=0, cost=0.00
+src=1, sink=1, cost=0.00
+src=1, sink=2, cost=0.00
+
+Frame 2457
+
+Frame 2458
+src=0, sink=0, cost=0.00
+src=1, sink=0, cost=0.00
+
+Frame 2459
+src=0, sink=0, cost=87.68
+
+Frame 2460
+src=0, sink=0, cost=90.82
+
+Frame 2461
+src=0, sink=0, cost=469.26
+
+Frame 2462
+src=0, sink=0, cost=452.68
+
+Frame 2463
+src=0, sink=0, cost=85.74
+src=0, sink=1, cost=567.92
+
+Frame 2464
+src=0, sink=0, cost=524.20
+
+Frame 2465
+src=0, sink=0, cost=613.13
+src=0, sink=1, cost=59.92
+
+Frame 2466
+src=0, sink=0, cost=596.28
+src=0, sink=1, cost=47.57
+
+Frame 2467
+src=0, sink=0, cost=40.01
+src=0, sink=1, cost=641.86
+
+Frame 2468
+src=0, sink=0, cost=648.09
+src=0, sink=1, cost=52.47
+
+Frame 2469
+src=0, sink=0, cost=680.79
+src=0, sink=1, cost=28.50
+
+Frame 2470
+src=0, sink=0, cost=697.85
+src=0, sink=1, cost=34.91
+
+Frame 2471
+src=0, sink=0, cost=711.67
+src=0, sink=1, cost=26.81
+
+Frame 2472
+src=0, sink=0, cost=728.67
+src=0, sink=1, cost=27.81
+
+Frame 2473
+src=0, sink=0, cost=744.38
+src=0, sink=1, cost=18.31
+
+Frame 2474
+src=0, sink=0, cost=752.07
+src=0, sink=1, cost=29.62
+
+Frame 2475
+src=0, sink=0, cost=771.91
+src=0, sink=1, cost=21.81
+
+Frame 2476
+src=0, sink=0, cost=775.07
+src=0, sink=1, cost=17.84
+
+Frame 2477
+src=0, sink=0, cost=783.56
+src=0, sink=1, cost=18.16
+
+Frame 2478
+src=0, sink=0, cost=793.37
+src=0, sink=1, cost=20.81
+
+Frame 2479
+src=0, sink=0, cost=795.24
+src=0, sink=1, cost=14.15
+
+Frame 2480
+src=0, sink=0, cost=803.79
+src=0, sink=1, cost=18.56
+
+Frame 2481
+src=0, sink=0, cost=812.60
+src=0, sink=1, cost=24.24
+
+Frame 2482
+src=0, sink=0, cost=26.32
+src=0, sink=1, cost=819.89
+
+Frame 2483
+
+Frame 2484
+
+Frame 2485
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+
+Frame 2486
+src=0, sink=0, cost=838.06
+src=0, sink=1, cost=14.48
+
+Frame 2487
+src=0, sink=0, cost=839.41
+src=0, sink=1, cost=13.70
+
+Frame 2488
+
+Frame 2489
+
+Frame 2490
+
+Frame 2491
+
+Frame 2492
+
+Frame 2493
+
+Frame 2494
+
+Frame 2495
+
+Frame 2496
+
+Frame 2497
+
+Frame 2498
+
+Frame 2499
+
+Frame 2500
+
+Frame 2501
+
+Frame 2502
+
+Frame 2503
+
+Frame 2504
+src=0, sink=0, cost=0.00
+
+Frame 2505
+src=0, sink=0, cost=10.89
+
+Frame 2506
+src=0, sink=0, cost=13.74
+
+Frame 2507
+src=0, sink=0, cost=21.56
+
+Frame 2508
+src=0, sink=0, cost=18.62
+
+Frame 2509
+src=0, sink=0, cost=18.71
+src=1, sink=0, cost=776.80
+
+Frame 2510
+src=0, sink=0, cost=767.71
+src=1, sink=0, cost=23.47
+
+Frame 2511
+src=0, sink=0, cost=765.43
+src=1, sink=0, cost=29.75
+
+Frame 2512
+src=0, sink=0, cost=752.46
+src=0, sink=1, cost=1354.11
+src=1, sink=0, cost=32.83
+src=1, sink=1, cost=634.48
+
+Frame 2513
+src=0, sink=0, cost=21.57
+src=0, sink=1, cost=624.52
+src=1, sink=0, cost=620.38
+src=1, sink=1, cost=26.31
+
+Frame 2514
+src=0, sink=0, cost=23.72
+src=0, sink=1, cost=615.89
+src=1, sink=0, cost=615.26
+src=1, sink=1, cost=43.41
+
+Frame 2515
+src=0, sink=0, cost=32.31
+src=0, sink=1, cost=602.26
+src=1, sink=0, cost=603.48
+src=1, sink=1, cost=44.92
+
+Frame 2516
+src=0, sink=0, cost=29.41
+src=0, sink=1, cost=592.91
+src=1, sink=0, cost=579.86
+src=1, sink=1, cost=30.50
+
+Frame 2517
+src=0, sink=0, cost=578.35
+src=0, sink=1, cost=55.35
+src=1, sink=0, cost=32.15
+src=1, sink=1, cost=574.67
+
+Frame 2518
+src=0, sink=0, cost=31.19
+src=0, sink=1, cost=571.07
+src=1, sink=0, cost=562.36
+src=1, sink=1, cost=52.48
+
+Frame 2519
+src=0, sink=0, cost=58.82
+src=0, sink=1, cost=559.91
+src=1, sink=0, cost=564.54
+src=1, sink=1, cost=29.42
+
+Frame 2520
+src=0, sink=0, cost=59.22
+src=0, sink=1, cost=547.39
+src=0, sink=2, cost=523.95
+src=1, sink=0, cost=553.87
+src=1, sink=1, cost=35.70
+src=1, sink=2, cost=62.31
+src=2, sink=0, cost=571.66
+src=2, sink=1, cost=53.49
+src=2, sink=2, cost=80.11
+
+Frame 2521
+src=0, sink=0, cost=539.93
+src=0, sink=1, cost=55.32
+src=0, sink=2, cost=536.26
+src=1, sink=0, cost=25.93
+src=1, sink=1, cost=539.39
+src=1, sink=2, cost=55.55
+
+Frame 2522
+src=0, sink=0, cost=538.29
+src=0, sink=1, cost=65.77
+src=1, sink=0, cost=37.24
+src=1, sink=1, cost=546.09
+
+Frame 2523
+src=0, sink=0, cost=542.58
+src=0, sink=1, cost=81.98
+src=1, sink=0, cost=29.20
+src=1, sink=1, cost=542.96
+
+Frame 2524
+src=0, sink=0, cost=24.22
+src=0, sink=1, cost=536.87
+src=1, sink=0, cost=522.47
+src=1, sink=1, cost=37.07
+
+Frame 2525
+src=0, sink=0, cost=507.57
+src=1, sink=0, cost=15.69
+
+Frame 2526
+src=0, sink=0, cost=9.52
+src=1, sink=0, cost=635.06
+
+Frame 2527
+src=0, sink=0, cost=639.58
+src=1, sink=0, cost=19.71
+
+Frame 2528
+src=0, sink=0, cost=641.91
+
+Frame 2529
+src=0, sink=0, cost=10.09
+
+Frame 2530
+src=0, sink=0, cost=12.01
+
+Frame 2531
+
+Frame 2532
+
+Frame 2533
+
+Frame 2534
+
+Frame 2535
+
+Frame 2536
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+
+Frame 2537
+src=0, sink=0, cost=78.85
+src=0, sink=1, cost=483.68
+
+Frame 2538
+src=0, sink=0, cost=639.70
+src=0, sink=1, cost=1036.86
+
+Frame 2539
+src=0, sink=0, cost=22.58
+src=0, sink=1, cost=447.88
+src=1, sink=0, cost=598.51
+src=1, sink=1, cost=1023.82
+
+Frame 2540
+src=0, sink=0, cost=48.35
+src=0, sink=1, cost=450.06
+src=0, sink=2, cost=56.87
+src=1, sink=0, cost=436.95
+src=1, sink=1, cost=15.35
+src=1, sink=2, cost=451.66
+
+Frame 2541
+src=0, sink=0, cost=54.98
+src=1, sink=0, cost=449.19
+
+Frame 2542
+src=0, sink=0, cost=43.89
+
+Frame 2543
+src=0, sink=0, cost=44.93
+
+Frame 2544
+src=0, sink=0, cost=21.22
+src=0, sink=1, cost=480.72
+src=1, sink=0, cost=615.72
+src=1, sink=1, cost=1075.22
+
+Frame 2545
+src=0, sink=0, cost=29.96
+src=0, sink=1, cost=501.77
+src=1, sink=0, cost=493.79
+src=1, sink=1, cost=9.05
+
+Frame 2546
+src=0, sink=0, cost=23.77
+src=0, sink=1, cost=501.09
+src=1, sink=0, cost=503.89
+src=1, sink=1, cost=7.83
+
+Frame 2547
+src=0, sink=0, cost=22.28
+
+Frame 2548
+src=0, sink=0, cost=13.40
+
+Frame 2549
+src=0, sink=0, cost=14.90
+
+Frame 2550
+src=0, sink=0, cost=13.16
+
+Frame 2551
+src=0, sink=0, cost=6.84
+
+Frame 2552
+src=0, sink=0, cost=5.65
+
+Frame 2553
+src=0, sink=0, cost=5.67
+
+Frame 2554
+src=0, sink=0, cost=3.39
+
+Frame 2555
+src=0, sink=0, cost=2.85
+
+Frame 2556
+src=0, sink=0, cost=2.82
+
+Frame 2557
+src=0, sink=0, cost=12.31
+
+Frame 2558
+src=0, sink=0, cost=9.44
+
+Frame 2559
+src=0, sink=0, cost=10.62
+
+Frame 2560
+src=0, sink=0, cost=16.14
+
+Frame 2561
+src=0, sink=0, cost=10.38
+
+Frame 2562
+src=0, sink=0, cost=14.41
+
+Frame 2563
+src=0, sink=0, cost=14.18
+
+Frame 2564
+src=0, sink=0, cost=10.36
+
+Frame 2565
+src=0, sink=0, cost=6.83
+
+Frame 2566
+src=0, sink=0, cost=0.00
+
+Frame 2567
+src=0, sink=0, cost=15.24
+
+Frame 2568
+src=0, sink=0, cost=49.49
+
+Frame 2569
+src=0, sink=0, cost=30.08
+
+Frame 2570
+src=0, sink=0, cost=26.53
+
+Frame 2571
+src=0, sink=0, cost=22.88
+
+Frame 2572
+src=0, sink=0, cost=28.77
+
+Frame 2573
+src=0, sink=0, cost=32.79
+
+Frame 2574
+src=0, sink=0, cost=25.24
+
+Frame 2575
+src=0, sink=0, cost=28.46
+
+Frame 2576
+src=0, sink=0, cost=16.25
+
+Frame 2577
+src=0, sink=0, cost=23.48
+
+Frame 2578
+src=0, sink=0, cost=25.49
+
+Frame 2579
+src=0, sink=0, cost=24.75
+
+Frame 2580
+src=0, sink=0, cost=22.06
+
+Frame 2581
+src=0, sink=0, cost=29.48
+
+Frame 2582
+src=0, sink=0, cost=25.37
+
+Frame 2583
+src=0, sink=0, cost=19.66
+
+Frame 2584
+src=0, sink=0, cost=37.09
+
+Frame 2585
+src=0, sink=0, cost=24.83
+
+Frame 2586
+src=0, sink=0, cost=24.07
+
+Frame 2587
+src=0, sink=0, cost=32.51
+
+Frame 2588
+src=0, sink=0, cost=26.38
+
+Frame 2589
+src=0, sink=0, cost=24.52
+
+Frame 2590
+src=0, sink=0, cost=40.64
+
+Frame 2591
+src=0, sink=0, cost=28.20
+
+Frame 2592
+src=0, sink=0, cost=0.00
+
+Frame 2593
+src=0, sink=0, cost=36.80
+
+Frame 2594
+src=0, sink=0, cost=36.80
+
+Frame 2595
+src=0, sink=0, cost=42.47
+
+Frame 2596
+src=0, sink=0, cost=24.37
+
+Frame 2597
+src=0, sink=0, cost=61.07
+src=0, sink=1, cost=41.05
+
+Frame 2598
+src=0, sink=0, cost=52.87
+
+Frame 2599
+src=0, sink=0, cost=44.60
+
+Frame 2600
+src=0, sink=0, cost=44.33
+
+Frame 2601
+src=0, sink=0, cost=33.67
+
+Frame 2602
+src=0, sink=0, cost=20.74
+
+Frame 2603
+
+Frame 2604
+
+Frame 2605
+
+Frame 2606
+
+Frame 2607
+
+Frame 2608
+
+Frame 2609
+
+Frame 2610
+
+Frame 2611
+
+Frame 2612
+
+Frame 2613
+
+Frame 2614
+
+Frame 2615
+
+Frame 2616
+src=0, sink=0, cost=0.00
+
+Frame 2617
+src=0, sink=0, cost=21.01
+
+Frame 2618
+
+Frame 2619
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+
+Frame 2620
+src=0, sink=0, cost=225.44
+src=0, sink=1, cost=65.33
+
+Frame 2621
+src=0, sink=0, cost=48.15
+src=0, sink=1, cost=236.74
+
+Frame 2622
+src=0, sink=0, cost=38.83
+src=0, sink=1, cost=263.19
+
+Frame 2623
+src=0, sink=0, cost=310.04
+src=0, sink=1, cost=50.59
+
+Frame 2624
+src=0, sink=0, cost=352.25
+src=0, sink=1, cost=30.73
+
+Frame 2625
+src=0, sink=0, cost=373.55
+src=0, sink=1, cost=35.93
+
+Frame 2626
+src=0, sink=0, cost=412.21
+src=0, sink=1, cost=36.48
+
+Frame 2627
+src=0, sink=0, cost=452.26
+src=0, sink=1, cost=27.45
+
+Frame 2628
+src=0, sink=0, cost=22.17
+src=0, sink=1, cost=473.24
+
+Frame 2629
+src=0, sink=0, cost=21.12
+
+Frame 2630
+src=0, sink=0, cost=26.93
+
+Frame 2631
+src=0, sink=0, cost=19.78
+src=0, sink=1, cost=622.45
+
+Frame 2632
+src=0, sink=0, cost=20.70
+
+Frame 2633
+src=0, sink=0, cost=18.56
+
+Frame 2634
+src=0, sink=0, cost=21.17
+
+Frame 2635
+src=0, sink=0, cost=18.77
+
+Frame 2636
+src=0, sink=0, cost=14.11
+
+Frame 2637
+src=0, sink=0, cost=10.26
+
+Frame 2638
+src=0, sink=0, cost=21.26
+
+Frame 2639
+src=0, sink=0, cost=24.73
+
+Frame 2640
+
+Frame 2641
+
+Frame 2642
+
+Frame 2643
+
+Frame 2644
+
+Frame 2645
+
+Frame 2646
+
+Frame 2647
+
+Frame 2648
+src=0, sink=0, cost=0.00
+
+Frame 2649
+src=0, sink=0, cost=0.00
+
+Frame 2650
+src=0, sink=0, cost=9.45
+
+Frame 2651
+src=0, sink=0, cost=12.29
+
+Frame 2652
+src=0, sink=0, cost=8.47
+
+Frame 2653
+src=0, sink=0, cost=0.00
+
+Frame 2654
+src=0, sink=0, cost=2.83
+
+Frame 2655
+src=0, sink=0, cost=4.22
+
+Frame 2656
+src=0, sink=0, cost=8.92
+
+Frame 2657
+
+Frame 2658
+
+Frame 2659
+
+Frame 2660
+
+Frame 2661
+
+Frame 2662
+
+Frame 2663
+
+Frame 2664
+src=0, sink=0, cost=0.00
+
+Frame 2665
+src=0, sink=0, cost=2.82
+
+Frame 2666
+src=0, sink=0, cost=7.53
+
+Frame 2667
+src=0, sink=0, cost=6.62
+
+Frame 2668
+src=0, sink=0, cost=1.88
+
+Frame 2669
+src=0, sink=0, cost=2.82
+src=1, sink=0, cost=8.46
+
+Frame 2670
+src=0, sink=0, cost=8.02
+
+Frame 2671
+src=0, sink=0, cost=3.77
+
+Frame 2672
+src=0, sink=0, cost=8.53
+src=1, sink=0, cost=335.40
+
+Frame 2673
+src=0, sink=0, cost=1.88
+
+Frame 2674
+src=0, sink=0, cost=6.59
+
+Frame 2675
+src=0, sink=0, cost=3.80
+
+Frame 2676
+src=0, sink=0, cost=8.47
+
+Frame 2677
+src=0, sink=0, cost=10.38
+
+Frame 2678
+src=0, sink=0, cost=10.40
+
+Frame 2679
+src=0, sink=0, cost=6.58
+
+Frame 2680
+src=0, sink=0, cost=11.87
+
+Frame 2681
+src=0, sink=0, cost=14.40
+
+Frame 2682
+src=0, sink=0, cost=10.40
+
+Frame 2683
+src=0, sink=0, cost=7.55
+
+Frame 2684
+src=0, sink=0, cost=0.00
+
+Frame 2685
+src=0, sink=0, cost=7.55
+
+Frame 2686
+src=0, sink=0, cost=8.74
+
+Frame 2687
+src=0, sink=0, cost=3.79
+
+Frame 2688
+src=0, sink=0, cost=0.00
+
+Frame 2689
+
+Frame 2690
+src=0, sink=0, cost=0.00
+
+Frame 2691
+
+Frame 2692
+
+Frame 2693
+
+Frame 2694
+
+Frame 2695
+
+Frame 2696
+src=0, sink=0, cost=0.00
+
+Frame 2697
+src=0, sink=0, cost=18.62
+
+Frame 2698
+src=0, sink=0, cost=18.51
+
+Frame 2699
+src=0, sink=0, cost=13.19
+
+Frame 2700
+src=0, sink=0, cost=4.79
+
+Frame 2701
+src=0, sink=0, cost=3.93
+
+Frame 2702
+src=0, sink=0, cost=11.15
+
+Frame 2703
+src=0, sink=0, cost=12.65
+
+Frame 2704
+
+Frame 2705
+
+Frame 2706
+
+Frame 2707
+
+Frame 2708
+
+Frame 2709
+
+Frame 2710
+
+Frame 2711
+
+Frame 2712
+
+Frame 2713
+
+Frame 2714
+
+Frame 2715
+
+Frame 2716
+
+Frame 2717
+
+Frame 2718
+
+Frame 2719
+
+Frame 2720
+
+Frame 2721
+
+Frame 2722
+
+Frame 2723
+
+Frame 2724
+
+Frame 2725
+
+Frame 2726
+
+Frame 2727
+
+Frame 2728
+
+Frame 2729
+
+Frame 2730
+
+Frame 2731
+
+Frame 2732
+
+Frame 2733
+
+Frame 2734
+
+Frame 2735
+
+Frame 2736
+
+Frame 2737
+
+Frame 2738
+
+Frame 2739
+
+Frame 2740
+
+Frame 2741
+
+Frame 2742
+
+Frame 2743
+
+Frame 2744
+
+Frame 2745
+
+Frame 2746
+
+Frame 2747
+
+Frame 2748
+
+Frame 2749
+
+Frame 2750
+
+Frame 2751
+
+Frame 2752
+
+Frame 2753
+
+Frame 2754
+
+Frame 2755
+
+Frame 2756
+
+Frame 2757
+
+Frame 2758
+
+Frame 2759
+
+Frame 2760
+
+Frame 2761
+
+Frame 2762
+
+Frame 2763
+
+Frame 2764
+
+Frame 2765
+
+Frame 2766
+
+Frame 2767
+
+Frame 2768
+
+Frame 2769
+
+Frame 2770
+
+Frame 2771
+
+Frame 2772
+
+Frame 2773
+
+Frame 2774
+
+Frame 2775
+
+Frame 2776
+
+Frame 2777
+
+Frame 2778
+
+Frame 2779
+
+Frame 2780
+
+Frame 2781
+
+Frame 2782
+
+Frame 2783
+
+Frame 2784
+
+Frame 2785
+
+Frame 2786
+
+Frame 2787
+
+Frame 2788
+
+Frame 2789
+
+Frame 2790
+
+Frame 2791
+
+Frame 2792
+
+Frame 2793
+
+Frame 2794
+
+Frame 2795
+
+Frame 2796
+
+Frame 2797
+
+Frame 2798
+
+Frame 2799
+
+Frame 2800
+
+Frame 2801
+
+Frame 2802
+
+Frame 2803
+
+Frame 2804
+
+Frame 2805
+
+Frame 2806
+
+Frame 2807
+
+Frame 2808
+src=0, sink=0, cost=0.00
+
+Frame 2809
+src=0, sink=0, cost=18.70
+
+Frame 2810
+src=0, sink=0, cost=16.65
+
+Frame 2811
+src=0, sink=0, cost=15.04
+
+Frame 2812
+src=0, sink=0, cost=8.11
+
+Frame 2813
+src=0, sink=0, cost=9.06
+
+Frame 2814
+src=0, sink=0, cost=4.74
+
+Frame 2815
+src=0, sink=0, cost=10.69
+
+Frame 2816
+src=0, sink=0, cost=5.69
+
+Frame 2817
+src=0, sink=0, cost=10.42
+
+Frame 2818
+src=0, sink=0, cost=6.05
+
+Frame 2819
+src=0, sink=0, cost=11.54
+
+Frame 2820
+src=0, sink=0, cost=9.52
+
+Frame 2821
+src=0, sink=0, cost=19.23
+
+Frame 2822
+src=0, sink=0, cost=15.36
+
+Frame 2823
+src=0, sink=0, cost=21.21
+
+Frame 2824
+src=0, sink=0, cost=26.12
+src=1, sink=0, cost=522.09
+
+Frame 2825
+src=0, sink=0, cost=24.31
+src=1, sink=0, cost=530.71
+
+Frame 2826
+src=0, sink=0, cost=28.98
+src=1, sink=0, cost=532.85
+
+Frame 2827
+src=0, sink=0, cost=36.23
+src=1, sink=0, cost=548.63
+
+Frame 2828
+src=0, sink=0, cost=548.54
+src=1, sink=0, cost=36.82
+
+Frame 2829
+src=0, sink=0, cost=47.84
+src=1, sink=0, cost=563.24
+
+Frame 2830
+src=0, sink=0, cost=48.92
+src=1, sink=0, cost=562.06
+
+Frame 2831
+src=0, sink=0, cost=58.13
+
+Frame 2832
+src=0, sink=0, cost=69.58
+src=0, sink=1, cost=180.12
+src=1, sink=0, cost=190.48
+src=1, sink=1, cost=301.02
+
+Frame 2833
+src=0, sink=0, cost=197.00
+src=0, sink=1, cost=2.85
+src=0, sink=2, cost=4.25
+src=1, sink=0, cost=46.88
+src=1, sink=1, cost=196.31
+src=1, sink=2, cost=190.10
+
+Frame 2834
+src=0, sink=0, cost=234.86
+src=1, sink=0, cost=65.81
+
+Frame 2835
+src=0, sink=0, cost=289.07
+src=1, sink=0, cost=97.00
+
+Frame 2836
+src=0, sink=0, cost=61.89
+src=1, sink=0, cost=324.44
+
+Frame 2837
+src=0, sink=0, cost=90.23
+src=1, sink=0, cost=360.17
+
+Frame 2838
+src=0, sink=0, cost=95.23
+src=1, sink=0, cost=401.67
+
+Frame 2839
+src=0, sink=0, cost=78.99
+src=1, sink=0, cost=436.32
+src=2, sink=0, cost=88.68
+
+Frame 2840
+src=0, sink=0, cost=33.62
+src=0, sink=1, cost=973.95
+
+Frame 2841
+src=0, sink=0, cost=22.14
+src=0, sink=1, cost=959.44
+
+Frame 2842
+src=0, sink=0, cost=958.09
+src=0, sink=1, cost=22.30
+
+Frame 2843
+src=0, sink=0, cost=951.40
+src=0, sink=1, cost=30.21
+
+Frame 2844
+src=0, sink=0, cost=28.34
+src=0, sink=1, cost=957.58
+
+Frame 2845
+src=0, sink=0, cost=39.05
+src=0, sink=1, cost=972.90
+
+Frame 2846
+src=0, sink=0, cost=35.07
+src=0, sink=1, cost=986.84
+
+Frame 2847
+src=0, sink=0, cost=47.72
+
+Frame 2848
+src=0, sink=0, cost=41.44
+src=0, sink=1, cost=1036.42
+
+Frame 2849
+src=0, sink=0, cost=62.05
+src=0, sink=1, cost=1070.29
+
+Frame 2850
+src=0, sink=0, cost=69.13
+src=0, sink=1, cost=60.51
+src=1, sink=0, cost=642.66
+src=1, sink=1, cost=634.04
+
+Frame 2851
+
+Frame 2852
+
+Frame 2853
+
+Frame 2854
+
+Frame 2855
+
+Frame 2856
+
+Frame 2857
+
+Frame 2858
+
+Frame 2859
+
+Frame 2860
+
+Frame 2861
+
+Frame 2862
+
+Frame 2863
+
+Frame 2864
+src=0, sink=0, cost=0.00
+
+Frame 2865
+
+Frame 2866
+
+Frame 2867
+
+Frame 2868
+
+Frame 2869
+src=0, sink=0, cost=0.00
+
+Frame 2870
+
+Frame 2871
+
+Frame 2872
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+
+Frame 2873
+src=0, sink=0, cost=17.57
+src=0, sink=1, cost=1110.51
+
+Frame 2874
+src=0, sink=0, cost=25.28
+src=0, sink=1, cost=1096.31
+
+Frame 2875
+src=0, sink=0, cost=7.65
+src=0, sink=1, cost=1069.15
+
+Frame 2876
+src=0, sink=0, cost=14.90
+src=0, sink=1, cost=1057.32
+
+Frame 2877
+src=0, sink=0, cost=11.01
+src=0, sink=1, cost=1031.67
+
+Frame 2878
+
+Frame 2879
+
+Frame 2880
+
+Frame 2881
+
+Frame 2882
+
+Frame 2883
+
+Frame 2884
+
+Frame 2885
+
+Frame 2886
+src=0, sink=0, cost=0.00
+
+Frame 2887
+src=0, sink=0, cost=16.29
+
+Frame 2888
+
+Frame 2889
+
+Frame 2890
+
+Frame 2891
+
+Frame 2892
+
+Frame 2893
+
+Frame 2894
+
+Frame 2895
+
+Frame 2896
+src=0, sink=0, cost=0.00
+
+Frame 2897
+src=0, sink=0, cost=7.96
+
+Frame 2898
+src=0, sink=0, cost=18.66
+
+Frame 2899
+src=0, sink=0, cost=13.77
+
+Frame 2900
+src=0, sink=0, cost=29.72
+
+Frame 2901
+src=0, sink=0, cost=13.66
+
+Frame 2902
+
+Frame 2903
+
+Frame 2904
+
+Frame 2905
+
+Frame 2906
+
+Frame 2907
+
+Frame 2908
+
+Frame 2909
+
+Frame 2910
+src=0, sink=0, cost=0.00
+
+Frame 2911
+
+Frame 2912
+
+Frame 2913
+
+Frame 2914
+
+Frame 2915
+
+Frame 2916
+
+Frame 2917
+
+Frame 2918
+
+Frame 2919
+
+Frame 2920
+
+Frame 2921
+
+Frame 2922
+
+Frame 2923
+
+Frame 2924
+
+Frame 2925
+
+Frame 2926
+
+Frame 2927
+
+Frame 2928
+
+Frame 2929
+
+Frame 2930
+
+Frame 2931
+
+Frame 2932
+
+Frame 2933
+
+Frame 2934
+
+Frame 2935
+
+Frame 2936
+
+Frame 2937
+
+Frame 2938
+
+Frame 2939
+
+Frame 2940
+
+Frame 2941
+
+Frame 2942
+
+Frame 2943
+
+Frame 2944
+
+Frame 2945
+
+Frame 2946
+
+Frame 2947
+
+Frame 2948
+
+Frame 2949
+
+Frame 2950
+
+Frame 2951
+
+Frame 2952
+
+Frame 2953
+
+Frame 2954
+
+Frame 2955
+
+Frame 2956
+
+Frame 2957
+
+Frame 2958
+
+Frame 2959
+
+Frame 2960
+src=0, sink=0, cost=0.00
+
+Frame 2961
+src=0, sink=0, cost=16.17
+
+Frame 2962
+src=0, sink=0, cost=8.56
+
+Frame 2963
+src=0, sink=0, cost=13.26
+
+Frame 2964
+src=0, sink=0, cost=21.53
+
+Frame 2965
+src=0, sink=0, cost=18.32
+
+Frame 2966
+src=0, sink=0, cost=31.09
+
+Frame 2967
+src=0, sink=0, cost=22.68
+
+Frame 2968
+src=0, sink=0, cost=34.73
+
+Frame 2969
+src=0, sink=0, cost=28.76
+
+Frame 2970
+src=0, sink=0, cost=34.53
+
+Frame 2971
+src=0, sink=0, cost=155.47
+src=1, sink=0, cost=202.30
+
+Frame 2972
+src=0, sink=0, cost=132.67
+src=0, sink=1, cost=190.01
+
+Frame 2973
+src=0, sink=0, cost=225.94
+
+Frame 2974
+src=0, sink=0, cost=158.06
+
+Frame 2975
+src=0, sink=0, cost=104.17
+
+Frame 2976
+src=0, sink=0, cost=0.00
+
+Frame 2977
+src=0, sink=0, cost=98.76
+
+Frame 2978
+src=0, sink=0, cost=53.35
+
+Frame 2979
+src=0, sink=0, cost=43.42
+
+Frame 2980
+src=0, sink=0, cost=40.26
+
+Frame 2981
+src=0, sink=0, cost=40.32
+
+Frame 2982
+src=0, sink=0, cost=25.14
+
+Frame 2983
+src=0, sink=0, cost=22.97
+
+Frame 2984
+src=0, sink=0, cost=453.38
+src=0, sink=1, cost=15.00
+
+Frame 2985
+src=0, sink=0, cost=466.07
+src=0, sink=1, cost=13.74
+
+Frame 2986
+src=0, sink=0, cost=472.49
+src=0, sink=1, cost=15.64
+
+Frame 2987
+src=0, sink=0, cost=488.31
+src=0, sink=1, cost=7.54
+
+Frame 2988
+src=0, sink=0, cost=503.88
+src=0, sink=1, cost=8.48
+
+Frame 2989
+src=0, sink=0, cost=519.79
+src=0, sink=1, cost=8.48
+
+Frame 2990
+src=0, sink=0, cost=537.17
+src=0, sink=1, cost=8.91
+
+Frame 2991
+src=0, sink=0, cost=5.65
+src=0, sink=1, cost=555.20
+
+Frame 2992
+src=0, sink=0, cost=570.31
+src=0, sink=1, cost=10.99
+
+Frame 2993
+src=0, sink=0, cost=584.85
+src=0, sink=1, cost=6.64
+src=0, sink=2, cost=593.26
+
+Frame 2994
+src=0, sink=0, cost=593.49
+src=0, sink=1, cost=2.83
+
+Frame 2995
+
+Frame 2996
+
+Frame 2997
+
+Frame 2998
+
+Frame 2999
+
+Frame 3000
+
+Frame 3001
+
+Frame 3002
+
+Frame 3003
+
+Frame 3004
+
+Frame 3005
+
+Frame 3006
+
+Frame 3007
+
+Frame 3008
+
+Frame 3009
+
+Frame 3010
+
+Frame 3011
+
+Frame 3012
+
+Frame 3013
+
+Frame 3014
+src=0, sink=0, cost=0.00
+
+Frame 3015
+src=0, sink=0, cost=5.67
+
+Frame 3016
+src=0, sink=0, cost=6.63
+
+Frame 3017
+src=0, sink=0, cost=5.65
+
+Frame 3018
+src=0, sink=0, cost=11.49
+
+Frame 3019
+src=0, sink=0, cost=10.38
+
+Frame 3020
+src=0, sink=0, cost=6.78
+
+Frame 3021
+src=0, sink=0, cost=9.27
+src=0, sink=1, cost=54.80
+
+Frame 3022
+src=0, sink=0, cost=14.86
+src=0, sink=1, cost=62.40
+
+Frame 3023
+src=0, sink=0, cost=15.51
+src=0, sink=1, cost=69.62
+
+Frame 3024
+src=0, sink=0, cost=22.55
+
+Frame 3025
+src=0, sink=0, cost=19.36
+
+Frame 3026
+src=0, sink=0, cost=30.93
+
+Frame 3027
+src=0, sink=0, cost=25.39
+src=1, sink=0, cost=709.82
+
+Frame 3028
+src=0, sink=0, cost=34.57
+
+Frame 3029
+src=0, sink=0, cost=25.48
+
+Frame 3030
+src=0, sink=0, cost=44.27
+
+Frame 3031
+src=0, sink=0, cost=44.19
+
+Frame 3032
+src=0, sink=0, cost=44.92
+src=0, sink=1, cost=708.64
+src=1, sink=0, cost=185.32
+src=1, sink=1, cost=849.03
+
+Frame 3033
+src=0, sink=0, cost=55.08
+src=0, sink=1, cost=208.08
+
+Frame 3034
+src=0, sink=0, cost=63.65
+src=0, sink=1, cost=723.15
+
+Frame 3035
+src=0, sink=0, cost=47.41
+src=0, sink=1, cost=713.24
+
+Frame 3036
+
+Frame 3037
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+
+Frame 3038
+src=0, sink=0, cost=735.72
+src=0, sink=1, cost=59.06
+
+Frame 3039
+src=0, sink=0, cost=757.22
+src=0, sink=1, cost=82.22
+
+Frame 3040
+src=0, sink=0, cost=72.15
+src=0, sink=1, cost=751.39
+
+Frame 3041
+src=0, sink=0, cost=783.57
+src=0, sink=1, cost=95.47
+
+Frame 3042
+src=0, sink=0, cost=95.36
+src=0, sink=1, cost=789.92
+
+Frame 3043
+src=0, sink=0, cost=62.89
+
+Frame 3044
+src=0, sink=0, cost=10.46
+
+Frame 3045
+src=0, sink=0, cost=20.96
+
+Frame 3046
+src=0, sink=0, cost=8.98
+
+Frame 3047
+src=0, sink=0, cost=11.38
+
+Frame 3048
+src=0, sink=0, cost=828.16
+src=0, sink=1, cost=7.63
+
+Frame 3049
+src=0, sink=0, cost=829.87
+src=0, sink=1, cost=13.30
+
+Frame 3050
+src=0, sink=0, cost=830.66
+src=0, sink=1, cost=15.72
+
+Frame 3051
+src=0, sink=0, cost=838.13
+src=0, sink=1, cost=20.97
+
+Frame 3052
+src=0, sink=0, cost=847.69
+src=0, sink=1, cost=20.07
+
+Frame 3053
+src=0, sink=0, cost=857.02
+src=0, sink=1, cost=25.27
+
+Frame 3054
+src=0, sink=0, cost=27.44
+src=0, sink=1, cost=864.45
+
+Frame 3055
+src=0, sink=0, cost=28.82
+src=0, sink=1, cost=878.31
+src=0, sink=2, cost=482.09
+
+Frame 3056
+src=0, sink=0, cost=915.71
+src=0, sink=1, cost=67.90
+src=0, sink=2, cost=102.61
+
+Frame 3057
+src=0, sink=0, cost=976.03
+src=0, sink=1, cost=225.71
+src=0, sink=2, cost=434.35
+
+Frame 3058
+src=0, sink=0, cost=893.54
+src=0, sink=1, cost=167.71
+src=1, sink=0, cost=1213.81
+src=1, sink=1, cost=487.98
+
+Frame 3059
+
+Frame 3060
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+src=1, sink=0, cost=0.00
+src=1, sink=1, cost=0.00
+src=2, sink=0, cost=0.00
+src=2, sink=1, cost=0.00
+
+Frame 3061
+src=0, sink=0, cost=260.51
+src=0, sink=1, cost=268.61
+src=1, sink=0, cost=255.44
+src=1, sink=1, cost=261.89
+
+Frame 3062
+src=0, sink=0, cost=148.14
+src=0, sink=1, cost=194.50
+src=1, sink=0, cost=8.94
+src=1, sink=1, cost=42.23
+
+Frame 3063
+src=0, sink=0, cost=142.29
+src=0, sink=1, cost=94.69
+src=1, sink=0, cost=0.00
+src=1, sink=1, cost=201.10
+
+Frame 3064
+src=0, sink=0, cost=153.19
+src=0, sink=1, cost=66.01
+src=1, sink=0, cost=139.82
+src=1, sink=1, cost=45.42
+
+Frame 3065
+src=0, sink=0, cost=60.95
+src=0, sink=1, cost=69.28
+
+Frame 3066
+src=0, sink=0, cost=62.13
+src=1, sink=0, cost=34.66
+
+Frame 3067
+src=0, sink=0, cost=45.16
+
+Frame 3068
+src=0, sink=0, cost=40.31
+
+Frame 3069
+src=0, sink=0, cost=23.85
+
+Frame 3070
+
+Frame 3071
+
+Frame 3072
+src=0, sink=0, cost=0.00
+
+Frame 3073
+
+Frame 3074
+
+Frame 3075
+
+Frame 3076
+
+Frame 3077
+
+Frame 3078
+
+Frame 3079
+
+Frame 3080
+
+Frame 3081
+
+Frame 3082
+src=0, sink=0, cost=0.00
+
+Frame 3083
+src=0, sink=0, cost=25.89
+
+Frame 3084
+src=0, sink=0, cost=9.55
+
+Frame 3085
+src=0, sink=0, cost=18.63
+
+Frame 3086
+src=0, sink=0, cost=42.85
+src=1, sink=0, cost=70.20
+
+Frame 3087
+src=0, sink=0, cost=36.57
+src=1, sink=0, cost=80.82
+
+Frame 3088
+src=0, sink=0, cost=25.57
+
+Frame 3089
+src=0, sink=0, cost=40.06
+
+Frame 3090
+src=0, sink=0, cost=42.66
+
+Frame 3091
+src=0, sink=0, cost=55.95
+
+Frame 3092
+src=0, sink=0, cost=44.35
+
+Frame 3093
+src=0, sink=0, cost=59.27
+src=0, sink=1, cost=35.06
+
+Frame 3094
+src=0, sink=0, cost=42.78
+src=0, sink=1, cost=58.18
+
+Frame 3095
+src=0, sink=0, cost=72.56
+
+Frame 3096
+src=0, sink=0, cost=65.33
+src=0, sink=1, cost=583.54
+
+Frame 3097
+src=0, sink=0, cost=76.30
+
+Frame 3098
+src=0, sink=0, cost=68.23
+
+Frame 3099
+src=0, sink=0, cost=82.40
+src=0, sink=1, cost=445.08
+
+Frame 3100
+src=0, sink=0, cost=392.34
+src=0, sink=1, cost=77.43
+
+Frame 3101
+src=0, sink=0, cost=368.80
+src=0, sink=1, cost=85.33
+
+Frame 3102
+src=0, sink=0, cost=332.85
+src=0, sink=1, cost=91.78
+
+Frame 3103
+src=0, sink=0, cost=312.47
+src=0, sink=1, cost=96.89
+src=0, sink=2, cost=116.05
+
+Frame 3104
+src=0, sink=0, cost=272.98
+src=0, sink=1, cost=96.91
+
+Frame 3105
+src=0, sink=0, cost=264.46
+src=0, sink=1, cost=101.16
+
+Frame 3106
+
+Frame 3107
+src=0, sink=0, cost=0.00
+src=0, sink=1, cost=0.00
+
+Frame 3108
+src=0, sink=0, cost=256.30
+src=0, sink=1, cost=47.21
+
+Frame 3109
+
+Frame 3110
+
+Frame 3111
+
+Frame 3112
+
+Frame 3113
+
+Frame 3114
+
+Frame 3115
+
+Frame 3116
+
+Frame 3117
+
+Frame 3118
+
+Frame 3119
+
+Frame 3120
+
+Frame 3121
+
+Frame 3122
+
+Frame 3123
+
+Frame 3124
+
+Frame 3125
+
+Frame 3126
+
+Frame 3127
+
+Frame 3128
+
+Frame 3129
+
+Frame 3130
+
+Frame 3131
+
+Frame 3132
+
+Frame 3133
+
+Frame 3134
+
+Frame 3135
+
+Frame 3136
+
+Frame 3137
+
+Frame 3138
+
+Frame 3139
+
+Frame 3140
+
+Frame 3141
+
+Frame 3142
+
+Frame 3143
+
+Frame 3144
+
+Frame 3145
+
+Frame 3146
+
+Frame 3147
+
+Frame 3148
+
+Frame 3149
+
+Frame 3150
+
+Frame 3151
+
+Frame 3152
+
+Frame 3153
+
+Frame 3154
+
+Frame 3155
+
+Frame 3156
+
+Frame 3157
+
+Frame 3158
+
+Frame 3159
+
+Frame 3160
+
+Frame 3161
+
+Frame 3162
+
+Frame 3163
+
+Frame 3164
+
+Frame 3165
+
+Frame 3166
+
+Frame 3167
+
+Frame 3168
+
+Frame 3169
+
+Frame 3170
+
+Frame 3171
+
+Frame 3172
+
+Frame 3173
+
+Frame 3174
+
+Frame 3175
+
+Frame 3176
+src=0, sink=0, cost=0.00
+
+Frame 3177
+src=0, sink=0, cost=16.02
+
+Frame 3178
+src=0, sink=0, cost=23.36
+
+Frame 3179
+src=0, sink=0, cost=17.06
+
+Frame 3180
+src=0, sink=0, cost=12.18
+
+Frame 3181
+src=0, sink=0, cost=10.17
+
+Frame 3182
+
+Frame 3183
+
+Frame 3184
+
+Frame 3185
+
+Frame 3186
+
+Frame 3187
+
+Frame 3188
+
+Frame 3189
+
+Frame 3190
+
+Frame 3191
+
+Frame 3192
+
+Frame 3193
+
+Frame 3194
+
+Frame 3195
+
+Frame 3196
+
+Frame 3197
+
+Frame 3198
+
+Frame 3199
+
+Frame 3200
+
+Frame 3201
+
+Frame 3202
+
+Frame 3203
+
+Frame 3204
+
+Frame 3205
+
+Frame 3206
+
+Frame 3207
+
+Frame 3208
+
+Frame 3209
+
+Frame 3210
+
+Frame 3211
+
+Frame 3212
+
+Frame 3213
+
+Frame 3214
+
+Frame 3215
+
+Frame 3216
+
+Frame 3217
+
+Frame 3218
+
+Frame 3219
+
+Frame 3220
+
+Frame 3221
+
+Frame 3222
+
+Frame 3223
+
+Frame 3224
+
+Frame 3225
+
+Frame 3226
+
+Frame 3227
+
+Frame 3228
+
+Frame 3229
+
+Frame 3230
+
+Frame 3231
+
+Frame 3232
+
+Frame 3233
+
+Frame 3234
+
+Frame 3235
+
+Frame 3236
+
+Frame 3237
+src=0, sink=0, cost=0.00
+
+Frame 3238
+src=0, sink=0, cost=33.58
+
+Frame 3239
+src=0, sink=0, cost=18.72
+
+Frame 3240
+
+Frame 3241
+
+Frame 3242
+
+Frame 3243
+
+Frame 3244
+
+Frame 3245
+
+Frame 3246
+
+Frame 3247
+
+Frame 3248
+
+Frame 3249
+
+Frame 3250
+
+Frame 3251
+
+Frame 3252
+
+Frame 3253
+
+Frame 3254
+
+Frame 3255
+
+Frame 3256
+
+Frame 3257
+
+Frame 3258
+
+Frame 3259
+
+Frame 3260
+
+Frame 3261
+
+Frame 3262
+
+Frame 3263
+src=0, sink=0, cost=0.00
+

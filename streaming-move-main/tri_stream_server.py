@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import os
+import io
 import time
 import shutil
+import subprocess
 import threading
 import argparse
 import pandas as pd
@@ -12,13 +14,29 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from contextlib import asynccontextmanager
 
+# Parse args at module level so SESSION_ID is available before lifespan runs
+_parser = argparse.ArgumentParser()
+_parser.add_argument("--session", type=str, required=True, help="Session number, e.g. 1653")
+_parser.add_argument("--port", type=int, default=8000)
+_parser.add_argument("--speed", type=float, default=1.0)
+_args = _parser.parse_args()
+
+SESSION_ID = _args.session
+SPEED = _args.speed
+
+JETSON_HOST = "jetson@192.168.0.148"
+REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
+FRAME_IDX_PATHS = {
+    cam: f"/home/jetson/Desktop/cv_output/reader/{cam}/hls_segment_frame_index.csv"
+    for cam in ["source", "sink", "hq"]
+}
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSIGNMENT_DIR = os.path.dirname(BASE_DIR)
 DATA_DIR = os.path.join(ASSIGNMENT_DIR, "sync_reports")
 TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "test_work")
 
 WINDOW_SIZE = 30
-SPEED = 1.0
 
 # Global state for sliding windows
 server_state = {
@@ -55,43 +73,121 @@ events_data = []
 
 FPS = 30.0
 
-def load_data():
-    global events_data
-    print("Loading CSVs into memory for O(1) lookups...")
-    
-    # 1. Load sync mapping
-    sync_csv = os.path.join(DATA_DIR, "segments_1645", "sync", "hls_sync_1645_triple.csv")
-    df_sync = pd.read_csv(sync_csv)
-    for _, row in df_sync.iterrows():
-        if pd.isna(row['Source_Index']) or pd.isna(row['Sink_Index']) or pd.isna(row['HQ_Index']):
-            continue
-            
-        src_idx = int(row['Source_Index'])
-        snk_idx = int(row['Sink_Index'])
-        hq_idx = int(row['HQ_Index'])
-        
-        sync_maps["source_to_sink"][src_idx] = snk_idx
-        sync_maps["source_to_hq"][src_idx] = hq_idx
-        
-        sync_maps["sink_to_source"][snk_idx] = src_idx
-        sync_maps["sink_to_hq"][snk_idx] = hq_idx
-        
-        sync_maps["hq_to_source"][hq_idx] = src_idx
-        sync_maps["hq_to_sink"][hq_idx] = snk_idx
+_sync_rows_loaded = 0  # number of data rows already ingested (excludes header)
+_sync_lock = threading.Lock()
 
-    # 2. Load frame to segment mapping
-    for cam in ["source", "sink", "hq"]:
-        idx_csv = os.path.join(TEST_WORK_DIR, "cv_output", "reader", cam, "hls_segment_frame_index.csv")
-        df_idx = pd.read_csv(idx_csv)
-        
-        for _, row in df_idx.iterrows():
-            seg_idx = int(row['segment_index'])
-            start_frame = int(row['cumulative_start_frame'])
-            frame_count = int(row['frame_count'])
-            
+_frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
+_frame_idx_lock = threading.Lock()
+
+def _ssh_fetch(remote_path, skip_lines=0):
+    """Fetch a file from the Jetson over SSH. skip_lines=0 → full file; N → only new rows after N data rows."""
+    remote_cmd = (f"cat {remote_path}" if skip_lines == 0
+                  else f"tail -n +{skip_lines + 2} {remote_path}")
+    result = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", JETSON_HOST, remote_cmd],
+        capture_output=True, text=True, timeout=10
+    )
+    result.check_returncode()
+    return result.stdout
+
+def _fetch_csv_lines(skip_lines=0):
+    return _ssh_fetch(REMOTE_CSV_PATH, skip_lines)
+
+def _ingest_sync_rows(csv_text, has_header=True):
+    """Parse csv_text and update sync_maps. Returns number of rows ingested."""
+    if not csv_text.strip():
+        return 0
+    if has_header:
+        df = pd.read_csv(io.StringIO(csv_text),
+                         usecols=["Source_Index", "Sink_Index", "HQ_Index"])
+    else:
+        df = pd.read_csv(io.StringIO(csv_text), header=None, usecols=[0, 1, 2],
+                         names=["Source_Index", "Sink_Index", "HQ_Index"])
+    count = 0
+    with _sync_lock:
+        for _, row in df.iterrows():
+            if pd.isna(row['Source_Index']) or pd.isna(row['Sink_Index']) or pd.isna(row['HQ_Index']):
+                continue
+            src_idx = int(row['Source_Index'])
+            snk_idx = int(row['Sink_Index'])
+            hq_idx  = int(row['HQ_Index'])
+            sync_maps["source_to_sink"][src_idx] = snk_idx
+            sync_maps["source_to_hq"][src_idx]   = hq_idx
+            sync_maps["sink_to_source"][snk_idx]  = src_idx
+            sync_maps["sink_to_hq"][snk_idx]      = hq_idx
+            sync_maps["hq_to_source"][hq_idx]     = src_idx
+            sync_maps["hq_to_sink"][hq_idx]       = snk_idx
+            count += 1
+    return count
+
+def sync_csv_poller():
+    """Background thread: polls the remote sync CSV every 4 s and ingests new rows."""
+    global _sync_rows_loaded
+    while True:
+        time.sleep(4)
+        try:
+            new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded)
+            added = _ingest_sync_rows(new_text, has_header=False)
+            if added:
+                _sync_rows_loaded += added
+                print(f"[sync poller] +{added} new rows (total {_sync_rows_loaded})")
+        except Exception as e:
+            print(f"[sync poller] fetch error: {e}")
+
+def _ingest_frame_idx_rows(cam, csv_text, has_header=True):
+    """Parse frame index CSV text and update seg_to_frame / frame_to_seg. Returns rows added."""
+    if not csv_text.strip():
+        return 0
+    # Columns: segment_index(0), seg_basename(1), cumulative_start_frame(2), frame_count(3)
+    if has_header:
+        df = pd.read_csv(io.StringIO(csv_text),
+                         usecols=["segment_index", "cumulative_start_frame", "frame_count"])
+    else:
+        df = pd.read_csv(io.StringIO(csv_text), header=None, usecols=[0, 2, 3],
+                         names=["segment_index", "cumulative_start_frame", "frame_count"])
+    count = 0
+    with _frame_idx_lock:
+        for _, row in df.iterrows():
+            seg_idx     = int(row["segment_index"])
+            start_frame = int(row["cumulative_start_frame"])
+            frame_count = int(row["frame_count"])
             seg_to_frame[cam][seg_idx] = start_frame
             for f in range(start_frame, start_frame + frame_count):
                 frame_to_seg[cam][f] = (seg_idx, f - start_frame)
+            count += 1
+    return count
+
+def frame_idx_poller():
+    """Background thread: polls each camera's frame index CSV every 4 s for new segments."""
+    global _frame_idx_rows
+    while True:
+        time.sleep(4)
+        for cam in ["source", "sink", "hq"]:
+            try:
+                text = _ssh_fetch(FRAME_IDX_PATHS[cam], skip_lines=_frame_idx_rows[cam])
+                added = _ingest_frame_idx_rows(cam, text, has_header=False)
+                if added:
+                    _frame_idx_rows[cam] += added
+                    print(f"[frame idx poller] {cam} +{added} segs (total {_frame_idx_rows[cam]})")
+            except Exception as e:
+                print(f"[frame idx poller] {cam} error: {e}")
+
+def load_data():
+    global events_data, _sync_rows_loaded
+    print("Loading CSVs into memory for O(1) lookups...")
+
+    # 1. Load sync mapping from remote Jetson
+    print(f"  Fetching remote sync CSV: {REMOTE_CSV_PATH}")
+    csv_text = _fetch_csv_lines(skip_lines=0)
+    _sync_rows_loaded = _ingest_sync_rows(csv_text, has_header=True)
+    print(f"  Loaded {_sync_rows_loaded} sync rows from remote.")
+
+    # 2. Load frame-to-segment index from remote Jetson
+    for cam in ["source", "sink", "hq"]:
+        print(f"  Fetching frame index [{cam}] from remote...")
+        text = _ssh_fetch(FRAME_IDX_PATHS[cam])
+        _frame_idx_rows[cam] = _ingest_frame_idx_rows(cam, text, has_header=True)
+        print(f"  [{cam}] {_frame_idx_rows[cam]} segments, {len(frame_to_seg[cam])} frames indexed.")
                 
     # 3. Load events
     events_csv = os.path.join(TEST_WORK_DIR, "cv_output", "correlation", "flight_shots.csv")
@@ -252,7 +348,7 @@ def master_stream_worker():
                 
                 # Check if we are incorrectly repeating a segment which freezes the player
                 # If the camera hasn't advanced, we emit a GAP!
-                if cam_seg_idx != prev_seg[cam]:
+                if cam_seg_idx != prev_seg[cam] and cam_seg_idx < len(all_segs[cam]):
                     row[cam] = all_segs[cam][cam_seg_idx]
                     prev_seg[cam] = cam_seg_idx
                 else:
@@ -309,8 +405,9 @@ def master_stream_worker():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_data()
-    t = threading.Thread(target=master_stream_worker, daemon=True)
-    t.start()
+    threading.Thread(target=master_stream_worker, daemon=True).start()
+    threading.Thread(target=sync_csv_poller, daemon=True).start()
+    threading.Thread(target=frame_idx_poller, daemon=True).start()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -420,6 +517,66 @@ def get_sync_map(from_camera: str, sns: str):
         res[sn] = seg_res
     return res
 
+@app.get("/check_sync")
+def check_sync(
+    source_seg: int = 0, source_off: float = 0.0,
+    sink_seg:   int = 0, sink_off:   float = 0.0,
+    hq_seg:     int = 0, hq_off:     float = 0.0,
+    tolerance:  int = 15
+):
+    positions = {"source": (source_seg, source_off), "sink": (sink_seg, sink_off), "hq": (hq_seg, hq_off)}
+
+    # Convert seg+offset → absolute frame for each camera
+    frames = {}
+    for cam, (seg, off) in positions.items():
+        if seg in seg_to_frame[cam]:
+            frames[cam] = seg_to_frame[cam][seg] + int(off * FPS)
+        else:
+            frames[cam] = None
+
+    # For each (anchor, target) pair, check CSV prediction vs actual target frame
+    pairs = [("source", "sink"), ("source", "hq"), ("sink", "hq")]
+    checks = {}
+    with _sync_lock:
+        for anchor, target in pairs:
+            key = f"{anchor}_to_{target}"
+            if frames[anchor] is None or frames[target] is None:
+                checks[key] = {"error": "frame index missing", "match": False}
+                continue
+            anchor_frame = frames[anchor]
+            # Step 1: raw expected frame from sync map
+            if anchor_frame in sync_maps[key]:
+                raw_expected = sync_maps[key][anchor_frame]
+                exact = True
+            elif sync_maps[key]:
+                closest = min(sync_maps[key].keys(), key=lambda x: abs(x - anchor_frame))
+                raw_expected = sync_maps[key][closest]
+                exact = False
+            else:
+                checks[key] = {"error": "sync map empty", "match": False}
+                continue
+            # Step 2: clamp raw_expected to nearest valid frame in target's frame index
+            # (same correction /sync uses — handles 1:1 maps that go out of range)
+            if raw_expected in frame_to_seg[target]:
+                expected = raw_expected
+            elif frame_to_seg[target]:
+                expected = min(frame_to_seg[target].keys(), key=lambda x: abs(x - raw_expected))
+            else:
+                checks[key] = {"error": "frame index empty for target", "match": False}
+                continue
+            diff = abs(frames[target] - expected)
+            checks[key] = {
+                "anchor_frame": anchor_frame,
+                "expected_target_frame": expected,
+                "actual_target_frame": frames[target],
+                "diff_frames": diff,
+                "exact_hit": exact,
+                "match": diff <= tolerance,
+            }
+
+    overall = all(c.get("match", False) for c in checks.values())
+    return {"frames": frames, "checks": checks, "overall_match": overall, "tolerance": tolerance}
+
 @app.get("/events")
 def get_events():
     return events_data
@@ -436,10 +593,8 @@ def get_status():
     }
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--speed", type=float, default=1.0)
-    args = parser.parse_args()
-    SPEED = args.speed
-    print(f"Starting server on port {args.port} at {SPEED}x speed.")
-    uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="error")
+    print(f"Starting server on port {_args.port} at {SPEED}x speed (session {SESSION_ID}).")
+    uvicorn.run(app, host="0.0.0.0", port=_args.port, log_level="error")
+
+
+///what i am trying to tell you is basically in teh reader folder, there are 3 files that continuously update the cameras' frame and the segment correct? it mentions each segment and the frames in that segment. each frame captures the same amount of information across all 3 cameras. if one camera's segment only has 53 frames and the other 2 camera's same segment number had 120 frames, then there will be a mismatch right? answer to me ///
