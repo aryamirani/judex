@@ -34,6 +34,8 @@ FRAME_IDX_PATHS = {
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSIGNMENT_DIR = os.path.dirname(BASE_DIR)
 DATA_DIR = os.path.join(ASSIGNMENT_DIR, "sync_reports")
+if not os.path.exists(DATA_DIR):
+    DATA_DIR = os.path.join(ASSIGNMENT_DIR, "apr17", "sync_reports")
 TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "test_work")
 
 WINDOW_SIZE = 30
@@ -58,9 +60,9 @@ seg_to_frame = { "source": {}, "sink": {}, "hq": {} } # seg_index -> cumulative_
 
 # Paths
 CAM_PATHS = {
-    "source": os.path.join(DATA_DIR, "ts_segments_source", "1645"),
-    "sink": os.path.join(DATA_DIR, "ts_segments_sink", "1645"),
-    "hq": os.path.join(DATA_DIR, "ts_segments_hq", "1645")
+    "source": os.path.join(DATA_DIR, "ts_segments_source", SESSION_ID),
+    "sink": os.path.join(DATA_DIR, "ts_segments_sink", SESSION_ID),
+    "hq": os.path.join(DATA_DIR, "ts_segments_hq", SESSION_ID)
 }
 
 SERVE_DIRS = {
@@ -307,84 +309,53 @@ def master_stream_worker():
     for cam in ["source", "sink", "hq"]:
         all_segs[cam] = parse_playlist(os.path.join(CAM_PATHS[cam], "playlist.m3u8"))
         
-        # Create a gap filler video for this camera using its first segment
-        if len(all_segs[cam]) > 0:
-            first_seg = all_segs[cam][0][1]
-            first_src = os.path.join(CAM_PATHS[cam], first_seg)
-            gap_dst = os.path.join(SERVE_DIRS[cam], f"gap_{cam}.ts")
-            if not os.path.exists(gap_dst) and os.path.exists(first_src):
-                try: os.link(first_src, gap_dst)
-                except: shutil.copy2(first_src, gap_dst)
-            
     released = {"source": [], "sink": [], "hq": []}
     media_sequence = {"source": 0, "sink": 0, "hq": 0}
     
-    hq_segs = all_segs["hq"]
-    max_len = len(hq_segs)
-    current_idx = 0
+    # We track indices and elapsed simulation times for each camera independently
+    next_seg_idx = {"source": 0, "sink": 0, "hq": 0}
+    elapsed_sim_time = {"source": 0.0, "sink": 0.0, "hq": 0.0}
     
-    # Pre-build timeline map for fast iteration
-    # Since HQ is perfectly contiguous (no missing internal segments), it is our Master Clock.
-    timeline = []
-    prev_seg = {"source": -1, "sink": -1}
-    for hq_idx in range(max_len):
-        hq_dur, hq_name = hq_segs[hq_idx]
-        hq_start_frame = seg_to_frame["hq"].get(hq_idx)
-        
-        row = {"hq": (hq_dur, hq_name), "source": None, "sink": None}
-        
-        for cam in ["source", "sink"]:
-            map_key = f"hq_to_{cam}"
-            target_f = None
-            if hq_start_frame is not None:
-                if hq_start_frame in sync_maps[map_key]:
-                    target_f = sync_maps[map_key][hq_start_frame]
-                elif sync_maps[map_key]:
-                    closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - hq_start_frame))
-                    # Reduce from 500 to 120 so we don't repeat frames across long gaps
-                    if abs(closest - hq_start_frame) < 120:
-                        target_f = sync_maps[map_key][closest]
-            
-            if target_f is not None and target_f in frame_to_seg[cam]:
-                cam_seg_idx = frame_to_seg[cam][target_f][0]
-                
-                # Check if we are incorrectly repeating a segment which freezes the player
-                # If the camera hasn't advanced, we emit a GAP!
-                if cam_seg_idx != prev_seg[cam] and cam_seg_idx < len(all_segs[cam]):
-                    row[cam] = all_segs[cam][cam_seg_idx]
-                    prev_seg[cam] = cam_seg_idx
-                else:
-                    row[cam] = (hq_dur, f"gap_{cam}.ts", "GAP")
-            else:
-                row[cam] = (hq_dur, f"gap_{cam}.ts", "GAP")
-                
-        timeline.append(row)
+    start_time = time.time()
+    target_sim_time = 0.0
     
     while True:
-        # Loop wrap around
-        if current_idx >= max_len:
-            current_idx = 0
+        # Check if the master clock (hq) has completed its playlist
+        # and has finished playing the duration of its last released segment
+        if next_seg_idx["hq"] >= len(all_segs["hq"]) and elapsed_sim_time["hq"] <= target_sim_time:
+            print("[master worker] HQ stream complete. Wrapping around to segment 0.")
+            start_time = time.time()
+            target_sim_time = 0.0
             for cam in ["source", "sink", "hq"]:
+                next_seg_idx[cam] = 0
+                elapsed_sim_time[cam] = 0.0
                 released[cam].append("#EXT-X-DISCONTINUITY")
         
-        step_duration = timeline[current_idx]["hq"][0]
+        # Update current target simulation time
+        target_sim_time = (time.time() - start_time) * SPEED
         
         for cam in ["source", "sink", "hq"]:
-            item = timeline[current_idx][cam]
-            released[cam].append(item)
-            
-            is_gap_item = (isinstance(item, tuple) and len(item) == 3 and item[2] == "GAP")
-            server_state[cam]["is_gap"] = is_gap_item
-
-            if len(item) == 2: # Physical file
-                name = item[1]
+            # Release all segments whose start times are <= target_sim_time
+            while next_seg_idx[cam] < len(all_segs[cam]) and elapsed_sim_time[cam] <= target_sim_time:
+                dur, name = all_segs[cam][next_seg_idx[cam]]
+                released[cam].append((dur, name))
+                
+                # Copy/link the physical file to the serve directory
                 src = os.path.join(CAM_PATHS[cam], name)
                 dst = os.path.join(SERVE_DIRS[cam], name)
                 if not os.path.exists(dst) and os.path.exists(src):
                     try: os.link(src, dst)
                     except: shutil.copy2(src, dst)
-                    
-        # Manage sliding window and write playlists
+                
+                # Update counters
+                next_seg_idx[cam] += 1
+                elapsed_sim_time[cam] += dur
+                
+                # Update server_state for endpoints to consume
+                server_state[cam]["current_index"] = next_seg_idx[cam] - 1
+                server_state[cam]["is_gap"] = False
+        
+        # Write playlists and update sliding window for all cameras
         for cam in ["source", "sink", "hq"]:
             media_items_count = sum(1 for x in released[cam] if isinstance(x, tuple))
             while media_items_count > WINDOW_SIZE:
@@ -395,14 +366,12 @@ def master_stream_worker():
             
             server_state[cam]["media_sequence"] = media_sequence[cam]
             server_state[cam]["window"] = [x for x in released[cam] if isinstance(x, tuple)]
-            server_state[cam]["current_index"] = current_idx
+            server_state[cam]["done"] = False
             
             write_playlist(cam, released[cam], media_sequence[cam], False)
-
-        if step_duration == 0:
-            step_duration = 4.0
-        time.sleep(step_duration / SPEED)
-        current_idx += 1
+            
+        # Sleep for a small, responsive interval to poll clock progression
+        time.sleep(0.05)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -594,70 +563,8 @@ def get_status():
         } for cam in ["source", "sink", "hq"]
     }
 
-# Start the synchronization thread before running the server
-sync_thread = threading.Thread(target=synchronize_streams, daemon=True)
-sync_thread.start()
+# The obsolete synchronize_streams thread has been removed as timeline alignment is handled contiguously.
 
 if __name__ == "__main__":
     print(f"Starting server on port {_args.port} at {SPEED}x speed (session {SESSION_ID}).")
     uvicorn.run(app, host="0.0.0.0", port=_args.port, log_level="error")
-
-def synchronize_streams():
-    """
-    Synchronize streams dynamically based on frame counts and segment boundaries for all three streams.
-    Handles cases where one, two, or all three streams drop frames.
-    """
-    while True:
-        time.sleep(1)  # Poll every second
-        with _frame_idx_lock:
-            # Get the latest segment and frame data for all cameras
-            segments = {
-                "hq": seg_to_frame["hq"],
-                "sink": seg_to_frame["sink"],
-                "source": seg_to_frame["source"]
-            }
-
-            # Iterate through all streams
-            for cam in ["hq", "sink", "source"]:
-                for seg, start_frame in segments[cam].items():
-                    frame_count = frame_to_seg[cam].get(start_frame, (None, None))[1]
-
-                    # Check if the current segment has fewer frames
-                    if frame_count and frame_count < 120:
-                        # Adjust the segment for the current camera
-                        next_segment = seg + 1
-                        next_start_frame = seg_to_frame[cam].get(next_segment, None)
-
-                        if next_start_frame:
-                            print(f"Adjusting {cam} stream: Segment {seg} -> {next_segment}")
-
-                            # Ensure other streams remain in sync with the adjusted stream
-                            for other_cam in ["hq", "sink", "source"]:
-                                if other_cam != cam:
-                                    other_frame = sync_maps[f"{cam}_to_{other_cam}"].get(start_frame, None)
-
-                                    if other_frame:
-                                        other_seg, other_offset = frame_to_seg[other_cam].get(other_frame, (None, None))
-
-                                        print(f"{other_cam.capitalize()} Segment: {other_seg}")
-
-                                        # Update server state for synchronization
-                                        server_state[cam]["current_index"] = next_segment
-                                        server_state[other_cam]["current_index"] = other_seg
-                                    else:
-                                        print(f"Warning: Unable to synchronize {other_cam} with {cam}.")
-
-            # Handle cases where multiple streams drop frames
-            for cam1 in ["hq", "sink", "source"]:
-                for cam2 in ["hq", "sink", "source"]:
-                    if cam1 != cam2:
-                        for frame in frame_to_seg[cam1]:
-                            if frame in frame_to_seg[cam2]:
-                                seg1, offset1 = frame_to_seg[cam1][frame]
-                                seg2, offset2 = frame_to_seg[cam2][frame]
-
-                                # Adjust segments to ensure alignment
-                                if seg1 != seg2:
-                                    print(f"Synchronizing {cam1} (Segment {seg1}) with {cam2} (Segment {seg2})")
-                                    server_state[cam1]["current_index"] = seg1
-                                    server_state[cam2]["current_index"] = seg2
