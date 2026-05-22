@@ -83,15 +83,46 @@ _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
 _frame_idx_lock = threading.Lock()
 
 def _ssh_fetch(remote_path, skip_lines=0):
-    """Fetch a file from the Jetson over SSH. skip_lines=0 → full file; N → only new rows after N data rows."""
-    remote_cmd = (f"cat {remote_path}" if skip_lines == 0
-                  else f"tail -n +{skip_lines + 2} {remote_path}")
-    result = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", JETSON_HOST, remote_cmd],
-        capture_output=True, text=True, timeout=10
-    )
-    result.check_returncode()
-    return result.stdout
+    """Fetch a file from the Jetson over SSH. If it fails, fall back to local files."""
+    try:
+        remote_cmd = (f"cat {remote_path}" if skip_lines == 0
+                      else f"tail -n +{skip_lines + 2} {remote_path}")
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", JETSON_HOST, remote_cmd],
+            capture_output=True, text=True, timeout=5
+        )
+        result.check_returncode()
+        return result.stdout
+    except Exception as e:
+        # Fallback to local files
+        if "hls_sync" in remote_path:
+            local_path = os.path.join(DATA_DIR, f"segments_{SESSION_ID}", "sync", f"hls_sync_{SESSION_ID}_triple.csv")
+            if not os.path.exists(local_path):
+                local_path = f"/Users/aryamirani/Desktop/codes/judex/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
+        elif "hls_segment_frame_index.csv" in remote_path:
+            cam = None
+            for c in ["source", "sink", "hq"]:
+                if f"/{c}/" in remote_path or c in remote_path:
+                    cam = c
+                    break
+            if cam is None:
+                cam = "source"
+            local_path = os.path.join(TEST_WORK_DIR, "cv_output", "reader", cam, "hls_segment_frame_index.csv")
+            if not os.path.exists(local_path):
+                local_path = f"/Users/aryamirani/Desktop/codes/judex/test_work/cv_output/reader/{cam}/hls_segment_frame_index.csv"
+        else:
+            raise ValueError(f"Unknown remote path: {remote_path}")
+
+        if not os.path.exists(local_path):
+            raise FileNotFoundError(f"Local fallback file not found at: {local_path}")
+
+        with open(local_path, "r") as f:
+            lines = f.readlines()
+
+        if skip_lines == 0:
+            return "".join(lines)
+        else:
+            return "".join(lines[skip_lines + 1:])
 
 def _fetch_csv_lines(skip_lines=0):
     return _ssh_fetch(REMOTE_CSV_PATH, skip_lines)
@@ -253,18 +284,22 @@ def load_data():
 
 def parse_playlist(path):
     segments = []
+    has_endlist = False
     with open(path) as f:
         lines = f.read().splitlines()
     i = 0
     while i < len(lines):
-        if lines[i].startswith("#EXTINF:"):
+        if lines[i].startswith("#EXT-X-ENDLIST"):
+            has_endlist = True
+            i += 1
+        elif lines[i].startswith("#EXTINF:"):
             duration = float(lines[i].split(":")[1].rstrip(","))
             seg = lines[i + 1].strip()
             segments.append((duration, seg))
             i += 2
         else:
             i += 1
-    return segments
+    return segments, has_endlist
 
 def write_playlist(cam, window, media_sequence, done=False):
     serve_dir = SERVE_DIRS[cam]
@@ -298,6 +333,23 @@ def write_playlist(cam, window, media_sequence, done=False):
     os.rename(temp_path, playlist_path)
 
 def master_stream_worker():
+    # Back up existing files in serve dirs to serve_backup before cleaning them
+    for cam in ["source", "sink", "hq"]:
+        serve_dir = SERVE_DIRS[cam]
+        backup_dir = os.path.join(BASE_DIR, "serve_backup", cam)
+        os.makedirs(backup_dir, exist_ok=True)
+        if os.path.exists(serve_dir):
+            for f in os.listdir(serve_dir):
+                if (f.endswith(".ts") and not f.startswith("gap_")) or f == "playlist.m3u8" or f == "live.m3u8":
+                    dst_name = "playlist.m3u8" if f == "live.m3u8" or f == "playlist.m3u8" else f
+                    dst_file = os.path.join(backup_dir, dst_name)
+                    if not os.path.exists(dst_file):
+                        try:
+                            shutil.copy2(os.path.join(serve_dir, f), dst_file)
+                            print(f"[Fallback] Backed up {f} as {dst_name} to {backup_dir}")
+                        except Exception as e:
+                            print(f"[Fallback] Error backing up {f}: {e}")
+
     # Clean serve dirs
     for cam in ["source", "sink", "hq"]:
         serve_dir = SERVE_DIRS[cam]
@@ -308,8 +360,19 @@ def master_stream_worker():
                 
     # Parse all playlists
     all_segs = {}
+    playlists_ended = {}
     for cam in ["source", "sink", "hq"]:
-        all_segs[cam] = parse_playlist(os.path.join(CAM_PATHS[cam], "playlist.m3u8"))
+        playlist_path = os.path.join(CAM_PATHS[cam], "playlist.m3u8")
+        if not os.path.exists(playlist_path):
+            backup_playlist = os.path.join(BASE_DIR, "serve_backup", cam, "playlist.m3u8")
+            if os.path.exists(backup_playlist):
+                playlist_path = backup_playlist
+        if os.path.exists(playlist_path):
+            segs, ended = parse_playlist(playlist_path)
+        else:
+            segs, ended = [], False
+        all_segs[cam] = segs
+        playlists_ended[cam] = ended
         
     released = {"source": [], "sink": [], "hq": []}
     media_sequence = {"source": 0, "sink": 0, "hq": 0}
@@ -323,92 +386,150 @@ def master_stream_worker():
     cum_start_time = []
     current_cum = 0.0
     
-    prev_seg_idx = {"source": -1, "sink": -1, "hq": -1}
-    
-    max_len = len(all_segs["hq"])
-    
-    for hq_seg_idx in range(max_len):
-        hq_start_frame = seg_to_frame["hq"].get(hq_seg_idx)
+    def rebuild_timeline():
+        nonlocal current_cum
+        timeline.clear()
+        cum_start_time.clear()
+        current_cum = 0.0
         
-        seg_indices = {}
-        durs = {}
-        names = {}
+        prev_seg_idx = {"source": -1, "sink": -1, "hq": -1}
+        max_len = len(all_segs["hq"])
         
-        for cam in ["source", "sink", "hq"]:
-            if cam == "hq":
-                seg_idx_cam = hq_seg_idx
-            else:
-                map_key = f"hq_to_{cam}"
-                target_f = None
-                if hq_start_frame is not None:
-                    if hq_start_frame in sync_maps[map_key]:
-                        target_f = sync_maps[map_key][hq_start_frame]
-                    elif sync_maps[map_key]:
-                        closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - hq_start_frame))
-                        target_f = sync_maps[map_key][closest]
-                
-                if target_f is not None and target_f in frame_to_seg[cam]:
-                    mapped_seg_idx = frame_to_seg[cam][target_f][0]
-                    if prev_seg_idx[cam] != -1:
-                        seg_idx_cam = max(mapped_seg_idx, prev_seg_idx[cam] + 1)
-                    else:
-                        seg_idx_cam = mapped_seg_idx
-                else:
-                    if prev_seg_idx[cam] != -1:
-                        seg_idx_cam = prev_seg_idx[cam] + 1
-                    else:
-                        seg_idx_cam = hq_seg_idx
-                        
-            seg_indices[cam] = seg_idx_cam
+        for hq_seg_idx in range(max_len):
+            hq_start_frame = seg_to_frame["hq"].get(hq_seg_idx)
             
-            if seg_idx_cam < len(all_segs[cam]):
-                # Get the frame count from render index CSV, fallback to playlist duration if not indexed
-                fc = seg_frame_count[cam].get(seg_idx_cam)
-                if fc is not None:
-                    dur = fc / 30.0
-                else:
-                    dur = all_segs[cam][seg_idx_cam][0]
-                durs[cam] = dur
-                names[cam] = all_segs[cam][seg_idx_cam][1]
-                prev_seg_idx[cam] = seg_idx_cam
-            else:
-                durs[cam] = 0.0
-                names[cam] = None
-                
-        max_dur = max(durs.values())
-        if max_dur == 0:
-            max_dur = 4.0
+            seg_indices = {}
+            durs = {}
+            names = {}
             
-        timeline.append({
-            "seg_indices": seg_indices,
-            "durs": durs,
-            "names": names,
-            "max_dur": max_dur,
-            "start_time": current_cum
-        })
-        cum_start_time.append(current_cum)
-        current_cum += max_dur
-        
+            for cam in ["source", "sink", "hq"]:
+                if cam == "hq":
+                    seg_idx_cam = hq_seg_idx
+                else:
+                    map_key = f"hq_to_{cam}"
+                    target_f = None
+                    if hq_start_frame is not None:
+                        if hq_start_frame in sync_maps[map_key]:
+                            target_f = sync_maps[map_key][hq_start_frame]
+                        elif sync_maps[map_key]:
+                            closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - hq_start_frame))
+                            target_f = sync_maps[map_key][closest]
+                    
+                    if target_f is not None and target_f in frame_to_seg[cam]:
+                        mapped_seg_idx = frame_to_seg[cam][target_f][0]
+                        if prev_seg_idx[cam] != -1:
+                            seg_idx_cam = max(mapped_seg_idx, prev_seg_idx[cam] + 1)
+                        else:
+                            seg_idx_cam = mapped_seg_idx
+                    else:
+                        if prev_seg_idx[cam] != -1:
+                            seg_idx_cam = prev_seg_idx[cam] + 1
+                        else:
+                            seg_idx_cam = hq_seg_idx
+                            
+                seg_indices[cam] = seg_idx_cam
+                
+                if seg_idx_cam < len(all_segs[cam]):
+                    # Get the frame count from render index CSV, fallback to playlist duration if not indexed
+                    fc = seg_frame_count[cam].get(seg_idx_cam)
+                    if fc is not None:
+                        dur = fc / 30.0
+                    else:
+                        dur = all_segs[cam][seg_idx_cam][0]
+                    durs[cam] = dur
+                    names[cam] = all_segs[cam][seg_idx_cam][1]
+                    prev_seg_idx[cam] = seg_idx_cam
+                else:
+                    durs[cam] = 0.0
+                    names[cam] = None
+                    
+            max_dur = max(durs.values())
+            if max_dur == 0:
+                max_dur = 4.0
+                
+            timeline.append({
+                "seg_indices": seg_indices,
+                "durs": durs,
+                "names": names,
+                "max_dur": max_dur,
+                "start_time": current_cum
+            })
+            cum_start_time.append(current_cum)
+            current_cum += max_dur
+            
+    rebuild_timeline()
     total_duration = current_cum
     
     start_time = time.time()
+    last_time = start_time
     target_sim_time = 0.0
+    stream_done = False
+    last_playlist_poll = 0.0
     
     while True:
-        # Update current target simulation time
-        target_sim_time = (time.time() - start_time) * SPEED
+        now = time.time()
+        dt = (now - last_time) * SPEED
+        last_time = now
         
-        # Check if complete and wrap around
-        if target_sim_time >= total_duration:
-            print("[master worker] Stream complete. Wrapping around to segment 0.")
-            start_time = time.time()
-            target_sim_time = 0.0
+        # 1. Periodically check playlists (every 1.0 second) for new segments in live recording
+        if now - last_playlist_poll >= 1.0:
+            last_playlist_poll = now
+            
+            updated_segs = {}
+            updated_ended = {}
+            grew = False
             for cam in ["source", "sink", "hq"]:
-                next_seg_idx[cam] = 0
-                elapsed_released_time[cam] = 0.0
-                released[cam].append("#EXT-X-DISCONTINUITY")
+                playlist_path = os.path.join(CAM_PATHS[cam], "playlist.m3u8")
+                if not os.path.exists(playlist_path):
+                    backup_playlist = os.path.join(BASE_DIR, "serve_backup", cam, "playlist.m3u8")
+                    if os.path.exists(backup_playlist):
+                        playlist_path = backup_playlist
+                
+                if os.path.exists(playlist_path):
+                    try:
+                        segs, ended = parse_playlist(playlist_path)
+                        updated_segs[cam] = segs
+                        updated_ended[cam] = ended
+                    except Exception as e:
+                        print(f"[master worker] Error polling playlist for {cam}: {e}")
+                        updated_segs[cam] = all_segs[cam]
+                        updated_ended[cam] = playlists_ended.get(cam, False)
+                else:
+                    updated_segs[cam] = all_segs[cam]
+                    updated_ended[cam] = playlists_ended.get(cam, False)
+            
+            for cam in ["source", "sink", "hq"]:
+                playlists_ended[cam] = updated_ended[cam]
+                if len(updated_segs[cam]) > len(all_segs[cam]):
+                    new_count = len(updated_segs[cam]) - len(all_segs[cam])
+                    all_segs[cam].extend(updated_segs[cam][len(all_segs[cam]):])
+                    print(f"[master worker] Camera {cam} playlist grew by {new_count} segments. Total: {len(all_segs[cam])}")
+                    grew = True
+                    
+            if grew:
+                rebuild_timeline()
+                total_duration = current_cum
+                # Adjust elapsed release times of all cameras based on new cum_start_time
+                for cam in ["source", "sink", "hq"]:
+                    if next_seg_idx[cam] < len(timeline):
+                        elapsed_released_time[cam] = cum_start_time[next_seg_idx[cam]]
+                    else:
+                        elapsed_released_time[cam] = total_duration
+        
+        # Update current target simulation time (delta-based to handle stalls)
+        if not stream_done:
+            has_endlist = playlists_ended.get("hq", False)
+            if target_sim_time < total_duration:
+                target_sim_time += dt
+                if target_sim_time > total_duration:
+                    target_sim_time = total_duration
+            
+            if target_sim_time >= total_duration and has_endlist:
+                stream_done = True
+                print("[master worker] Stream complete. Stopping at the end.")
         
         # Release segments
+        max_len = len(timeline)
         for cam in ["source", "sink", "hq"]:
             while next_seg_idx[cam] < max_len and elapsed_released_time[cam] <= target_sim_time:
                 idx = next_seg_idx[cam]
@@ -424,6 +545,11 @@ def master_stream_worker():
                     
                     # Link/copy physical file
                     src = os.path.join(CAM_PATHS[cam], name)
+                    if not os.path.exists(src):
+                        backup_src = os.path.join(BASE_DIR, "serve_backup", cam, name)
+                        if os.path.exists(backup_src):
+                            src = backup_src
+                            
                     dst = os.path.join(SERVE_DIRS[cam], name)
                     if not os.path.exists(dst) and os.path.exists(src):
                         try: os.link(src, dst)
@@ -436,29 +562,30 @@ def master_stream_worker():
                 elapsed_released_time[cam] += max_dur
                 
         # Update current_index and is_gap for endpoints
-        active_seg_idx = 0
-        for idx in range(max_len):
-            start = cum_start_time[idx]
-            end = start + timeline[idx]["max_dur"]
-            if start <= target_sim_time < end:
-                active_seg_idx = idx
-                break
-        else:
-            active_seg_idx = max_len - 1
-            
-        step = timeline[active_seg_idx]
-        for cam in ["source", "sink", "hq"]:
-            seg_idx_cam = step["seg_indices"][cam]
-            dur = step["durs"][cam]
-            max_dur = step["max_dur"]
-            start_of_segment = cum_start_time[active_seg_idx]
-            
-            # Freeze/wait condition: if playhead is past actual segment duration within this step,
-            # or if the camera has no segment for this step.
-            is_gap_now = (dur < max_dur) and (target_sim_time >= start_of_segment + dur)
-            
-            server_state[cam]["current_index"] = seg_idx_cam
-            server_state[cam]["is_gap"] = is_gap_now
+        if max_len > 0:
+            active_seg_idx = 0
+            for idx in range(max_len):
+                start = cum_start_time[idx]
+                end = start + timeline[idx]["max_dur"]
+                if start <= target_sim_time < end:
+                    active_seg_idx = idx
+                    break
+            else:
+                active_seg_idx = max_len - 1
+                
+            step = timeline[active_seg_idx]
+            for cam in ["source", "sink", "hq"]:
+                seg_idx_cam = step["seg_indices"][cam]
+                dur = step["durs"][cam]
+                max_dur = step["max_dur"]
+                start_of_segment = cum_start_time[active_seg_idx]
+                
+                # Freeze/wait condition: if playhead is past actual segment duration within this step,
+                # or if the camera has no segment for this step.
+                is_gap_now = (dur < max_dur) and (target_sim_time >= start_of_segment + dur)
+                
+                server_state[cam]["current_index"] = seg_idx_cam
+                server_state[cam]["is_gap"] = is_gap_now
             
         # Write playlists and update sliding window for all cameras
         for cam in ["source", "sink", "hq"]:
@@ -471,9 +598,9 @@ def master_stream_worker():
             
             server_state[cam]["media_sequence"] = media_sequence[cam]
             server_state[cam]["window"] = [x for x in released[cam] if isinstance(x, tuple)]
-            server_state[cam]["done"] = False
+            server_state[cam]["done"] = stream_done
             
-            write_playlist(cam, released[cam], media_sequence[cam], False)
+            write_playlist(cam, released[cam], media_sequence[cam], stream_done)
             
         # Sleep for a small, responsive interval to poll clock progression
         time.sleep(0.05)

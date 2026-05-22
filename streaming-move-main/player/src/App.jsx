@@ -12,10 +12,11 @@ const LIVE_CONFIG = { backBufferLength: 60, maxBufferLength: 60, liveSyncDuratio
 const REVIEW_CONFIG = { enableWorker: true, maxBufferLength: 60, backBufferLength: 60 }
 
 const CAMERAS = ['source', 'sink', 'hq']
+const useLocalStream = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 const CAM_STREAM_URLS = {
-  source: 'http://192.168.0.111:8083/live.m3u8',
-  sink:   'http://192.168.0.113:8083/live.m3u8',
-  hq:     'http://192.168.0.112:8083/live.m3u8',
+  source: useLocalStream ? 'http://localhost:8000/stream/source/live.m3u8' : 'http://192.168.0.111:8083/live.m3u8',
+  sink:   useLocalStream ? 'http://localhost:8000/stream/sink/live.m3u8' : 'http://192.168.0.113:8083/live.m3u8',
+  hq:     useLocalStream ? 'http://localhost:8000/stream/hq/live.m3u8' : 'http://192.168.0.112:8083/live.m3u8',
 }
 
 function buildReviewPlaylist(segments, blobUrls) {
