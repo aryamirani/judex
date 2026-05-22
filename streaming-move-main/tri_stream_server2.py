@@ -57,6 +57,7 @@ sync_maps = {
 # frame -> (seg_index, frame_offset)
 frame_to_seg = { "source": {}, "sink": {}, "hq": {} }
 seg_to_frame = { "source": {}, "sink": {}, "hq": {} } # seg_index -> cumulative_start_frame
+seg_frame_count = { "source": {}, "sink": {}, "hq": {} } # seg_index -> frame_count
 
 # Paths
 CAM_PATHS = {
@@ -156,6 +157,7 @@ def _ingest_frame_idx_rows(cam, csv_text, has_header=True):
             start_frame = int(row["cumulative_start_frame"])
             frame_count = int(row["frame_count"])
             seg_to_frame[cam][seg_idx] = start_frame
+            seg_frame_count[cam][seg_idx] = frame_count
             for f in range(start_frame, start_frame + frame_count):
                 frame_to_seg[cam][f] = (seg_idx, f - start_frame)
             count += 1
@@ -314,47 +316,150 @@ def master_stream_worker():
     
     # We track indices and elapsed simulation times for each camera independently
     next_seg_idx = {"source": 0, "sink": 0, "hq": 0}
-    elapsed_sim_time = {"source": 0.0, "sink": 0.0, "hq": 0.0}
+    elapsed_released_time = {"source": 0.0, "sink": 0.0, "hq": 0.0}
+    
+    # Pre-build timeline map using sync maps and reader indexing to ensure perfect alignment
+    timeline = []
+    cum_start_time = []
+    current_cum = 0.0
+    
+    prev_seg_idx = {"source": -1, "sink": -1, "hq": -1}
+    
+    max_len = len(all_segs["hq"])
+    
+    for hq_seg_idx in range(max_len):
+        hq_start_frame = seg_to_frame["hq"].get(hq_seg_idx)
+        
+        seg_indices = {}
+        durs = {}
+        names = {}
+        
+        for cam in ["source", "sink", "hq"]:
+            if cam == "hq":
+                seg_idx_cam = hq_seg_idx
+            else:
+                map_key = f"hq_to_{cam}"
+                target_f = None
+                if hq_start_frame is not None:
+                    if hq_start_frame in sync_maps[map_key]:
+                        target_f = sync_maps[map_key][hq_start_frame]
+                    elif sync_maps[map_key]:
+                        closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - hq_start_frame))
+                        target_f = sync_maps[map_key][closest]
+                
+                if target_f is not None and target_f in frame_to_seg[cam]:
+                    mapped_seg_idx = frame_to_seg[cam][target_f][0]
+                    if prev_seg_idx[cam] != -1:
+                        seg_idx_cam = max(mapped_seg_idx, prev_seg_idx[cam] + 1)
+                    else:
+                        seg_idx_cam = mapped_seg_idx
+                else:
+                    if prev_seg_idx[cam] != -1:
+                        seg_idx_cam = prev_seg_idx[cam] + 1
+                    else:
+                        seg_idx_cam = hq_seg_idx
+                        
+            seg_indices[cam] = seg_idx_cam
+            
+            if seg_idx_cam < len(all_segs[cam]):
+                # Get the frame count from render index CSV, fallback to playlist duration if not indexed
+                fc = seg_frame_count[cam].get(seg_idx_cam)
+                if fc is not None:
+                    dur = fc / 30.0
+                else:
+                    dur = all_segs[cam][seg_idx_cam][0]
+                durs[cam] = dur
+                names[cam] = all_segs[cam][seg_idx_cam][1]
+                prev_seg_idx[cam] = seg_idx_cam
+            else:
+                durs[cam] = 0.0
+                names[cam] = None
+                
+        max_dur = max(durs.values())
+        if max_dur == 0:
+            max_dur = 4.0
+            
+        timeline.append({
+            "seg_indices": seg_indices,
+            "durs": durs,
+            "names": names,
+            "max_dur": max_dur,
+            "start_time": current_cum
+        })
+        cum_start_time.append(current_cum)
+        current_cum += max_dur
+        
+    total_duration = current_cum
     
     start_time = time.time()
     target_sim_time = 0.0
     
     while True:
-        # Check if the master clock (hq) has completed its playlist
-        # and has finished playing the duration of its last released segment
-        if next_seg_idx["hq"] >= len(all_segs["hq"]) and elapsed_sim_time["hq"] <= target_sim_time:
-            print("[master worker] HQ stream complete. Wrapping around to segment 0.")
+        # Update current target simulation time
+        target_sim_time = (time.time() - start_time) * SPEED
+        
+        # Check if complete and wrap around
+        if target_sim_time >= total_duration:
+            print("[master worker] Stream complete. Wrapping around to segment 0.")
             start_time = time.time()
             target_sim_time = 0.0
             for cam in ["source", "sink", "hq"]:
                 next_seg_idx[cam] = 0
-                elapsed_sim_time[cam] = 0.0
+                elapsed_released_time[cam] = 0.0
                 released[cam].append("#EXT-X-DISCONTINUITY")
         
-        # Update current target simulation time
-        target_sim_time = (time.time() - start_time) * SPEED
-        
+        # Release segments
         for cam in ["source", "sink", "hq"]:
-            # Release all segments whose start times are <= target_sim_time
-            while next_seg_idx[cam] < len(all_segs[cam]) and elapsed_sim_time[cam] <= target_sim_time:
-                dur, name = all_segs[cam][next_seg_idx[cam]]
-                released[cam].append((dur, name))
+            while next_seg_idx[cam] < max_len and elapsed_released_time[cam] <= target_sim_time:
+                idx = next_seg_idx[cam]
+                step = timeline[idx]
+                seg_idx_cam = step["seg_indices"][cam]
+                dur = step["durs"][cam]
+                name = step["names"][cam]
+                max_dur = step["max_dur"]
                 
-                # Copy/link the physical file to the serve directory
-                src = os.path.join(CAM_PATHS[cam], name)
-                dst = os.path.join(SERVE_DIRS[cam], name)
-                if not os.path.exists(dst) and os.path.exists(src):
-                    try: os.link(src, dst)
-                    except: shutil.copy2(src, dst)
+                if name is not None:
+                    # Release actual segment
+                    released[cam].append((dur, name))
+                    
+                    # Link/copy physical file
+                    src = os.path.join(CAM_PATHS[cam], name)
+                    dst = os.path.join(SERVE_DIRS[cam], name)
+                    if not os.path.exists(dst) and os.path.exists(src):
+                        try: os.link(src, dst)
+                        except: shutil.copy2(src, dst)
+                else:
+                    # No new segment to release (freeze/wait state)
+                    pass
                 
-                # Update counters
                 next_seg_idx[cam] += 1
-                elapsed_sim_time[cam] += dur
+                elapsed_released_time[cam] += max_dur
                 
-                # Update server_state for endpoints to consume
-                server_state[cam]["current_index"] = next_seg_idx[cam] - 1
-                server_state[cam]["is_gap"] = False
-        
+        # Update current_index and is_gap for endpoints
+        active_seg_idx = 0
+        for idx in range(max_len):
+            start = cum_start_time[idx]
+            end = start + timeline[idx]["max_dur"]
+            if start <= target_sim_time < end:
+                active_seg_idx = idx
+                break
+        else:
+            active_seg_idx = max_len - 1
+            
+        step = timeline[active_seg_idx]
+        for cam in ["source", "sink", "hq"]:
+            seg_idx_cam = step["seg_indices"][cam]
+            dur = step["durs"][cam]
+            max_dur = step["max_dur"]
+            start_of_segment = cum_start_time[active_seg_idx]
+            
+            # Freeze/wait condition: if playhead is past actual segment duration within this step,
+            # or if the camera has no segment for this step.
+            is_gap_now = (dur < max_dur) and (target_sim_time >= start_of_segment + dur)
+            
+            server_state[cam]["current_index"] = seg_idx_cam
+            server_state[cam]["is_gap"] = is_gap_now
+            
         # Write playlists and update sliding window for all cameras
         for cam in ["source", "sink", "hq"]:
             media_items_count = sum(1 for x in released[cam] if isinstance(x, tuple))
