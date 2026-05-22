@@ -33,6 +33,8 @@ export default function App() {
   const hlsRefs = { source: useRef(null), sink: useRef(null), hq: useRef(null) }
   const rollingBuffers = { source: useRef([]), sink: useRef([]), hq: useRef([]) }
   const blobUrlsRef = useRef([])
+  const segmentStartTimesRef = useRef({ source: {}, sink: {}, hq: {} })
+  const downloadingSegmentsRef = useRef({ source: new Set(), sink: new Set(), hq: new Set() })
 
   const rafRef = useRef(null)
   const modeRef = useRef('live')
@@ -282,28 +284,41 @@ export default function App() {
         const url = data.frag.relurl || data.frag.url || ''
         const match = url.match(/seg_(\d+)\.ts/)
         const absSegIdx = match ? parseInt(match[1], 10) : data.frag.sn
-        const entry = {
-          sn: data.frag.sn,
-          absSegIdx: absSegIdx,
-          originalStart: data.frag.start,
-          duration: data.frag.duration,
-          bytes: data.payload.slice(0)
-        }
-        rollingBuffers[cam].current = [...rollingBuffers[cam].current, entry].slice(-REVIEW_BUFFER_SIZE)
         
-        if (cam === activeCamRef.current) {
-          setLiveSegments(rollingBuffers[cam].current.map(s => ({
-            sn: s.sn,
-            absSegIdx: s.absSegIdx,
-            start: s.originalStart,
-            end: s.originalStart + s.duration
-          })))
-          fetch(`http://localhost:8000/sync_map?from_camera=${cam}&sns=${absSegIdx}`)
-            .then(res => res.json())
-            .then(data => {
-              setLiveSyncMap(prev => ({ ...prev, ...data }))
-            })
-            .catch(e => console.warn('Failed to fetch live sync segment map', e))
+        // Save HLS.js start time as ground truth
+        if (!segmentStartTimesRef.current[cam]) {
+          segmentStartTimesRef.current[cam] = {}
+        }
+        segmentStartTimesRef.current[cam][absSegIdx] = data.frag.start
+
+        const existing = rollingBuffers[cam].current
+        if (!existing.some(s => s.absSegIdx === absSegIdx)) {
+          const entry = {
+            sn: data.frag.sn,
+            absSegIdx: absSegIdx,
+            originalStart: data.frag.start,
+            duration: data.frag.duration,
+            bytes: data.payload.slice(0)
+          }
+          const updated = [...existing, entry]
+            .sort((a, b) => a.absSegIdx - b.absSegIdx)
+            .slice(-REVIEW_BUFFER_SIZE)
+          rollingBuffers[cam].current = updated
+          
+          if (cam === activeCamRef.current) {
+            setLiveSegments(updated.map(s => ({
+              sn: s.sn,
+              absSegIdx: s.absSegIdx,
+              start: s.originalStart,
+              end: s.originalStart + s.duration
+            })))
+            fetch(`http://localhost:8000/sync_map?from_camera=${cam}&sns=${absSegIdx}`)
+              .then(res => res.json())
+              .then(syncData => {
+                setLiveSyncMap(prev => ({ ...prev, ...syncData }))
+              })
+              .catch(e => console.warn('Failed to fetch live sync segment map', e))
+          }
         }
       })
     })
@@ -395,6 +410,149 @@ export default function App() {
       blobUrlsRef.current.forEach(URL.revokeObjectURL)
     }
   }, []) // run once on mount
+
+  useEffect(() => {
+    let active = true;
+    
+    const pollPlaylists = async () => {
+      if (modeRef.current !== 'live') return;
+      
+      for (const cam of CAMERAS) {
+        try {
+          const playlistUrl = CAM_STREAM_URLS[cam];
+          const res = await fetch(playlistUrl);
+          if (!res.ok) continue;
+          const text = await res.text();
+          
+          // Parse playlist
+          const lines = text.split('\n');
+          let mediaSequence = 0;
+          const playlistSegs = [];
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+              mediaSequence = parseInt(line.split(':')[1], 10);
+            } else if (line.startsWith('#EXTINF:')) {
+              const duration = parseFloat(line.split(':')[1].split(',')[0]);
+              const name = lines[i + 1]?.trim();
+              if (name) {
+                const match = name.match(/seg_(\d+)\.ts/);
+                const absSegIdx = match ? parseInt(match[1], 10) : (mediaSequence + playlistSegs.length);
+                playlistSegs.push({ duration, name, absSegIdx });
+              }
+              i++;
+            }
+          }
+          
+          if (!active || modeRef.current !== 'live') return;
+          
+          // Compute start times for all segments in this playlist
+          for (let i = 0; i < playlistSegs.length; i++) {
+            const seg = playlistSegs[i];
+            if (segmentStartTimesRef.current[cam][seg.absSegIdx] !== undefined) {
+              continue;
+            }
+            
+            // Try to compute from previous segment in playlist
+            if (i > 0) {
+              const prevSeg = playlistSegs[i - 1];
+              const prevStart = segmentStartTimesRef.current[cam][prevSeg.absSegIdx];
+              if (prevStart !== undefined) {
+                segmentStartTimesRef.current[cam][seg.absSegIdx] = prevStart + prevSeg.duration;
+                continue;
+              }
+            }
+            
+            // Try to find closest defined segment in the map
+            const keys = Object.keys(segmentStartTimesRef.current[cam]).map(Number).sort((a, b) => a - b);
+            if (keys.length > 0) {
+              const closest = keys.reduce((prev, curr) => Math.abs(curr - seg.absSegIdx) < Math.abs(prev - seg.absSegIdx) ? curr : prev);
+              const closestStart = segmentStartTimesRef.current[cam][closest];
+              segmentStartTimesRef.current[cam][seg.absSegIdx] = closestStart + (seg.absSegIdx - closest) * 6.0;
+            } else {
+              segmentStartTimesRef.current[cam][seg.absSegIdx] = seg.absSegIdx * 6.0;
+            }
+          }
+          
+          // Now check which segments are missing from rollingBuffers
+          const currentBuffer = rollingBuffers[cam].current;
+          const existingAbsSegs = new Set(currentBuffer.map(s => s.absSegIdx));
+          
+          for (const seg of playlistSegs) {
+            if (existingAbsSegs.has(seg.absSegIdx)) continue;
+            if (downloadingSegmentsRef.current[cam].has(seg.absSegIdx)) continue;
+            
+            // Start downloading!
+            downloadingSegmentsRef.current[cam].add(seg.absSegIdx);
+            
+            // Construct absolute URL for segment
+            const baseUrl = playlistUrl.substring(0, playlistUrl.lastIndexOf('/'));
+            const segUrl = `${baseUrl}/${seg.name}`;
+            
+            fetch(segUrl)
+              .then(async (segRes) => {
+                if (!segRes.ok) throw new Error(`HTTP ${segRes.status}`);
+                const arrayBuffer = await segRes.arrayBuffer();
+                
+                if (!active || modeRef.current !== 'live') return;
+                
+                const entry = {
+                  sn: seg.absSegIdx,
+                  absSegIdx: seg.absSegIdx,
+                  originalStart: segmentStartTimesRef.current[cam][seg.absSegIdx],
+                  duration: seg.duration,
+                  bytes: arrayBuffer
+                };
+                
+                // Merge, sort, and slice to REVIEW_BUFFER_SIZE
+                const updated = [...rollingBuffers[cam].current, entry]
+                  .filter((v, idx, self) => self.findIndex(t => t.absSegIdx === v.absSegIdx) === idx)
+                  .sort((a, b) => a.absSegIdx - b.absSegIdx)
+                  .slice(-REVIEW_BUFFER_SIZE);
+                  
+                rollingBuffers[cam].current = updated;
+                
+                if (cam === activeCamRef.current) {
+                  setLiveSegments(updated.map(s => ({
+                    sn: s.sn,
+                    absSegIdx: s.absSegIdx,
+                    start: s.originalStart,
+                    end: s.originalStart + s.duration
+                  })));
+                  
+                  // Fetch live sync map for this new segment
+                  fetch(`http://localhost:8000/sync_map?from_camera=${cam}&sns=${seg.absSegIdx}`)
+                    .then(r => r.json())
+                    .then(syncData => {
+                      if (active && modeRef.current === 'live') {
+                        setLiveSyncMap(prev => ({ ...prev, ...syncData }));
+                      }
+                    })
+                    .catch(e => console.warn('Failed to fetch sync map for downloaded segment', e));
+                }
+              })
+              .catch((err) => {
+                console.warn(`Error downloading segment ${seg.name} in background:`, err);
+              })
+              .finally(() => {
+                downloadingSegmentsRef.current[cam].delete(seg.absSegIdx);
+              });
+          }
+        } catch (e) {
+          console.warn(`Error polling playlist for ${cam} in background:`, e);
+        }
+      }
+    };
+    
+    pollPlaylists();
+    const intervalId = setInterval(pollPlaylists, 1000);
+    
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [activeCam, setLiveSegments, setLiveSyncMap]);
 
   const getAllCamPositions = useCallback(() => {
     const pos = {}
