@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import threading
 import argparse
+import urllib.request
 import pandas as pd
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,10 +20,14 @@ _parser = argparse.ArgumentParser()
 _parser.add_argument("--session", type=str, required=True, help="Session number, e.g. 1653")
 _parser.add_argument("--port", type=int, default=8000)
 _parser.add_argument("--speed", type=float, default=1.0)
+_parser.add_argument("--live", action="store_true", help="Stream live from camera HTTP URLs")
+_parser.add_argument("--cam-port", type=int, default=8083, help="Port of the live camera HLS streams")
 _args = _parser.parse_args()
 
 SESSION_ID = _args.session
 SPEED = _args.speed
+IS_LIVE = _args.live
+CAM_PORT = _args.cam_port
 
 JETSON_HOST = "jetson@192.168.0.148"
 REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
@@ -60,11 +65,18 @@ seg_to_frame = { "source": {}, "sink": {}, "hq": {} } # seg_index -> cumulative_
 seg_frame_count = { "source": {}, "sink": {}, "hq": {} } # seg_index -> frame_count
 
 # Paths
-CAM_PATHS = {
-    "source": os.path.join(DATA_DIR, "ts_segments_source", SESSION_ID),
-    "sink": os.path.join(DATA_DIR, "ts_segments_sink", SESSION_ID),
-    "hq": os.path.join(DATA_DIR, "ts_segments_hq", SESSION_ID)
-}
+if IS_LIVE:
+    CAM_PATHS = {
+        "source": f"http://192.168.0.111:{CAM_PORT}/live.m3u8",
+        "hq":     f"http://192.168.0.112:{CAM_PORT}/live.m3u8",
+        "sink":   f"http://192.168.0.113:{CAM_PORT}/live.m3u8"
+    }
+else:
+    CAM_PATHS = {
+        "source": os.path.join(DATA_DIR, "ts_segments_source", SESSION_ID),
+        "sink": os.path.join(DATA_DIR, "ts_segments_sink", SESSION_ID),
+        "hq": os.path.join(DATA_DIR, "ts_segments_hq", SESSION_ID)
+    }
 
 SERVE_DIRS = {
     "source": os.path.join(BASE_DIR, "serve", "source"),
@@ -285,11 +297,25 @@ def load_data():
             })
     print("Data loading complete.")
 
-def parse_playlist(path):
+def fetch_playlist_content(path_or_url):
+    if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
+        req = urllib.request.Request(path_or_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            return response.read().decode('utf-8')
+    else:
+        with open(path_or_url) as f:
+            return f.read()
+
+def parse_playlist(path_or_url):
     segments = []
     has_endlist = False
-    with open(path) as f:
-        lines = f.read().splitlines()
+    try:
+        content = fetch_playlist_content(path_or_url)
+        lines = content.splitlines()
+    except Exception as e:
+        print(f"[parse_playlist] Error reading {path_or_url}: {e}")
+        return segments, has_endlist
+        
     i = 0
     while i < len(lines):
         if lines[i].startswith("#EXT-X-ENDLIST"):
@@ -365,15 +391,33 @@ def master_stream_worker():
     all_segs = {}
     playlists_ended = {}
     for cam in ["source", "sink", "hq"]:
-        playlist_path = os.path.join(CAM_PATHS[cam], "playlist.m3u8")
-        if not os.path.exists(playlist_path):
-            backup_playlist = os.path.join(BASE_DIR, "serve_backup", cam, "playlist.m3u8")
-            if os.path.exists(backup_playlist):
-                playlist_path = backup_playlist
-        if os.path.exists(playlist_path):
-            segs, ended = parse_playlist(playlist_path)
+        cam_path = CAM_PATHS[cam]
+        segs, ended = [], False
+        if cam_path.startswith("http://") or cam_path.startswith("https://"):
+            playlist_path = cam_path
+            try:
+                segs, ended = parse_playlist(playlist_path)
+            except Exception as e:
+                print(f"[master worker] Initial playlist fetch error for {cam}: {e}")
+            if not segs:
+                backup_playlist = os.path.join(BASE_DIR, "serve_backup", cam, "playlist.m3u8")
+                if os.path.exists(backup_playlist):
+                    playlist_path = backup_playlist
+                    try:
+                        segs, ended = parse_playlist(playlist_path)
+                    except Exception as e:
+                        print(f"[master worker] Initial fallback playlist parse error for {cam}: {e}")
         else:
-            segs, ended = [], False
+            playlist_path = os.path.join(cam_path, "playlist.m3u8")
+            if not os.path.exists(playlist_path):
+                backup_playlist = os.path.join(BASE_DIR, "serve_backup", cam, "playlist.m3u8")
+                if os.path.exists(backup_playlist):
+                    playlist_path = backup_playlist
+            if os.path.exists(playlist_path):
+                try:
+                    segs, ended = parse_playlist(playlist_path)
+                except Exception as e:
+                    print(f"[master worker] Initial local playlist parse error for {cam}: {e}")
         all_segs[cam] = segs
         playlists_ended[cam] = ended
         
@@ -482,21 +526,44 @@ def master_stream_worker():
             updated_ended = {}
             grew = False
             for cam in ["source", "sink", "hq"]:
-                playlist_path = os.path.join(CAM_PATHS[cam], "playlist.m3u8")
-                if not os.path.exists(playlist_path):
-                    backup_playlist = os.path.join(BASE_DIR, "serve_backup", cam, "playlist.m3u8")
-                    if os.path.exists(backup_playlist):
-                        playlist_path = backup_playlist
+                cam_path = CAM_PATHS[cam]
+                segs, ended = [], False
+                success = False
                 
-                if os.path.exists(playlist_path):
+                if cam_path.startswith("http://") or cam_path.startswith("https://"):
+                    playlist_path = cam_path
                     try:
                         segs, ended = parse_playlist(playlist_path)
-                        updated_segs[cam] = segs
-                        updated_ended[cam] = ended
+                        if segs:
+                            success = True
                     except Exception as e:
-                        print(f"[master worker] Error polling playlist for {cam}: {e}")
-                        updated_segs[cam] = all_segs[cam]
-                        updated_ended[cam] = playlists_ended.get(cam, False)
+                        print(f"[master worker] Error polling live playlist for {cam}: {e}")
+                    
+                    if not success:
+                        backup_playlist = os.path.join(BASE_DIR, "serve_backup", cam, "playlist.m3u8")
+                        if os.path.exists(backup_playlist):
+                            try:
+                                segs, ended = parse_playlist(backup_playlist)
+                                success = True
+                            except Exception as e:
+                                print(f"[master worker] Error polling backup playlist for {cam}: {e}")
+                else:
+                    playlist_path = os.path.join(cam_path, "playlist.m3u8")
+                    if not os.path.exists(playlist_path):
+                        backup_playlist = os.path.join(BASE_DIR, "serve_backup", cam, "playlist.m3u8")
+                        if os.path.exists(backup_playlist):
+                            playlist_path = backup_playlist
+                    
+                    if os.path.exists(playlist_path):
+                        try:
+                            segs, ended = parse_playlist(playlist_path)
+                            success = True
+                        except Exception as e:
+                            print(f"[master worker] Error polling local playlist for {cam}: {e}")
+                
+                if success:
+                    updated_segs[cam] = segs
+                    updated_ended[cam] = ended
                 else:
                     updated_segs[cam] = all_segs[cam]
                     updated_ended[cam] = playlists_ended.get(cam, False)
@@ -546,17 +613,42 @@ def master_stream_worker():
                     # Release actual segment
                     released[cam].append((dur, name))
                     
-                    # Link/copy physical file
-                    src = os.path.join(CAM_PATHS[cam], name)
-                    if not os.path.exists(src):
-                        backup_src = os.path.join(BASE_DIR, "serve_backup", cam, name)
-                        if os.path.exists(backup_src):
-                            src = backup_src
-                            
+                    # Link/copy/download physical file
+                    cam_path = CAM_PATHS[cam]
                     dst = os.path.join(SERVE_DIRS[cam], name)
-                    if not os.path.exists(dst) and os.path.exists(src):
-                        try: os.link(src, dst)
-                        except: shutil.copy2(src, dst)
+                    if not os.path.exists(dst):
+                        if cam_path.startswith("http://") or cam_path.startswith("https://"):
+                            base_url = cam_path.rsplit('/', 1)[0]
+                            src_url = f"{base_url}/{name}"
+                            download_success = False
+                            try:
+                                req = urllib.request.Request(src_url, headers={'User-Agent': 'Mozilla/5.0'})
+                                with urllib.request.urlopen(req, timeout=3) as response:
+                                    with open(dst, "wb") as f_dst:
+                                        f_dst.write(response.read())
+                                download_success = True
+                                print(f"[master worker] Downloaded segment {name} from {src_url}")
+                            except Exception as e:
+                                print(f"[master worker] Error downloading {src_url}: {e}")
+                            
+                            if not download_success:
+                                backup_src = os.path.join(BASE_DIR, "serve_backup", cam, name)
+                                if os.path.exists(backup_src):
+                                    try:
+                                        shutil.copy2(backup_src, dst)
+                                        print(f"[master worker] Recovered {name} from backup")
+                                    except Exception as backup_err:
+                                        print(f"[master worker] Backup recovery failed: {backup_err}")
+                        else:
+                            src = os.path.join(cam_path, name)
+                            if not os.path.exists(src):
+                                backup_src = os.path.join(BASE_DIR, "serve_backup", cam, name)
+                                if os.path.exists(backup_src):
+                                    src = backup_src
+                            
+                            if os.path.exists(src):
+                                try: os.link(src, dst)
+                                except: shutil.copy2(src, dst)
                 else:
                     # No new segment to release (freeze/wait state)
                     pass
