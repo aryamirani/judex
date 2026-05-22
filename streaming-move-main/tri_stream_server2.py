@@ -420,6 +420,11 @@ def master_stream_worker():
         all_segs[cam] = segs
         playlists_ended[cam] = ended
         
+    seen_segs = {"source": set(), "sink": set(), "hq": set()}
+    for cam in ["source", "sink", "hq"]:
+        for item in all_segs[cam]:
+            seen_segs[cam].add(item[1])
+        
     released = {"source": [], "sink": [], "hq": []}
     media_sequence = {"source": 0, "sink": 0, "hq": 0}
     
@@ -569,10 +574,12 @@ def master_stream_worker():
             
             for cam in ["source", "sink", "hq"]:
                 playlists_ended[cam] = updated_ended[cam]
-                if len(updated_segs[cam]) > len(all_segs[cam]):
-                    new_count = len(updated_segs[cam]) - len(all_segs[cam])
-                    all_segs[cam].extend(updated_segs[cam][len(all_segs[cam]):])
-                    print(f"[master worker] Camera {cam} playlist grew by {new_count} segments. Total: {len(all_segs[cam])}")
+                new_items = [item for item in updated_segs[cam] if item[1] not in seen_segs[cam]]
+                if new_items:
+                    for item in new_items:
+                        seen_segs[cam].add(item[1])
+                    all_segs[cam].extend(new_items)
+                    print(f"[master worker] Camera {cam} playlist grew by {len(new_items)} segments. Total: {len(all_segs[cam])}")
                     grew = True
                     
             if grew:
