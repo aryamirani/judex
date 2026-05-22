@@ -97,8 +97,6 @@ _frame_idx_lock = threading.Lock()
 def _fetch_local_fallback(remote_path, skip_lines=0):
     if "hls_sync" in remote_path:
         local_path = os.path.join(DATA_DIR, f"segments_{SESSION_ID}", "sync", f"hls_sync_{SESSION_ID}_triple.csv")
-        if not os.path.exists(local_path):
-            local_path = f"/Users/aryamirani/Desktop/codes/judex/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
     elif "hls_segment_frame_index.csv" in remote_path:
         cam = None
         for c in ["source", "sink", "hq"]:
@@ -108,8 +106,6 @@ def _fetch_local_fallback(remote_path, skip_lines=0):
         if cam is None:
             cam = "source"
         local_path = os.path.join(TEST_WORK_DIR, "cv_output", "reader", cam, "hls_segment_frame_index.csv")
-        if not os.path.exists(local_path):
-            local_path = f"/Users/aryamirani/Desktop/codes/judex/test_work/cv_output/reader/{cam}/hls_segment_frame_index.csv"
     else:
         raise ValueError(f"Unknown remote path: {remote_path}")
 
@@ -368,24 +364,27 @@ def master_stream_worker():
         backup_dir = os.path.join(BASE_DIR, "serve_backup", cam)
         os.makedirs(backup_dir, exist_ok=True)
         if os.path.exists(serve_dir):
-            for f in os.listdir(serve_dir):
-                if (f.endswith(".ts") and not f.startswith("gap_")) or f == "playlist.m3u8" or f == "live.m3u8":
-                    dst_name = "playlist.m3u8" if f == "live.m3u8" or f == "playlist.m3u8" else f
-                    dst_file = os.path.join(backup_dir, dst_name)
-                    if not os.path.exists(dst_file):
-                        try:
-                            shutil.copy2(os.path.join(serve_dir, f), dst_file)
-                            print(f"[Fallback] Backed up {f} as {dst_name} to {backup_dir}")
-                        except Exception as e:
-                            print(f"[Fallback] Error backing up {f}: {e}")
+            for root, dirs, files in os.walk(serve_dir):
+                for f in files:
+                    rel_path = os.path.relpath(os.path.join(root, f), serve_dir)
+                    if (rel_path.endswith(".ts") and not os.path.basename(rel_path).startswith("gap_")) or rel_path == "playlist.m3u8" or rel_path == "live.m3u8":
+                        dst_name = "playlist.m3u8" if rel_path in ["live.m3u8", "playlist.m3u8"] else rel_path
+                        dst_file = os.path.join(backup_dir, dst_name)
+                        if not os.path.exists(dst_file):
+                            try:
+                                os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+                                shutil.copy2(os.path.join(root, f), dst_file)
+                                print(f"[Fallback] Backed up {rel_path} as {dst_name} to {backup_dir}")
+                            except Exception as e:
+                                print(f"[Fallback] Error backing up {rel_path}: {e}")
 
-    # Clean serve dirs
+    # Clean serve dirs recursively
     for cam in ["source", "sink", "hq"]:
         serve_dir = SERVE_DIRS[cam]
-        for f in os.listdir(serve_dir):
-            if f.endswith(".ts") or f.endswith(".m3u8"):
-                try: os.remove(os.path.join(serve_dir, f))
-                except: pass
+        if os.path.exists(serve_dir):
+            try: shutil.rmtree(serve_dir)
+            except: pass
+        os.makedirs(serve_dir, exist_ok=True)
                 
     # Parse all playlists
     all_segs = {}
@@ -616,6 +615,7 @@ def master_stream_worker():
                     # Link/copy/download physical file
                     cam_path = CAM_PATHS[cam]
                     dst = os.path.join(SERVE_DIRS[cam], name)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
                     if not os.path.exists(dst):
                         if cam_path.startswith("http://") or cam_path.startswith("https://"):
                             base_url = cam_path.rsplit('/', 1)[0]
