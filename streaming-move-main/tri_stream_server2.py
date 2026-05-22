@@ -82,47 +82,50 @@ _sync_lock = threading.Lock()
 _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
 _frame_idx_lock = threading.Lock()
 
+def _fetch_local_fallback(remote_path, skip_lines=0):
+    if "hls_sync" in remote_path:
+        local_path = os.path.join(DATA_DIR, f"segments_{SESSION_ID}", "sync", f"hls_sync_{SESSION_ID}_triple.csv")
+        if not os.path.exists(local_path):
+            local_path = f"/Users/aryamirani/Desktop/codes/judex/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
+    elif "hls_segment_frame_index.csv" in remote_path:
+        cam = None
+        for c in ["source", "sink", "hq"]:
+            if f"/{c}/" in remote_path or c in remote_path:
+                cam = c
+                break
+        if cam is None:
+            cam = "source"
+        local_path = os.path.join(TEST_WORK_DIR, "cv_output", "reader", cam, "hls_segment_frame_index.csv")
+        if not os.path.exists(local_path):
+            local_path = f"/Users/aryamirani/Desktop/codes/judex/test_work/cv_output/reader/{cam}/hls_segment_frame_index.csv"
+    else:
+        raise ValueError(f"Unknown remote path: {remote_path}")
+
+    if not os.path.exists(local_path):
+        raise FileNotFoundError(f"Local fallback file not found at: {local_path}")
+
+    with open(local_path, "r") as f:
+        lines = f.readlines()
+
+    if skip_lines == 0:
+        return "".join(lines)
+    else:
+        return "".join(lines[skip_lines + 1:])
+
 def _ssh_fetch(remote_path, skip_lines=0):
     """Fetch a file from the Jetson over SSH. If it fails, fall back to local files."""
     try:
         remote_cmd = (f"cat {remote_path}" if skip_lines == 0
                       else f"tail -n +{skip_lines + 2} {remote_path}")
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", JETSON_HOST, remote_cmd],
-            capture_output=True, text=True, timeout=5
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", JETSON_HOST, remote_cmd],
+            capture_output=True, text=True, timeout=4
         )
         result.check_returncode()
         return result.stdout
     except Exception as e:
         # Fallback to local files
-        if "hls_sync" in remote_path:
-            local_path = os.path.join(DATA_DIR, f"segments_{SESSION_ID}", "sync", f"hls_sync_{SESSION_ID}_triple.csv")
-            if not os.path.exists(local_path):
-                local_path = f"/Users/aryamirani/Desktop/codes/judex/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
-        elif "hls_segment_frame_index.csv" in remote_path:
-            cam = None
-            for c in ["source", "sink", "hq"]:
-                if f"/{c}/" in remote_path or c in remote_path:
-                    cam = c
-                    break
-            if cam is None:
-                cam = "source"
-            local_path = os.path.join(TEST_WORK_DIR, "cv_output", "reader", cam, "hls_segment_frame_index.csv")
-            if not os.path.exists(local_path):
-                local_path = f"/Users/aryamirani/Desktop/codes/judex/test_work/cv_output/reader/{cam}/hls_segment_frame_index.csv"
-        else:
-            raise ValueError(f"Unknown remote path: {remote_path}")
-
-        if not os.path.exists(local_path):
-            raise FileNotFoundError(f"Local fallback file not found at: {local_path}")
-
-        with open(local_path, "r") as f:
-            lines = f.readlines()
-
-        if skip_lines == 0:
-            return "".join(lines)
-        else:
-            return "".join(lines[skip_lines + 1:])
+        return _fetch_local_fallback(remote_path, skip_lines)
 
 def _fetch_csv_lines(skip_lines=0):
     return _ssh_fetch(REMOTE_CSV_PATH, skip_lines)
@@ -156,11 +159,11 @@ def _ingest_sync_rows(csv_text, has_header=True):
 
 def sync_csv_poller():
     """
-    Background thread: polls the remote sync CSV every 4 seconds and ingests new rows.
+    Background thread: polls the remote sync CSV every 1 second and ingests new rows.
     """
     global _sync_rows_loaded
     while True:
-        time.sleep(4)  # Reintroduce 4-second delay
+        time.sleep(1)
         try:
             new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded)
             added = _ingest_sync_rows(new_text, has_header=False)
@@ -195,10 +198,10 @@ def _ingest_frame_idx_rows(cam, csv_text, has_header=True):
     return count
 
 def frame_idx_poller():
-    """Background thread: polls each camera's frame index CSV every 4 s for new segments."""
+    """Background thread: polls each camera's frame index CSV every 1 s for new segments."""
     global _frame_idx_rows
     while True:
-        time.sleep(4)
+        time.sleep(1)
         for cam in ["source", "sink", "hq"]:
             try:
                 text = _ssh_fetch(FRAME_IDX_PATHS[cam], skip_lines=_frame_idx_rows[cam])
