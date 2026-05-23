@@ -482,13 +482,21 @@ export default function App() {
               mediaSequence = parseInt(line.split(':')[1], 10);
             } else if (line.startsWith('#EXTINF:')) {
               const duration = parseFloat(line.split(':')[1].split(',')[0]);
-              const name = lines[i + 1]?.trim();
-              if (name) {
+              let name = lines[i + 1]?.trim();
+              let offset = 1;
+              
+              // Skip the #EXT-X-GAP tag if it's there
+              if (name === '#EXT-X-GAP') {
+                name = lines[i + 2]?.trim();
+                offset = 2;
+              }
+              
+              if (name && name !== 'gap.ts') {
                 const match = name.match(/seg_(\d+)\.ts/)
                 const absSegIdx = match ? parseInt(match[1], 10) : (mediaSequence + playlistSegs.length);
                 playlistSegs.push({ duration, name, absSegIdx });
               }
-              i++;
+              i += offset;
             }
           }
           
