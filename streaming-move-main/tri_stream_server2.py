@@ -521,6 +521,9 @@ def master_stream_worker():
     next_step_idx = 0
     
     def update_unified_timeline():
+        nonlocal unified_steps
+        unified_steps = unified_steps[:next_step_idx]
+        
         # Iterate over source segments
         max_segs = max(len(all_segs[cam]) for cam in ["source", "sink", "hq"])
         while len(unified_steps) < max_segs:
@@ -582,6 +585,10 @@ def master_stream_worker():
                 t_start = src_start_frame / 30.0
             elif unified_steps:
                 t_start = unified_steps[-1]["t_start"] + unified_steps[-1]["dur_global"]
+                
+            if all(name is None for name in names.values()):
+                break
+
                 
             unified_steps.append({
                 "seg_indices": seg_indices,
@@ -757,6 +764,15 @@ def master_stream_worker():
                                     temp_dst = dst + ".tmp"
                                     shutil.copy2(src, temp_dst)
                                     os.rename(temp_dst, dst)
+                else:
+                    # Release missing segment as a gap so the playlist stays synchronized
+                    seg = {
+                        "name": None,
+                        "dur_global": step["dur_global"],
+                        "orig_dur": 0.0,
+                        "abs_idx": None
+                    }
+                    released[cam].append(seg)
             
             next_step_idx += 1
                 
