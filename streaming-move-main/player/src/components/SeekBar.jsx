@@ -33,7 +33,7 @@ export default function SeekBar({
   const segsEnd = segs.length > 0 ? segs[segs.length - 1].end : null
 
   const rangeStart = segsStart ?? bufferStart ?? (liveEdge !== null ? liveEdge - 80 : 0)
-  const rangeEnd = Math.max(segsEnd ?? -Infinity, liveEdge ?? -Infinity, currentTime)
+  const rangeEnd = mode === "live" && liveEdge !== null ? Math.max(liveEdge, currentTime) : Math.max(segsEnd ?? -Infinity, liveEdge ?? -Infinity, currentTime)
 
   const seekFromEvent = useCallback((e) => {
     const rect = trackRef.current.getBoundingClientRect()
