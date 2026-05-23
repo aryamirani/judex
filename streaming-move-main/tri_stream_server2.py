@@ -178,7 +178,7 @@ def sync_csv_poller():
         time.sleep(4)
         try:
             new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded)
-            added = _ingest_sync_rows(new_text, has_header=False)
+            added = _ingest_sync_rows(new_text, has_header=(_sync_rows_loaded == 0))
             if added:
                 _sync_rows_loaded += added
                 print(f"[sync poller] +{added} new rows (total {_sync_rows_loaded})")
@@ -217,7 +217,7 @@ def frame_idx_poller():
         for cam in ["source", "sink", "hq"]:
             try:
                 text = _ssh_fetch(FRAME_IDX_PATHS[cam], skip_lines=_frame_idx_rows[cam])
-                added = _ingest_frame_idx_rows(cam, text, has_header=False)
+                added = _ingest_frame_idx_rows(cam, text, has_header=(_frame_idx_rows[cam] == 0))
                 if added:
                     _frame_idx_rows[cam] += added
                     print(f"[frame idx poller] {cam} +{added} segs (total {_frame_idx_rows[cam]})")
