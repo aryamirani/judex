@@ -990,49 +990,50 @@ def get_sync_map(from_camera: str, sns: str):
         return JSONResponse(status_code=400, content={"error": "Invalid sns parameter"})
         
     res = {}
-    for sn in sn_list:
-        if sn in seg_to_frame[from_camera]:
-            start_frame = seg_to_frame[from_camera][sn]
-        else:
-            if seg_to_frame[from_camera]:
-                closest_seg = min(seg_to_frame[from_camera].keys(), key=lambda x: abs(x - sn))
-                start_frame = seg_to_frame[from_camera][closest_seg] + (sn - closest_seg) * 180
+    with _sync_lock, _frame_idx_lock:
+        for sn in sn_list:
+            if sn in seg_to_frame[from_camera]:
+                start_frame = seg_to_frame[from_camera][sn]
             else:
-                start_frame = sn * 180
-        
-        # Get corresponding frames at the start of this segment
-        seg_res = {}
-        for target_cam in ["source", "sink", "hq"]:
-            if target_cam == from_camera:
-                seg_res[target_cam] = {"segment": sn, "offset": 0.0}
-                continue
-                
-            map_key = f"{from_camera}_to_{target_cam}"
-            if start_frame in sync_maps[map_key]:
-                target_frame = sync_maps[map_key][start_frame]
-            else:
-                if sync_maps[map_key]:
-                    closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - start_frame))
-                    target_frame = sync_maps[map_key][closest]
+                if seg_to_frame[from_camera]:
+                    closest_seg = min(seg_to_frame[from_camera].keys(), key=lambda x: abs(x - sn))
+                    start_frame = seg_to_frame[from_camera][closest_seg] + (sn - closest_seg) * 180
                 else:
-                    target_frame = start_frame
-                
-            if target_frame not in frame_to_seg[target_cam]:
-                available = list(frame_to_seg[target_cam].keys())
-                if available:
-                    target_frame = min(available, key=lambda x: abs(x - target_frame))
+                    start_frame = sn * 180
+            
+            # Get corresponding frames at the start of this segment
+            seg_res = {}
+            for target_cam in ["source", "sink", "hq"]:
+                if target_cam == from_camera:
+                    seg_res[target_cam] = {"segment": sn, "offset": 0.0}
+                    continue
+                    
+                map_key = f"{from_camera}_to_{target_cam}"
+                if start_frame in sync_maps[map_key]:
+                    target_frame = sync_maps[map_key][start_frame]
+                else:
+                    if sync_maps[map_key]:
+                        closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - start_frame))
+                        target_frame = sync_maps[map_key][closest]
+                    else:
+                        target_frame = start_frame
+                    
+                if target_frame not in frame_to_seg[target_cam]:
+                    available = list(frame_to_seg[target_cam].keys())
+                    if available:
+                        target_frame = min(available, key=lambda x: abs(x - target_frame))
+                        t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
+                    else:
+                        t_seg = int(target_frame / 180)
+                        t_frame_offset = target_frame % 180
+                else:
                     t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
-                else:
-                    t_seg = int(target_frame / 180)
-                    t_frame_offset = target_frame % 180
-            else:
-                t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
-                
-            seg_res[target_cam] = {
-                "segment": t_seg,
-                "offset": t_frame_offset / FPS
-            }
-        res[sn] = seg_res
+                    
+                seg_res[target_cam] = {
+                    "segment": t_seg,
+                    "offset": t_frame_offset / FPS
+                }
+            res[sn] = seg_res
     return res
 
 @app.get("/check_sync")
@@ -1046,20 +1047,20 @@ def check_sync(
 
     # Convert seg+offset → absolute frame for each camera
     frames = {}
-    for cam, (seg, off) in positions.items():
-        if seg in seg_to_frame[cam]:
-            frames[cam] = seg_to_frame[cam][seg] + int(off * FPS)
-        else:
-            if seg_to_frame[cam]:
-                closest_seg = min(seg_to_frame[cam].keys(), key=lambda x: abs(x - seg))
-                frames[cam] = seg_to_frame[cam][closest_seg] + (seg - closest_seg) * 180 + int(off * FPS)
+    with _sync_lock, _frame_idx_lock:
+        for cam, (seg, off) in positions.items():
+            if seg in seg_to_frame[cam]:
+                frames[cam] = seg_to_frame[cam][seg] + int(off * FPS)
             else:
-                frames[cam] = seg * 180 + int(off * FPS)
-
-    # For each (anchor, target) pair, check CSV prediction vs actual target frame
-    pairs = [("source", "sink"), ("source", "hq"), ("sink", "hq")]
-    checks = {}
-    with _sync_lock:
+                if seg_to_frame[cam]:
+                    closest_seg = min(seg_to_frame[cam].keys(), key=lambda x: abs(x - seg))
+                    frames[cam] = seg_to_frame[cam][closest_seg] + (seg - closest_seg) * 180 + int(off * FPS)
+                else:
+                    frames[cam] = seg * 180 + int(off * FPS)
+    
+        # For each (anchor, target) pair, check CSV prediction vs actual target frame
+        pairs = [("source", "sink"), ("source", "hq"), ("sink", "hq")]
+        checks = {}
         for anchor, target in pairs:
             key = f"{anchor}_to_{target}"
             if frames[anchor] is None or frames[target] is None:
