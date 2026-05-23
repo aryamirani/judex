@@ -683,7 +683,7 @@ def master_stream_worker():
             # Catch up check
             if IS_LIVE and (total_duration - target_sim_time > 15.0):
                 print(f"[master worker] Live stream lag detected ({total_duration - target_sim_time:.1f}s). Jumping to live edge.")
-                target_sim_time = max(0.0, total_duration - 8.0)
+                target_sim_time = max(0.0, total_duration - 7.0)
             
             if target_sim_time >= total_duration and has_endlist:
                 stream_done = True

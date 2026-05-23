@@ -8,7 +8,7 @@ import EventPanel from './components/EventPanel.jsx'
 const REVIEW_BUFFER_SIZE = 30
 const LIVE_THRESHOLD = 2
 
-const LIVE_CONFIG = { backBufferLength: 150, maxBufferLength: 150, liveSyncDurationCount: 1, enableWorker: true }
+const LIVE_CONFIG = { backBufferLength: 150, maxBufferLength: 150, liveSyncDurationCount: 1.5, liveMaxLatencyDurationCount: 2.5, enableWorker: true }
 const REVIEW_CONFIG = { enableWorker: true, maxBufferLength: 150, backBufferLength: 150 }
 
 const CAMERAS = ['source', 'sink', 'hq']
