@@ -546,7 +546,7 @@ export default function App() {
             
             // Construct absolute URL for segment
             const baseUrl = playlistUrl.substring(0, playlistUrl.lastIndexOf('/'));
-            const segUrl = `${baseUrl}/${seg.name}`;
+            const segUrl = seg.name.startsWith('http') ? seg.name : `${baseUrl}/${seg.name}`;
             
             fetch(segUrl)
               .then(async (segRes) => {
