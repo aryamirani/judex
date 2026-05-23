@@ -466,28 +466,6 @@ def download_segment_file(src_url, dst, cam, name):
             _active_downloads.discard(dst)
 
 def master_stream_worker():
-    # Back up existing files in serve dirs to serve_backup before cleaning them
-    for cam in ["source", "sink", "hq"]:
-        serve_dir = SERVE_DIRS[cam]
-        backup_dir = os.path.join(BASE_DIR, "serve_backup", cam)
-        os.makedirs(backup_dir, exist_ok=True)
-        if os.path.exists(serve_dir):
-            for root, dirs, files in os.walk(serve_dir):
-                for f in files:
-                    rel_path = os.path.relpath(os.path.join(root, f), serve_dir)
-                    if (rel_path.endswith(".ts") and not os.path.basename(rel_path).startswith("gap_")) or rel_path == "playlist.m3u8" or rel_path == "live.m3u8":
-                        dst_name = "playlist.m3u8" if rel_path in ["live.m3u8", "playlist.m3u8"] else rel_path
-                        dst_file = os.path.join(backup_dir, dst_name)
-                        if not os.path.exists(dst_file):
-                            try:
-                                os.makedirs(os.path.dirname(dst_file), exist_ok=True)
-                                temp_dst = dst_file + ".tmp"
-                                shutil.copy2(os.path.join(root, f), temp_dst)
-                                os.rename(temp_dst, dst_file)
-                                print(f"[Fallback] Backed up {rel_path} as {dst_name} to {backup_dir}")
-                            except Exception as e:
-                                print(f"[Fallback] Error backing up {rel_path}: {e}")
-
     # Clean serve dirs recursively
     for cam in ["source", "sink", "hq"]:
         serve_dir = SERVE_DIRS[cam]
