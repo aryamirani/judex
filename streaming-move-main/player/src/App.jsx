@@ -677,7 +677,7 @@ export default function App() {
     return () => { clearTimeout(t0); clearInterval(intervalId) }
   }, [doLiveSync])
 
-  // Continuously poll check_sync every ~1667ms (50 frames at 30fps)
+  // Continuously poll check_sync every ~6667ms (200 frames at 30fps)
   useEffect(() => {
     const poll = async () => {
       try {
@@ -694,13 +694,14 @@ export default function App() {
         const v = await res.json()
         if (v?.checks) {
           console.log(
-            `[SYNC LOG] frames: SRC=${v.frames.source} SNK=${v.frames.sink} HQ=${v.frames.hq} | ` +
+            `[SYNC LOG] segs: SRC=${pos.source.seg} SNK=${pos.sink.seg} HQ=${pos.hq.seg} | ` +
+            `frames: SRC=${v.frames.source} SNK=${v.frames.sink} HQ=${v.frames.hq} | ` +
             Object.entries(v.checks).map(([k, c]) => `${k}: Δ${c.diff_frames}f`).join(' | ')
           )
         }
       } catch (_) {}
     }
-    const id = setInterval(poll, 1667)
+    const id = setInterval(poll, 6667)
     return () => clearInterval(id)
   }, [getAllCamPositions])
 

@@ -863,6 +863,11 @@ def get_live_m3u8(cam: str):
             orig_dur = item.get("orig_durs", {}).get(cam, dur) if "orig_durs" in item else item.get("orig_dur", dur)
             name = item["name"]
             
+            if name:
+                dst = os.path.join(SERVE_DIRS[cam], name)
+                if not os.path.exists(dst):
+                    name = None
+            
             if name and orig_dur > 0 and (dur - orig_dur) > 0.5:
                 # Add original duration and segment
                 lines.append(f"#EXTINF:{orig_dur:.6f},")
