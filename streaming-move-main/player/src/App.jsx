@@ -8,7 +8,17 @@ import EventPanel from './components/EventPanel.jsx'
 const REVIEW_BUFFER_SIZE = 30
 const LIVE_THRESHOLD = 2
 
-const LIVE_CONFIG = { backBufferLength: 150, maxBufferLength: 150, liveSyncDurationCount: 1.5, liveMaxLatencyDurationCount: 2.5, enableWorker: true }
+const LIVE_CONFIG = { 
+  backBufferLength: 150, 
+  maxBufferLength: 150, 
+  liveSyncDurationCount: 12 / 6, 
+  liveMaxLatencyDurationCount: 18 / 6, 
+  enableWorker: true,
+  fragLoadingMaxRetry: 100,
+  fragLoadingRetryDelay: 500,
+  manifestLoadingMaxRetry: 100,
+  manifestLoadingRetryDelay: 500
+}
 const REVIEW_CONFIG = { enableWorker: true, maxBufferLength: 150, backBufferLength: 150 }
 
 const CAMERAS = ['source', 'sink', 'hq']
@@ -275,6 +285,27 @@ export default function App() {
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setStatus('playing')
         video.play().catch(() => {})
+      })
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.log(`[HLS] Fatal network error for ${cam}, trying to recover...`);
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.log(`[HLS] Fatal media error for ${cam}, trying to recover...`);
+              hls.recoverMediaError();
+              break;
+            default:
+              console.error(`[HLS] Unrecoverable error for ${cam}:`, data);
+              hls.destroy();
+              break;
+          }
+        } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
+          console.warn(`[HLS] Fragment load failed for ${cam} (likely 404 from slow Pi). HLS.js will retry.`);
+        }
       })
 
       hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
@@ -709,7 +740,7 @@ export default function App() {
         }
       } catch (_) {}
     }
-    const id = setInterval(poll, 6667)
+    const id = setInterval(poll, 3333)
     return () => clearInterval(id)
   }, [getAllCamPositions])
 

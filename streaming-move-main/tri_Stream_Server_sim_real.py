@@ -355,6 +355,11 @@ def write_playlist(cam, window, media_sequence, done=False):
             dur = item["dur_global"]
             orig_dur = item.get("orig_durs", {}).get(cam, dur) if "orig_durs" in item else item.get("orig_dur", dur)
             name = item["name"]
+            if name:
+                cam_path = CAM_PATHS[cam]
+                if cam_path.startswith("http://") or cam_path.startswith("https://"):
+                    base_url = cam_path.rsplit('/', 1)[0]
+                    name = f"{base_url}/{name}"
             
             if name and orig_dur > 0 and (dur - orig_dur) > 0.5:
                 # Add original duration and segment
@@ -382,7 +387,8 @@ def write_playlist(cam, window, media_sequence, done=False):
         f.write("\n".join(lines) + "\n")
     os.rename(temp_path, playlist_path)
 
-
+_active_downloads = set()
+_downloads_lock = threading.Lock()
 
 def get_global_time(cam, frame):
     if cam == "source":
@@ -430,12 +436,39 @@ def parse_abs_seg_idx(name):
     if not name:
         return None
     import re
-    import os
     base = os.path.basename(name)
     m = re.search(r'(\d+)\.ts$', base)
     if m:
         return int(m.group(1))
     return None
+
+def download_segment_file(src_url, dst, cam, name):
+    try:
+        if os.path.exists(dst):
+            return
+        req = urllib.request.Request(src_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            temp_dst = dst + ".tmp"
+            with open(temp_dst, "wb") as f_dst:
+                f_dst.write(response.read())
+            os.rename(temp_dst, dst)
+        print(f"[master worker] Downloaded segment {name} from {src_url}")
+    except Exception as e:
+        print(f"[master worker] Error downloading {src_url}: {e}")
+        # Fallback to backup
+        if USE_BACKUP:
+            backup_src = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
+            if os.path.exists(backup_src):
+                try:
+                    temp_dst = dst + ".tmp"
+                    shutil.copy2(backup_src, temp_dst)
+                    os.rename(temp_dst, dst)
+                    print(f"[master worker] Recovered {name} from backup")
+                except Exception as backup_err:
+                    print(f"[master worker] Backup recovery failed: {backup_err}")
+    finally:
+        with _downloads_lock:
+            _active_downloads.discard(dst)
 
 def master_stream_worker():
     # Clean serve dirs recursively
@@ -706,10 +739,12 @@ def master_stream_worker():
                     released[cam].append(seg)
                     
                     cam_path = CAM_PATHS[cam]
-                    if not (cam_path.startswith("http://") or cam_path.startswith("https://")):
-                        dst = os.path.join(SERVE_DIRS[cam], name)
-                        os.makedirs(os.path.dirname(dst), exist_ok=True)
-                        if not os.path.exists(dst):
+                    dst = os.path.join(SERVE_DIRS[cam], name)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    if not os.path.exists(dst):
+                        if cam_path.startswith("http://") or cam_path.startswith("https://"):
+                            pass # Real world: React fetches directly from Pi, no middleman download
+                        else:
                             src = os.path.join(cam_path, name)
                             if not os.path.exists(src) and USE_BACKUP:
                                 backup_src = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
@@ -717,12 +752,23 @@ def master_stream_worker():
                                     src = backup_src
                             
                             if os.path.exists(src):
-                                try:
-                                    os.link(src, dst)
-                                except:
-                                    temp_dst = dst + ".tmp"
-                                    shutil.copy2(src, temp_dst)
-                                    os.rename(temp_dst, dst)
+                                def simulate_download(source, dest, camera, segment_name):
+                                    import random
+                                    latency = random.uniform(3.0, 6.5)
+                                    time.sleep(latency)
+                                    try:
+                                        os.link(source, dest)
+                                    except:
+                                        temp_dst = dest + ".tmp"
+                                        shutil.copy2(source, temp_dst)
+                                        os.rename(temp_dst, dest)
+                                    print(f"[SIMULATOR] {camera}/{segment_name} simulated Wi-Fi fetch complete in {latency:.2f}s")
+
+                                threading.Thread(
+                                    target=simulate_download,
+                                    args=(src, dst, cam, name),
+                                    daemon=True
+                                ).start()
                 else:
                     # Release missing segment as a gap so the playlist stays synchronized
                     seg = {
@@ -757,16 +803,25 @@ def master_stream_worker():
                     media_items_count -= 1
                     media_sequence[cam] += 1
                     
-                    old_file = os.path.join(SERVE_DIRS[cam], popped["name"])
-                    if os.path.exists(old_file):
-                        try:
-                            os.remove(old_file)
-                        except Exception:
-                            pass
+                    if popped["name"]:
+                        old_file = os.path.join(SERVE_DIRS[cam], popped["name"])
+                        if os.path.exists(old_file):
+                            try:
+                                os.remove(old_file)
+                            except Exception:
+                                pass
             
             filtered_released = []
             for item in released[cam]:
-                filtered_released.append(item)
+                if isinstance(item, dict):
+                    name = item["name"]
+                    if name:
+                        dst = os.path.join(SERVE_DIRS[cam], name)
+                        with _downloads_lock:
+                            is_downloading = dst in _active_downloads
+                        if is_downloading:
+                            break
+                    filtered_released.append(item)
                 
             if not filtered_released:
                 continue
@@ -838,8 +893,6 @@ def get_live_m3u8(cam: str):
                     name = f"{base_url}/{name}"
                 else:
                     dst = os.path.join(SERVE_DIRS[cam], name)
-                    if not os.path.exists(dst):
-                        name = None
             
             if name and orig_dur > 0 and (dur - orig_dur) > 0.5:
                 # Add original duration and segment
@@ -865,9 +918,15 @@ def get_live_m3u8(cam: str):
         
     return PlainTextResponse("\n".join(lines) + "\n")
 
-app.mount("/stream/source", StaticFiles(directory=os.path.join(BASE_DIR, "serve", "source")), name="source")
-app.mount("/stream/sink", StaticFiles(directory=os.path.join(BASE_DIR, "serve", "sink")), name="sink")
-app.mount("/stream/hq", StaticFiles(directory=os.path.join(BASE_DIR, "serve", "hq")), name="hq")
+from fastapi.responses import FileResponse
+
+@app.get("/stream/{cam}/{segment}.ts")
+def serve_segment(cam: str, segment: str):
+    dst = os.path.join(SERVE_DIRS[cam], f"{segment}.ts")
+    if not os.path.exists(dst):
+        print(f"[STRICT ENFORCEMENT] React tried to fetch {cam}/{segment}.ts before Wi-Fi fetch completed. DENIED (404)!")
+        return PlainTextResponse("File not yet downloaded from Pi", status_code=404)
+    return FileResponse(dst)
 
 # For the bounce clips
 BOUNCE_CLIPS_DIR = os.path.join(ASSIGNMENT_DIR, "bounce_clips_share")
