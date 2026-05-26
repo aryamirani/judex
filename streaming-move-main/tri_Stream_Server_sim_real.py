@@ -982,8 +982,9 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
         if target_frame not in frame_to_seg[target_cam]:
             available = list(frame_to_seg[target_cam].keys())
             if available:
-                target_frame = min(available, key=lambda x: abs(x - target_frame))
-                t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
+                closest_start = min(available, key=lambda x: abs(x - target_frame))
+                t_seg, base_offset = frame_to_seg[target_cam][closest_start]
+                t_frame_offset = base_offset + (target_frame - closest_start)
             else:
                 t_seg = int(target_frame / 180)
                 t_frame_offset = target_frame % 180
@@ -1037,8 +1038,9 @@ def get_sync_map(from_camera: str, sns: str):
                 if target_frame not in frame_to_seg[target_cam]:
                     available = list(frame_to_seg[target_cam].keys())
                     if available:
-                        target_frame = min(available, key=lambda x: abs(x - target_frame))
-                        t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
+                        closest_start = min(available, key=lambda x: abs(x - target_frame))
+                        t_seg, base_offset = frame_to_seg[target_cam][closest_start]
+                        t_frame_offset = base_offset + (target_frame - closest_start)
                     else:
                         t_seg = int(target_frame / 180)
                         t_frame_offset = target_frame % 180
@@ -1095,13 +1097,7 @@ def check_sync(
                 raw_expected = anchor_frame
                 exact = False
             # Step 2: clamp raw_expected to nearest valid frame in target's frame index
-            # (same correction /sync uses — handles 1:1 maps that go out of range)
-            if raw_expected in frame_to_seg[target]:
-                expected = raw_expected
-            elif frame_to_seg[target]:
-                expected = min(frame_to_seg[target].keys(), key=lambda x: abs(x - raw_expected))
-            else:
-                expected = raw_expected
+            expected = raw_expected
             diff = abs(frames[target] - expected)
             checks[key] = {
                 "anchor_frame": anchor_frame,

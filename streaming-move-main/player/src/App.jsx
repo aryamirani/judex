@@ -74,8 +74,22 @@ export default function App() {
         if (video) {
           if (nextPlaying) {
             video.play().catch(e => console.log('play failed', e))
+            // Resuming: check if we're at the live edge — if so, re-enable latency enforcement
+            if (modeRef.current === 'live') {
+              const hls = hlsRefs[cam].current
+              const livePos = hls?.liveSyncPosition
+              const isAtLive = livePos && Math.abs(video.currentTime - livePos) < 2.0
+              if (hls) {
+                hls.config.liveMaxLatencyDurationCount = isAtLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
+              }
+            }
           } else {
             video.pause()
+            // Pausing: disable latency enforcement so HLS.js won't drag us to live edge
+            if (modeRef.current === 'live') {
+              const hls = hlsRefs[cam].current
+              if (hls) hls.config.liveMaxLatencyDurationCount = 9999
+            }
           }
         }
       })
@@ -850,14 +864,42 @@ export default function App() {
   const handleSeek = (time) => {
     const video = videoRefs[activeCam].current
     if (video) {
-      video.currentTime = time
       if (mode === 'review') {
+        video.currentTime = time
         syncReviewVideos(time)
       } else {
-        syncLiveVideos(time)
+        // In live mode: check if we're seeking to the live edge (GO LIVE button)
+        const livePos = hlsRefs[activeCam].current?.liveSyncPosition
+        const isLiveEdge = livePos != null && time >= livePos - 2.0
+        if (isLiveEdge) {
+          // GO LIVE: seek all cameras to their live edge and resume playback
+          CAMERAS.forEach(cam => {
+            const hls = hlsRefs[cam].current
+            const camVideo = videoRefs[cam].current
+            if (!hls || !camVideo) return
+            // Restore latency enforcement
+            hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount
+            // Seek to this camera's live sync position
+            const camLivePos = hls.liveSyncPosition
+            if (camLivePos != null) camVideo.currentTime = camLivePos
+            // Resume playback
+            camVideo.play().catch(() => {})
+          })
+          setIsPlaying(true)
+        } else {
+          // Seeking to a past segment: disable latency enforcement on all cameras
+          CAMERAS.forEach(cam => {
+            if (hlsRefs[cam].current) {
+              hlsRefs[cam].current.config.liveMaxLatencyDurationCount = 9999
+            }
+          })
+          video.currentTime = time
+          syncLiveVideos(time)
+        }
       }
     }
   }
+
 
   const inReview = mode === 'review'
   const activeReviewSegs = inReview ? (reviewSegs[activeCam] || []) : []
