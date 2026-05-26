@@ -218,7 +218,19 @@ export default function App() {
         const targetList = rollingBuffers[targetCam].current
         const targetSegInfo = targetList.find(s => s.absSegIdx === mapping.segment)
         if (targetSegInfo) {
-          const targetTime = targetSegInfo.start + mapping.offset + offsetInSeg
+          let baseStart = targetSegInfo.originalStart
+          const tHls = hlsRefs[targetCam].current
+          if (tHls && tHls.levels?.[tHls.currentLevel]?.details?.fragments) {
+            const frags = tHls.levels[tHls.currentLevel].details.fragments
+            const tFrag = frags.find(f => {
+              const m = (f.relurl || f.url || '').match(/seg_(\d+)\.ts/)
+              return (m ? parseInt(m[1], 10) : f.sn) === mapping.segment
+            })
+            if (tFrag) {
+              baseStart = tFrag.start
+            }
+          }
+          const targetTime = baseStart + mapping.offset + offsetInSeg
           console.log(`[SEEK] Live Mode Timeline clicked. targetCam=${targetCam}, seeking to targetTime=${targetTime.toFixed(3)} (absSegIdx=${mapping.segment})`)
           if (targetVideo && Math.abs(targetVideo.currentTime - targetTime) > 0.15) {
             targetVideo.currentTime = targetTime
@@ -887,7 +899,7 @@ export default function App() {
           })
           setIsPlaying(true)
         } else {
-          // Seeking to a past segment: disable latency enforcement on all cameras
+          // Seeking to a past segment: mimic pause to avoid HLS.js stream controller seek-recovery
           CAMERAS.forEach(cam => {
             if (hlsRefs[cam].current) {
               hlsRefs[cam].current.config.liveMaxLatencyDurationCount = 9999
@@ -896,7 +908,34 @@ export default function App() {
               videoRefs[cam].current.pause()
             }
           })
-          video.currentTime = time
+          
+          let activeHlsTime = time
+          const activeList = liveSegments
+          let activeSeg = activeList.find(s => time >= s.start && time <= s.end)
+          if (!activeSeg && activeList.length > 0) {
+            activeSeg = activeList.reduce((prev, curr) => {
+              const pDist = Math.min(Math.abs(time - prev.start), Math.abs(time - prev.end))
+              const cDist = Math.min(Math.abs(time - curr.start), Math.abs(time - curr.end))
+              return pDist < cDist ? prev : curr
+            })
+          }
+          
+          if (activeSeg) {
+            const offsetInSeg = time - activeSeg.start
+            const aHls = hlsRefs[activeCam].current
+            if (aHls && aHls.levels?.[aHls.currentLevel]?.details?.fragments) {
+              const frags = aHls.levels[aHls.currentLevel].details.fragments
+              const aFrag = frags.find(f => {
+                const m = (f.relurl || f.url || '').match(/seg_(\d+)\.ts/)
+                return (m ? parseInt(m[1], 10) : f.sn) === activeSeg.absSegIdx
+              })
+              if (aFrag) {
+                activeHlsTime = aFrag.start + offsetInSeg
+              }
+            }
+          }
+
+          video.currentTime = activeHlsTime
           syncLiveVideos(time)
           
           if (isPlaying) {
