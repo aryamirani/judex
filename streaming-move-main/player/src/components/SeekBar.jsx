@@ -216,6 +216,7 @@ export default function SeekBar({
           }} />
         </div>
  
+        {/* SEGMENT TICKS — hidden
         {visibleTicks.map((seg, i) => {
           const frac = toFraction(seg.start, rangeStart, rangeEnd)
           return (
@@ -225,7 +226,9 @@ export default function SeekBar({
             }} />
           )
         })}
+        */}
  
+        {/* EVENT DOTS — hidden
         {visibleEvents.map((ev, i) => {
           const frac = toFraction(ev.time, rangeStart, rangeEnd)
           const isHovered = hoveredEvent?.id === ev.id
@@ -273,6 +276,7 @@ export default function SeekBar({
             </div>
           )
         })}
+        */}
 
         <div style={{
           position: 'absolute', left: `${playedFrac * 100}%`, transform: 'translateX(-50%)',
