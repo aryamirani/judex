@@ -821,7 +821,7 @@ def master_stream_worker():
                             is_downloading = dst in _active_downloads
                         if is_downloading:
                             break
-                    filtered_released.append(item)
+                filtered_released.append(item)
                 
             if not filtered_released:
                 continue
