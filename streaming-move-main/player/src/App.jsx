@@ -169,8 +169,14 @@ export default function App() {
     const activeSeg = activeList.find(s => activeTime >= s.start && activeTime <= s.end)
     if (!activeSeg) return
     
-    const offsetInSeg = activeTime - activeSeg.start
+    let sourceOffsetInSeg = activeTime - activeSeg.start
     const sn = activeSeg.absSegIdx
+    
+    // Normalize offset back to source baseline
+    const activeMapping = syncMap[sn]?.[activeCam]
+    if (activeMapping) {
+      sourceOffsetInSeg -= activeMapping.offset
+    }
     
     CAMERAS.forEach(cam => {
       if (cam === activeCam) return
@@ -181,7 +187,7 @@ export default function App() {
       if (!targetList) return
       const targetSeg = targetList.find(s => s.absSegIdx === mapping.segment)
       if (targetSeg) {
-        const targetTime = targetSeg.start + mapping.offset + offsetInSeg
+        const targetTime = targetSeg.start + sourceOffsetInSeg + mapping.offset
         const targetVideo = videoRefs[cam].current
         if (targetVideo) {
           const cur = targetVideo.currentTime
@@ -850,15 +856,21 @@ export default function App() {
       if (activeList && activeList.length > 0) {
         const activeSeg = activeList.find(s => currentVideo.currentTime >= s.start && currentVideo.currentTime <= s.end)
         if (activeSeg) {
-          const offsetInSeg = currentVideo.currentTime - activeSeg.start
+          let sourceOffsetInSeg = currentVideo.currentTime - activeSeg.start
           const sn = activeSeg.absSegIdx
+          
+          const activeMapping = syncMap?.[sn]?.[activeCam]
+          if (activeMapping) {
+            sourceOffsetInSeg -= activeMapping.offset
+          }
+
           const mapping = syncMap?.[sn]?.[targetCam]
           if (mapping) {
             const targetList = reviewSegs[targetCam]
             if (targetList) {
               const targetSeg = targetList.find(s => s.absSegIdx === mapping.segment)
               if (targetSeg) {
-                targetVideo.currentTime = targetSeg.start + mapping.offset + offsetInSeg
+                targetVideo.currentTime = targetSeg.start + sourceOffsetInSeg + mapping.offset
               }
             }
           }
