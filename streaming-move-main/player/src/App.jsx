@@ -892,9 +892,20 @@ export default function App() {
             if (hlsRefs[cam].current) {
               hlsRefs[cam].current.config.liveMaxLatencyDurationCount = 9999
             }
+            if (videoRefs[cam].current) {
+              videoRefs[cam].current.pause()
+            }
           })
           video.currentTime = time
           syncLiveVideos(time)
+          
+          if (isPlaying) {
+            CAMERAS.forEach(cam => {
+              if (videoRefs[cam].current) {
+                videoRefs[cam].current.play().catch(() => {})
+              }
+            })
+          }
         }
       }
     }
