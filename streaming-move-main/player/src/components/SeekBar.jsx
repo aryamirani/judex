@@ -32,7 +32,7 @@ export default function SeekBar({
   const segsStart = segs.length > 0 ? segs[0].start : null
   const segsEnd = segs.length > 0 ? segs[segs.length - 1].end : null
 
-  const rangeStart = segsStart ?? bufferStart ?? (liveEdge !== null ? liveEdge - 80 : 0)
+  const rangeStart = mode === 'live' && liveEdge !== null ? Math.max(0, liveEdge - 180) : (segsStart ?? bufferStart ?? (liveEdge !== null ? liveEdge - 180 : 0))
   const rangeEnd = mode === "live" && liveEdge !== null ? Math.max(liveEdge, currentTime) : Math.max(segsEnd ?? -Infinity, liveEdge ?? -Infinity, currentTime)
 
   const seekFromEvent = useCallback((e) => {
@@ -228,7 +228,7 @@ export default function SeekBar({
         })}
         */}
  
-        {/* EVENT DOTS — hidden
+        {/* EVENT DOTS */}
         {visibleEvents.map((ev, i) => {
           const frac = toFraction(ev.time, rangeStart, rangeEnd)
           const isHovered = hoveredEvent?.id === ev.id
@@ -239,44 +239,22 @@ export default function SeekBar({
           return (
             <div
               key={i}
-              onMouseEnter={() => { if (isPast) setHoveredEvent(ev); }}
-              onMouseLeave={() => setHoveredEvent(null)}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-              }}
-              onClick={(e) => { 
-                if (!isPast) return;
-                e.stopPropagation(); 
-                if (mode === 'review' && onSeek) onSeek(ev.time);
-                setInternalEventTime(ev.time);
-                if (onEventSelect) onEventSelect(ev); 
-              }}
               style={{
                 position: 'absolute', left: `${frac * 100}%`,
                 width: isCurrent ? '12px' : '8px', height: isCurrent ? '12px' : '8px',
                 borderRadius: '50%', background: isCurrent ? '#fff' : 'var(--amber)',
-                transform: 'translate(-50%, 0)', 
-                cursor: isPast ? 'pointer' : 'default',
+                transform: 'translate(-50%, -50%)', 
+                top: '50%',
                 boxShadow: isCurrent ? '0 0 10px rgba(255,255,255,0.8)' : 'none',
                 zIndex: 3, 
-                transition: 'all 0.2s', 
+                transition: 'background 0.2s, width 0.2s, height 0.2s, box-shadow 0.2s, opacity 0.2s', 
                 border: '1px solid #000',
                 opacity: isPast ? 1 : 0.25,
-                pointerEvents: isPast ? 'auto' : 'none'
-              }}>
-              {isHovered && (
-                <div style={{
-                  position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
-                  background: 'rgba(0,0,0,0.9)', color: '#fff', padding: '4px 8px', borderRadius: '4px',
-                  fontSize: '10px', whiteSpace: 'nowrap', pointerEvents: 'none', border: '1px solid var(--border)'
-                }}>
-                  Shot {ev.id}
-                </div>
-              )}
-            </div>
+                pointerEvents: 'none'
+              }}
+            />
           )
         })}
-        */}
 
         <div style={{
           position: 'absolute', left: `${playedFrac * 100}%`, transform: 'translateX(-50%)',

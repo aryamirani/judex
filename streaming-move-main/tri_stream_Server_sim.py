@@ -44,6 +44,8 @@ DATA_DIR = os.path.join(ASSIGNMENT_DIR, "sync_reports")
 if not os.path.exists(DATA_DIR):
     DATA_DIR = os.path.join(ASSIGNMENT_DIR, "apr17", "sync_reports")
 TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "test_work")
+if not os.path.exists(TEST_WORK_DIR):
+    TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "ssh", "test_work")
 
 WINDOW_SIZE = 30
 
@@ -245,32 +247,31 @@ def load_data():
     events_csv = os.path.join(TEST_WORK_DIR, "cv_output", "correlation", "flight_shots.csv")
     if os.path.exists(events_csv):
         df_events = pd.read_csv(events_csv)
-        for _, row in df_events.iterrows():
-            if pd.isna(row.get('bounce_hq_frame')):
-                continue
-            hq_frame = int(row['bounce_hq_frame'])
+        def get_segs_offs_for_hq_frame(f_hq):
+            if pd.isna(f_hq):
+                return None, None
+            f_hq = int(f_hq)
             # Get source frame
-            src_frame = sync_maps["hq_to_source"].get(hq_frame)
+            src_frame = sync_maps["hq_to_source"].get(f_hq)
             if src_frame is None:
                 if sync_maps["hq_to_source"]:
-                    closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - hq_frame))
+                    closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - f_hq))
                     src_frame = sync_maps["hq_to_source"][closest]
                 else:
-                    src_frame = hq_frame
+                    src_frame = f_hq
             
             # Get sink frame
-            sink_frame = sync_maps["hq_to_sink"].get(hq_frame)
+            sink_frame = sync_maps["hq_to_sink"].get(f_hq)
             if sink_frame is None:
                 if sync_maps["hq_to_sink"]:
-                    closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - hq_frame))
+                    closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - f_hq))
                     sink_frame = sync_maps["hq_to_sink"][closest]
                 else:
-                    sink_frame = hq_frame
+                    sink_frame = f_hq
             
-            # Map to segments and offsets for all cameras
             segs = {}
             offs = {}
-            for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", hq_frame)]:
+            for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", f_hq)]:
                 if f_num in frame_to_seg[cam]:
                     c_seg, c_off = frame_to_seg[cam][f_num]
                     segs[cam] = c_seg
@@ -279,6 +280,15 @@ def load_data():
                     # Fallback estimate
                     segs[cam] = int(f_num / 180) # 180 frames = 6s
                     offs[cam] = (f_num % 180) / FPS
+            return segs, offs
+
+        for _, row in df_events.iterrows():
+            if pd.isna(row.get('bounce_hq_frame')):
+                continue
+            hq_frame = int(row['bounce_hq_frame'])
+            segs, offs = get_segs_offs_for_hq_frame(hq_frame)
+            start_segs, start_offs = get_segs_offs_for_hq_frame(row.get('start_frame'))
+            end_segs, end_offs = get_segs_offs_for_hq_frame(row.get('end_frame'))
 
             # Convert NaN to None for JSON compliance
             metadata = {}
@@ -292,6 +302,10 @@ def load_data():
                 "id": str(row['shot_id']),
                 "segments": segs,
                 "offsets": offs,
+                "start_segments": start_segs,
+                "start_offsets": start_offs,
+                "end_segments": end_segs,
+                "end_offsets": end_offs,
                 "hq_frame": hq_frame,
                 "metadata": metadata
             })
@@ -628,6 +642,10 @@ def master_stream_worker():
     start_time = time.time()
     last_time = start_time
     target_sim_time = max(0.0, total_duration - 6.0) if IS_LIVE else 0.0
+    
+    if IS_LIVE and unified_steps:
+        # Fast-forward to only fetch the last 3 segments on startup to avoid massive backlog fetching
+        next_step_idx = max(0, len(unified_steps) - 3)
     stream_done = False
     last_playlist_poll = 0.0
     
@@ -637,7 +655,7 @@ def master_stream_worker():
         last_time = now
         
         # 1. Periodically check playlists
-        if now - last_playlist_poll >= 4.0:
+        if now - last_playlist_poll >= 2.0:
             last_playlist_poll = now
             
             updated_segs = {}
@@ -760,7 +778,7 @@ def master_stream_worker():
                             if os.path.exists(src):
                                 def simulate_download(source, dest, camera, segment_name):
                                     import random
-                                    latency = random.uniform(3.0, 6.5)
+                                    latency = random.uniform(3.5, 4.5)
                                     time.sleep(latency)
                                     try:
                                         os.link(source, dest)
@@ -769,12 +787,19 @@ def master_stream_worker():
                                         shutil.copy2(source, temp_dst)
                                         os.rename(temp_dst, dest)
                                     print(f"[SIMULATOR] {camera}/{segment_name} simulated Wi-Fi fetch complete in {latency:.2f}s")
+                                    with _downloads_lock:
+                                        _active_downloads.discard(dest)
 
-                                threading.Thread(
-                                    target=simulate_download,
-                                    args=(src, dst, cam, name),
-                                    daemon=True
-                                ).start()
+                                with _downloads_lock:
+                                    is_downloading = dst in _active_downloads
+                                if not is_downloading:
+                                    with _downloads_lock:
+                                        _active_downloads.add(dst)
+                                    threading.Thread(
+                                        target=simulate_download,
+                                        args=(src, dst, cam, name),
+                                        daemon=True
+                                    ).start()
                 else:
                     # Release missing segment as a gap so the playlist stays synchronized
                     seg = {

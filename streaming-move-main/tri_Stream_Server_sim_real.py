@@ -90,7 +90,11 @@ events_data = []
 
 FPS = 30.0
 
-_sync_rows_loaded = 0  # number of data rows already ingested (excludes header)
+# Placeholder for the remote flight shots path on the Jetson
+REMOTE_FLIGHT_SHOTS_PATH = "/home/judex/some_path/flight_shots.csv"
+
+_flight_shots_rows_loaded = 0
+  # number of data rows already ingested (excludes header)
 _sync_lock = threading.Lock()
 
 _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
@@ -209,6 +213,89 @@ def _ingest_frame_idx_rows(cam, csv_text, has_header=True):
             count += 1
     return count
 
+def _ingest_flight_shots(csv_text, has_header=True):
+    if not csv_text.strip():
+        return 0
+    df = pd.read_csv(io.StringIO(csv_text)) if has_header else pd.read_csv(io.StringIO(csv_text), header=None)
+    # If header=None, we'd need to assign column names, but for simplicity we assume the header is fetched once 
+    # or we always fetch with headers if using pandas or just parse manually.
+    # Actually, pd.read_csv is tricky with skip_lines. Let's just use the same manual parsing or ensure it handles it.
+    # If has_header is False, we need to supply names. Let's assume the CSV always has the same columns.
+    # To keep it simple, let's just parse the whole file every time or just read the new lines.
+    # If reading new lines, we must supply the names:
+    col_names = ["flight_id","start_frame","end_frame","origin_track_ids","primary_origin_track_id",
+                 "crossed_sides","crossed_sides_confidence","likely_net_hit","ended_near_net",
+                 "counts_as_shot","counts_in_shot_stats","shot_id","dedupe_reason","reason_codes",
+                 "net_crossing_frame","landing_x","landing_y","landing_confidence","bounce_frame",
+                 "bounce_x","bounce_y","bounce_z","bounce_score","bounce_mode","bbox_source_x",
+                 "bbox_source_y","bbox_source_w","bbox_source_h","bbox_sink_x","bbox_sink_y",
+                 "bbox_sink_w","bbox_sink_h","bounce_hq_frame","window_frames"]
+    
+    if not has_header:
+        df = pd.read_csv(io.StringIO(csv_text), header=None, names=col_names)
+
+    def get_segs_offs_for_hq_frame(f_hq):
+        if pd.isna(f_hq):
+            return None, None
+        f_hq = int(f_hq)
+        src_frame = sync_maps["hq_to_source"].get(f_hq)
+        if src_frame is None:
+            if sync_maps["hq_to_source"]:
+                closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - f_hq))
+                src_frame = sync_maps["hq_to_source"][closest]
+            else:
+                src_frame = f_hq
+        
+        sink_frame = sync_maps["hq_to_sink"].get(f_hq)
+        if sink_frame is None:
+            if sync_maps["hq_to_sink"]:
+                closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - f_hq))
+                sink_frame = sync_maps["hq_to_sink"][closest]
+            else:
+                sink_frame = f_hq
+        
+        segs = {}
+        offs = {}
+        for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", f_hq)]:
+            if f_num in frame_to_seg[cam]:
+                c_seg, c_off = frame_to_seg[cam][f_num]
+                segs[cam] = c_seg
+                offs[cam] = c_off / FPS
+            else:
+                segs[cam] = int(f_num / 180)
+                offs[cam] = (f_num % 180) / FPS
+        return segs, offs
+
+    count = 0
+    for _, row in df.iterrows():
+        if pd.isna(row.get('bounce_hq_frame')):
+            continue
+        hq_frame = int(row['bounce_hq_frame'])
+        segs, offs = get_segs_offs_for_hq_frame(hq_frame)
+        start_segs, start_offs = get_segs_offs_for_hq_frame(row.get('start_frame'))
+        end_segs, end_offs = get_segs_offs_for_hq_frame(row.get('end_frame'))
+
+        metadata = {}
+        for k, v in row.items():
+            if pd.isna(v):
+                metadata[k] = None
+            else:
+                metadata[k] = v
+                
+        events_data.append({
+            "id": str(row['shot_id']),
+            "segments": segs,
+            "offsets": offs,
+            "start_segments": start_segs,
+            "start_offsets": start_offs,
+            "end_segments": end_segs,
+            "end_offsets": end_offs,
+            "hq_frame": hq_frame,
+            "metadata": metadata
+        })
+        count += 1
+    return count
+
 def frame_idx_poller():
     """Background thread: polls each camera's frame index CSV every 2 s for new segments."""
     global _frame_idx_rows
@@ -223,6 +310,21 @@ def frame_idx_poller():
                     print(f"[frame idx poller] {cam} +{added} segs (total {_frame_idx_rows[cam]})")
             except Exception as e:
                 print(f"[frame idx poller] {cam} error: {e}")
+
+def flight_shots_poller():
+    """Background thread: polls flight shots CSV every 2 s for new events."""
+    global _flight_shots_rows_loaded
+    while True:
+        time.sleep(2)
+        try:
+            text = _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=_flight_shots_rows_loaded)
+            added = _ingest_flight_shots(text, has_header=(_flight_shots_rows_loaded == 0))
+            if added:
+                _flight_shots_rows_loaded += added
+                print(f"[flight shots poller] +{added} events (total {_flight_shots_rows_loaded})")
+        except Exception as e:
+            # print(f"[flight shots poller] error: {e}")
+            pass
 
 def load_data():
     global events_data, _sync_rows_loaded
@@ -242,59 +344,15 @@ def load_data():
         print(f"  [{cam}] {_frame_idx_rows[cam]} segments, {len(frame_to_seg[cam])} frames indexed.")
                 
     # 3. Load events
-    events_csv = os.path.join(TEST_WORK_DIR, "cv_output", "correlation", "flight_shots.csv")
-    if os.path.exists(events_csv):
-        df_events = pd.read_csv(events_csv)
-        for _, row in df_events.iterrows():
-            if pd.isna(row.get('bounce_hq_frame')):
-                continue
-            hq_frame = int(row['bounce_hq_frame'])
-            # Get source frame
-            src_frame = sync_maps["hq_to_source"].get(hq_frame)
-            if src_frame is None:
-                if sync_maps["hq_to_source"]:
-                    closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - hq_frame))
-                    src_frame = sync_maps["hq_to_source"][closest]
-                else:
-                    src_frame = hq_frame
-            
-            # Get sink frame
-            sink_frame = sync_maps["hq_to_sink"].get(hq_frame)
-            if sink_frame is None:
-                if sync_maps["hq_to_sink"]:
-                    closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - hq_frame))
-                    sink_frame = sync_maps["hq_to_sink"][closest]
-                else:
-                    sink_frame = hq_frame
-            
-            # Map to segments and offsets for all cameras
-            segs = {}
-            offs = {}
-            for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", hq_frame)]:
-                if f_num in frame_to_seg[cam]:
-                    c_seg, c_off = frame_to_seg[cam][f_num]
-                    segs[cam] = c_seg
-                    offs[cam] = c_off / FPS
-                else:
-                    # Fallback estimate
-                    segs[cam] = int(f_num / 180) # 180 frames = 6s
-                    offs[cam] = (f_num % 180) / FPS
-
-            # Convert NaN to None for JSON compliance
-            metadata = {}
-            for k, v in row.items():
-                if pd.isna(v):
-                    metadata[k] = None
-                else:
-                    metadata[k] = v
-                    
-            events_data.append({
-                "id": str(row['shot_id']),
-                "segments": segs,
-                "offsets": offs,
-                "hq_frame": hq_frame,
-                "metadata": metadata
-            })
+    global _flight_shots_rows_loaded
+    print(f"  Fetching remote flight shots CSV: {REMOTE_FLIGHT_SHOTS_PATH}")
+    try:
+        csv_text = _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=0)
+        _flight_shots_rows_loaded = _ingest_flight_shots(csv_text, has_header=True)
+        print(f"  Loaded {_flight_shots_rows_loaded} events from remote.")
+    except Exception as e:
+        print(f"  Could not load remote flight shots (will poll later). Error: {e}")
+        
     print("Data loading complete.")
 
 def fetch_playlist_content(path_or_url):
@@ -633,6 +691,10 @@ def master_stream_worker():
     start_time = time.time()
     last_time = start_time
     target_sim_time = max(0.0, total_duration - 6.0) if IS_LIVE else 0.0
+    
+    if IS_LIVE and unified_steps:
+        # Fast-forward to only fetch the last 3 segments on startup to avoid massive backlog fetching
+        next_step_idx = max(0, len(unified_steps) - 3)
     stream_done = False
     last_playlist_poll = 0.0
     
@@ -642,7 +704,7 @@ def master_stream_worker():
         last_time = now
         
         # 1. Periodically check playlists
-        if now - last_playlist_poll >= 4.0:
+        if now - last_playlist_poll >= 2.0:
             last_playlist_poll = now
             
             updated_segs = {}
@@ -763,12 +825,19 @@ def master_stream_worker():
                                         shutil.copy2(source, temp_dst)
                                         os.rename(temp_dst, dest)
                                     print(f"[SIMULATOR] {camera}/{segment_name} simulated Wi-Fi fetch complete in {latency:.2f}s")
+                                    with _downloads_lock:
+                                        _active_downloads.discard(dest)
 
-                                threading.Thread(
-                                    target=simulate_download,
-                                    args=(src, dst, cam, name),
-                                    daemon=True
-                                ).start()
+                                with _downloads_lock:
+                                    is_downloading = dst in _active_downloads
+                                if not is_downloading:
+                                    with _downloads_lock:
+                                        _active_downloads.add(dst)
+                                    threading.Thread(
+                                        target=simulate_download,
+                                        args=(src, dst, cam, name),
+                                        daemon=True
+                                    ).start()
                 else:
                     # Release missing segment as a gap so the playlist stays synchronized
                     seg = {
@@ -842,6 +911,7 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=master_stream_worker, daemon=True).start()
     threading.Thread(target=sync_csv_poller, daemon=True).start()
     threading.Thread(target=frame_idx_poller, daemon=True).start()
+    threading.Thread(target=flight_shots_poller, daemon=True).start()
     yield
 
 app = FastAPI(lifespan=lifespan)

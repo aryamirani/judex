@@ -10,9 +10,9 @@ const LIVE_THRESHOLD = 2
 
 const LIVE_CONFIG = { 
   backBufferLength: 150, 
-  maxBufferLength: 150, 
-  liveSyncDurationCount: 12 / 6, 
-  liveMaxLatencyDurationCount: 18 / 6, 
+  maxBufferLength: 200, 
+  liveSyncDurationCount: 1.5, 
+  liveMaxLatencyDurationCount: 1.75, 
   enableWorker: true,
   fragLoadingMaxRetry: 100,
   fragLoadingRetryDelay: 500,
@@ -48,6 +48,8 @@ export default function App() {
 
   const rafRef = useRef(null)
   const modeRef = useRef('live')
+  const lastTickRef = useRef(performance.now())
+  const liveEdgeRef = useRef(null)
 
   const [activeCam, setActiveCam] = useState('hq')
   const [mode, setMode] = useState('live')
@@ -73,7 +75,9 @@ export default function App() {
         const video = videoRefs[cam].current
         if (video) {
           if (nextPlaying) {
-            video.play().catch(e => console.log('play failed', e))
+            if (cam === activeCamRef.current) {
+              video.play().catch(e => console.log('play failed', e))
+            }
             // Resuming: check if we're at the live edge — if so, re-enable latency enforcement
             if (modeRef.current === 'live') {
               const hls = hlsRefs[cam].current
@@ -139,24 +143,38 @@ export default function App() {
     if (!currentSegs || currentSegs.length === 0) {
       return events.map(ev => ({
         ...ev,
-        time: (ev.segments?.[activeCam] ?? 0) * 6.0 + (ev.offsets?.[activeCam] ?? 0)
+        time: (ev.segments?.[activeCam] ?? 0) * 6.0 + (ev.offsets?.[activeCam] ?? 0),
+        startTime: (ev.start_segments?.[activeCam] ?? 0) * 6.0 + (ev.start_offsets?.[activeCam] ?? 0),
+        endTime: (ev.end_segments?.[activeCam] ?? 0) * 6.0 + (ev.end_offsets?.[activeCam] ?? 0)
       }))
     }
     const anchor = currentSegs[0]
     return events.map(ev => {
-      const segNum = ev.segments?.[activeCam] ?? 0
-      const offset = ev.offsets?.[activeCam] ?? 0
-      
-      const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
-      let playbackTime
-      if (matchingSeg) {
-        playbackTime = matchingSeg.start + offset
-      } else {
-        playbackTime = anchor.start + (segNum - (anchor.absSegIdx ?? anchor.sn)) * 6.0 + offset
+      const getPlaybackTime = (segs, offs) => {
+        const segNum = segs?.[activeCam] ?? 0
+        const offset = offs?.[activeCam] ?? 0
+        
+        // 1. Try to use exact historical start time to prevent jitter when anchor drops out of buffer
+        const exactStart = segmentStartTimesRef.current?.[activeCam]?.[segNum]
+        if (exactStart !== undefined) {
+          return exactStart + offset
+        }
+
+        // 2. Fallback to current sliding window segments
+        const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
+        if (matchingSeg) {
+          return matchingSeg.start + offset
+        } 
+        
+        // 3. Last resort: estimate from anchor
+        return anchor.start + (segNum - (anchor.absSegIdx ?? anchor.sn)) * 6.0 + offset
       }
+
       return {
         ...ev,
-        time: playbackTime
+        time: getPlaybackTime(ev.segments, ev.offsets),
+        startTime: getPlaybackTime(ev.start_segments, ev.start_offsets),
+        endTime: getPlaybackTime(ev.end_segments, ev.end_offsets)
       }
     })
   }, [events, activeCam, mode, liveSegments, reviewSegs])
@@ -201,58 +219,90 @@ export default function App() {
 
   const syncLiveVideos = useCallback((activeTime) => {
     if (!liveSyncMap) return
-    const activeList = liveSegments
-    if (!activeList || activeList.length === 0) return
-    
-    let activeSeg = activeList.find(s => activeTime >= s.start && activeTime <= s.end)
-    if (!activeSeg) {
-      activeSeg = activeList.reduce((prev, curr) => {
-        const pDist = Math.min(Math.abs(activeTime - prev.start), Math.abs(activeTime - prev.end))
-        const cDist = Math.min(Math.abs(activeTime - curr.start), Math.abs(activeTime - curr.end))
-        return pDist < cDist ? prev : curr
+    const aHls = hlsRefs[activeCam].current
+    if (!aHls) return
+    const details = aHls.levels?.[aHls.currentLevel]?.details
+    if (!details || details.fragments.length === 0) return
+
+    let aFrag = details.fragments.find(f => f.start <= activeTime && f.start + f.duration >= activeTime)
+    if (!aFrag) {
+      aFrag = details.fragments.reduce((prev, curr) => {
+        const pDist = Math.abs((prev.start + prev.duration / 2) - activeTime)
+        const cDist = Math.abs((curr.start + curr.duration / 2) - activeTime)
+        return cDist < pDist ? curr : prev
       })
     }
     
-    const offsetInSeg = activeTime - activeSeg.start
-    const sn = activeSeg.absSegIdx
+    if (!aFrag) return
+    const aUrl = aFrag.relurl || aFrag.url || ''
+    const aMatch = aUrl.match(/seg_(\d+)\.ts/)
+    const sn = aMatch ? parseInt(aMatch[1], 10) : aFrag.sn
+    const offsetInSeg = Math.max(0, activeTime - aFrag.start)
     
     CAMERAS.forEach(targetCam => {
       if (targetCam === activeCam) return
       const targetVideo = videoRefs[targetCam].current
       const mapping = liveSyncMap[sn]?.[targetCam]
-      if (mapping) {
-        const targetList = rollingBuffers[targetCam].current
-        const targetSegInfo = targetList.find(s => s.absSegIdx === mapping.segment)
-        if (targetSegInfo) {
-          let baseStart = targetSegInfo.originalStart
-          const tHls = hlsRefs[targetCam].current
-          if (tHls && tHls.levels?.[tHls.currentLevel]?.details?.fragments) {
-            const frags = tHls.levels[tHls.currentLevel].details.fragments
-            const tFrag = frags.find(f => {
-              const m = (f.relurl || f.url || '').match(/seg_(\d+)\.ts/)
-              return (m ? parseInt(m[1], 10) : f.sn) === mapping.segment
-            })
-            if (tFrag) {
-              baseStart = tFrag.start
-            }
+      if (mapping && targetVideo) {
+        let baseStart = null
+        const tHls = hlsRefs[targetCam].current
+        if (tHls && tHls.levels?.[tHls.currentLevel]?.details?.fragments) {
+          const frags = tHls.levels[tHls.currentLevel].details.fragments
+          const tFrag = frags.find(f => {
+            const m = (f.relurl || f.url || '').match(/seg_(\d+)\.ts/)
+            return (m ? parseInt(m[1], 10) : f.sn) === mapping.segment
+          })
+          if (tFrag) {
+            baseStart = tFrag.start
           }
+        }
+        
+        if (baseStart !== null) {
           const targetTime = baseStart + mapping.offset + offsetInSeg
-          console.log(`[SEEK] Live Mode Timeline clicked. targetCam=${targetCam}, seeking to targetTime=${targetTime.toFixed(3)} (absSegIdx=${mapping.segment})`)
-          if (targetVideo && Math.abs(targetVideo.currentTime - targetTime) > 0.15) {
+          if (Math.abs(targetVideo.currentTime - targetTime) > 0.15) {
             targetVideo.currentTime = targetTime
           }
         }
       }
     })
-  }, [activeCam, liveSegments, liveSyncMap])
+  }, [activeCam, liveSyncMap])
 
   const tick = useCallback(() => {
     const video = videoRefs[activeCam].current
     const hls = hlsRefs[activeCam].current
     if (video) {
-      setCurrentTime(video.currentTime)
-      if (modeRef.current === 'live' && hls?.liveSyncPosition) {
-        setLiveEdge(hls.liveSyncPosition)
+      const now = performance.now()
+      const dt = (now - lastTickRef.current) / 1000
+      lastTickRef.current = now
+
+      let globalTime = video.currentTime;
+      if (modeRef.current === 'review') {
+        const segs = reviewSegs[activeCam];
+        if (segs && segs.length > 0) {
+          let seg = segs.find(s => video.currentTime >= s.localStart && video.currentTime <= s.localEnd);
+          if (!seg) seg = segs.reduce((p, c) => Math.abs(video.currentTime - p.localStart) < Math.abs(video.currentTime - c.localStart) ? p : c);
+          globalTime = seg.start + (video.currentTime - seg.localStart);
+        }
+      }
+      setCurrentTime(globalTime)
+      if (modeRef.current === 'live') {
+        let edge = liveEdgeRef.current;
+        if (edge === undefined || edge === null) {
+          edge = hls?.liveSyncPosition || 0;
+        }
+        edge += dt; // Smoothly advance the live edge without relying on HLS.js when paused
+        
+        // Softly sync with HLS.js if it's actively playing and not drifting
+        if (hls?.liveSyncPosition && !video.paused && !video.seeking) {
+           if (Math.abs(edge - hls.liveSyncPosition) > 2.0) {
+              edge = hls.liveSyncPosition;
+           } else {
+              edge += (hls.liveSyncPosition - edge) * 0.05;
+           }
+        }
+        
+        setLiveEdge(edge);
+        liveEdgeRef.current = edge;
       }
       if (video.buffered.length > 0) {
         setBufferStart(video.buffered.start(0))
@@ -260,12 +310,14 @@ export default function App() {
       }
       if (!video.seeking && !ignoreSyncRef.current) {
         if (modeRef.current === 'review') {
-          syncReviewVideos(video.currentTime)
+          // Disabled background scrubbing to prevent MediaSource crashes on paused elements
+          // syncReviewVideos(video.currentTime)
         } else if (modeRef.current === 'live') {
           const livePos = hls?.liveSyncPosition
           const isCurrentlyLive = livePos !== null && livePos !== undefined && video.currentTime >= livePos - 1.5
           if (!isCurrentlyLive) {
-            syncLiveVideos(video.currentTime)
+            // Disabled background scrubbing to prevent MediaSource crashes on paused elements
+            // syncLiveVideos(video.currentTime)
           }
         }
       }
@@ -316,7 +368,9 @@ export default function App() {
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setStatus('playing')
-        video.play().catch(() => {})
+        if (cam === activeCamRef.current) {
+          video.play().catch(() => {})
+        }
       })
 
       hls.on(Hls.Events.ERROR, (event, data) => {
@@ -324,11 +378,29 @@ export default function App() {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               console.log(`[HLS] Fatal network error for ${cam}, trying to recover...`);
+              if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
+                const livePos = hls.liveSyncPosition;
+                if (livePos != null) {
+                  console.log(`[HLS] Fragment permanently missing, jumping to live edge to escape 404 loop!`);
+                  hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount;
+                  video.currentTime = livePos;
+                }
+              }
               hls.startLoad();
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
               console.log(`[HLS] Fatal media error for ${cam}, trying to recover...`);
-              hls.recoverMediaError();
+              hls._mediaErrorCount = (hls._mediaErrorCount || 0) + 1;
+              if (hls._mediaErrorCount <= 1) {
+                hls.recoverMediaError();
+              } else if (hls._mediaErrorCount === 2) {
+                hls.swapAudioCodec();
+                hls.recoverMediaError();
+              } else {
+                console.warn(`[HLS] Repeated media errors, nudging playhead forward to escape loop!`);
+                video.currentTime += 0.5;
+                hls._mediaErrorCount = 0;
+              }
               break;
             default:
               console.error(`[HLS] Unrecoverable error for ${cam}:`, data);
@@ -355,7 +427,8 @@ export default function App() {
         
         if (existingSeg) {
           const delta = data.frag.start - existingSeg.originalStart
-          if (Math.abs(delta) > 0.1) { console.log('SHIFTING TIMELINE DELTA:', delta);
+          // Ignore massive deltas (e.g. from HLS.js seeking far back and hitting a discontinuity)
+          if (Math.abs(delta) > 0.1 && Math.abs(delta) < 5.0) { console.log('SHIFTING TIMELINE DELTA:', delta);
             rollingBuffers[cam].current = existing.map(s => ({
               ...s,
               originalStart: s.originalStart + delta
@@ -453,8 +526,10 @@ export default function App() {
         const seg = {
           sn: s.sn,
           absSegIdx: s.absSegIdx,
-          start: t,
-          end: t + s.duration,
+          start: s.originalStart,
+          end: s.originalStart + s.duration,
+          localStart: t,
+          localEnd: t + s.duration,
           duration: s.duration,
           originalStart: s.originalStart
         }
@@ -699,8 +774,9 @@ export default function App() {
 
   const doLiveSync = useCallback(async () => {
     if (modeRef.current !== 'live') return
-    const hls = hlsRefs['source'].current
-    const video = videoRefs['source'].current
+    const masterCam = activeCamRef.current
+    const hls = hlsRefs[masterCam].current
+    const video = videoRefs[masterCam].current
     if (!hls || !video) return
     const details = hls.levels?.[hls.currentLevel]?.details
     if (!details?.fragments?.length) return
@@ -713,10 +789,12 @@ export default function App() {
     const absSegIdx = m ? parseInt(m[1], 10) : frag.sn
     const offset = Math.max(0, ct - frag.start)
     try {
-      const res = await fetch(`http://localhost:8000/sync?from_camera=source&from_seg=${absSegIdx}&from_offset=${offset}`)
+      const res = await fetch(`http://localhost:8000/sync?from_camera=${masterCam}&from_seg=${absSegIdx}&from_offset=${offset}`)
       if (!res.ok) return
       const data = await res.json()
-      for (const targetCam of ['sink', 'hq']) {
+      
+      const targetCams = CAMERAS.filter(c => c !== masterCam)
+      for (const targetCam of targetCams) {
         const targetSync = data[targetCam]
         if (!targetSync) continue
         const tHls = hlsRefs[targetCam].current
@@ -766,8 +844,7 @@ export default function App() {
         if (v?.checks) {
           console.log(
             `[SYNC LOG] segs: SRC=${pos.source.seg} SNK=${pos.sink.seg} HQ=${pos.hq.seg} | ` +
-            `frames: SRC=${v.frames.source} SNK=${v.frames.sink} HQ=${v.frames.hq} | ` +
-            Object.entries(v.checks).map(([k, c]) => `${k}: Δ${c.diff_frames}f`).join(' | ')
+            `frames: SRC=${v.frames.source} SNK=${v.frames.sink} HQ=${v.frames.hq}`
           )
         }
       } catch (_) {}
@@ -785,8 +862,13 @@ export default function App() {
     ignoreSyncRef.current = true
     
     // Sync API Logic
+    let isLive = false;
+    
     if (mode === 'live') {
       const hls = hlsRefs[activeCam].current
+      const activeLivePos = hls?.liveSyncPosition
+      isLive = activeLivePos != null && currentVideo.currentTime >= activeLivePos - 2.0
+      
       const details = hls?.levels?.[hls.currentLevel]?.details
       if (details) {
         const ct = currentVideo.currentTime
@@ -810,6 +892,8 @@ export default function App() {
               const targetSync = data[targetCam]
               const targetHls = hlsRefs[targetCam].current
               const tDetails = targetHls?.levels?.[targetHls.currentLevel]?.details
+              let baseStart = null
+              
               if (tDetails) {
                 const tFrag = tDetails.fragments.find(f => {
                   const fUrl = f.relurl || f.url || ''
@@ -818,10 +902,22 @@ export default function App() {
                   return fAbs === targetSync.segment
                 })
                 if (tFrag) {
-                  const newTime = tFrag.start + targetSync.offset
-                  if (Math.abs(targetVideo.currentTime - newTime) > 0.15) {
-                    targetVideo.currentTime = newTime
-                  }
+                  baseStart = tFrag.start
+                }
+              }
+              
+              if (baseStart === null && segmentStartTimesRef.current[targetCam]?.[targetSync.segment] !== undefined) {
+                baseStart = segmentStartTimesRef.current[targetCam][targetSync.segment]
+              }
+              
+              if (baseStart !== null) {
+                const newTime = baseStart + targetSync.offset
+                
+                // If active video is at the live edge, allow jumping directly to target's live edge to avoid stale math
+                if (isLive && targetHls?.liveSyncPosition != null && Math.abs(targetHls.liveSyncPosition - newTime) < 3.0) {
+                  targetVideo.currentTime = targetHls.liveSyncPosition
+                } else if (Math.abs(targetVideo.currentTime - newTime) > 0.15) {
+                  targetVideo.currentTime = newTime
                 }
               }
 
@@ -840,8 +936,7 @@ export default function App() {
                   const v = await vRes.json()
                   if (v?.checks) {
                     console.log(
-                      `[SYNC SWITCH] ${activeCam} → ${targetCam} | frames: SRC=${v.frames.source} SNK=${v.frames.sink} HQ=${v.frames.hq} | ` +
-                      Object.entries(v.checks).map(([k, c]) => `${k}: Δ${c.diff_frames}f`).join(' | ')
+                      `[SYNC SWITCH] ${activeCam} → ${targetCam} | frames: SRC=${v.frames.source} SNK=${v.frames.sink} HQ=${v.frames.hq}`
                     )
                   }
                 } catch(e) { console.warn('check_sync failed', e) }
@@ -854,9 +949,9 @@ export default function App() {
       // In review mode, map targetCam currentTime according to syncMap
       const activeList = reviewSegs[activeCam]
       if (activeList && activeList.length > 0) {
-        const activeSeg = activeList.find(s => currentVideo.currentTime >= s.start && currentVideo.currentTime <= s.end)
+        const activeSeg = activeList.find(s => currentVideo.currentTime >= s.localStart && currentVideo.currentTime <= s.localEnd)
         if (activeSeg) {
-          let sourceOffsetInSeg = currentVideo.currentTime - activeSeg.start
+          let sourceOffsetInSeg = currentVideo.currentTime - activeSeg.localStart
           const sn = activeSeg.absSegIdx
           
           const activeMapping = syncMap?.[sn]?.[activeCam]
@@ -870,7 +965,7 @@ export default function App() {
             if (targetList) {
               const targetSeg = targetList.find(s => s.absSegIdx === mapping.segment)
               if (targetSeg) {
-                targetVideo.currentTime = targetSeg.start + sourceOffsetInSeg + mapping.offset
+                targetVideo.currentTime = targetSeg.localStart + sourceOffsetInSeg + mapping.offset
               }
             }
           }
@@ -879,6 +974,16 @@ export default function App() {
     }
     
     // update state
+    currentVideo.pause()
+    if (isPlaying) {
+      if (modeRef.current === 'live') {
+        const hls = hlsRefs[targetCam].current
+        if (hls) {
+          hls.config.liveMaxLatencyDurationCount = isLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
+        }
+      }
+      targetVideo.play().catch(e => console.log('play failed', e))
+    }
     setActiveCam(targetCam)
     setTimeout(() => {
       ignoreSyncRef.current = false
@@ -889,25 +994,33 @@ export default function App() {
     const video = videoRefs[activeCam].current
     if (video) {
       if (mode === 'review') {
-        video.currentTime = time
-        syncReviewVideos(time)
+        let localTime = time;
+        const segs = reviewSegs[activeCam];
+        if (segs && segs.length > 0) {
+          let seg = segs.find(s => time >= s.start && time <= s.end);
+          if (!seg) seg = segs.reduce((p, c) => Math.abs(time - p.start) < Math.abs(time - c.start) ? p : c);
+          localTime = seg.localStart + (time - seg.start);
+        }
+        video.currentTime = localTime
+        // syncReviewVideos(time)
       } else {
         // In live mode: check if we're seeking to the live edge (GO LIVE button)
-        const livePos = hlsRefs[activeCam].current?.liveSyncPosition
+        const livePos = liveEdgeRef.current;
         const isLiveEdge = livePos != null && time >= livePos - 2.0
         if (isLiveEdge) {
-          // GO LIVE: seek all cameras to their live edge and resume playback
+          // GO LIVE: seek all cameras to their true live edge and resume playback
           CAMERAS.forEach(cam => {
             const hls = hlsRefs[cam].current
             const camVideo = videoRefs[cam].current
             if (!hls || !camVideo) return
             // Restore latency enforcement
             hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount
-            // Seek to this camera's live sync position
-            const camLivePos = hls.liveSyncPosition
-            if (camLivePos != null) camVideo.currentTime = camLivePos
+            // Seek to true live position
+            if (livePos != null) camVideo.currentTime = livePos
             // Resume playback
-            camVideo.play().catch(() => {})
+            if (cam === activeCamRef.current) {
+              camVideo.play().catch(() => {})
+            }
           })
           setIsPlaying(true)
         } else {
@@ -921,33 +1034,7 @@ export default function App() {
             }
           })
           
-          let activeHlsTime = time
-          const activeList = liveSegments
-          let activeSeg = activeList.find(s => time >= s.start && time <= s.end)
-          if (!activeSeg && activeList.length > 0) {
-            activeSeg = activeList.reduce((prev, curr) => {
-              const pDist = Math.min(Math.abs(time - prev.start), Math.abs(time - prev.end))
-              const cDist = Math.min(Math.abs(time - curr.start), Math.abs(time - curr.end))
-              return pDist < cDist ? prev : curr
-            })
-          }
-          
-          if (activeSeg) {
-            const offsetInSeg = time - activeSeg.start
-            const aHls = hlsRefs[activeCam].current
-            if (aHls && aHls.levels?.[aHls.currentLevel]?.details?.fragments) {
-              const frags = aHls.levels[aHls.currentLevel].details.fragments
-              const aFrag = frags.find(f => {
-                const m = (f.relurl || f.url || '').match(/seg_(\d+)\.ts/)
-                return (m ? parseInt(m[1], 10) : f.sn) === activeSeg.absSegIdx
-              })
-              if (aFrag) {
-                activeHlsTime = aFrag.start + offsetInSeg
-              }
-            }
-          }
-
-          video.currentTime = activeHlsTime
+          video.currentTime = time
           syncLiveVideos(time)
           
           if (isPlaying) {
