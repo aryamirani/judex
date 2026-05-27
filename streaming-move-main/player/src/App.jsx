@@ -485,25 +485,11 @@ export default function App() {
     console.log('[MODE] Entering Review Mode')
     if (rollingBuffers[activeCam].current.length === 0) return false
 
-    let safeEndAbsIdx = Infinity;
-    if (liveEdge !== null && liveSegments.length > 0) {
-      const edgeSeg = liveSegments.find(s => liveEdge >= s.start && liveEdge <= s.end);
-      if (edgeSeg) {
-        safeEndAbsIdx = edgeSeg.absSegIdx;
-      } else {
-        safeEndAbsIdx = liveSegments[liveSegments.length - 1].absSegIdx;
-      }
-    }
-
     const newReviewSegs = { source: [], sink: [], hq: [] }
 
     CAMERAS.forEach(cam => {
       let snapshot = rollingBuffers[cam].current.slice()
-      
-      if (safeEndAbsIdx !== Infinity && liveSyncMap && liveSyncMap[safeEndAbsIdx] && liveSyncMap[safeEndAbsIdx][cam]) {
-        const targetSafeAbsIdx = liveSyncMap[safeEndAbsIdx][cam].segment;
-        snapshot = snapshot.filter(s => s.absSegIdx <= targetSafeAbsIdx);
-      }
+
       const fragUrls = snapshot.map(s => URL.createObjectURL(new Blob([s.bytes], { type: 'video/mp2t' })))
       const m3u8 = buildReviewPlaylist(snapshot, fragUrls)
       const m3u8Url = URL.createObjectURL(new Blob([m3u8], { type: 'application/vnd.apple.mpegurl' }))

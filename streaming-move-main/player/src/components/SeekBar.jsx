@@ -22,6 +22,8 @@ export default function SeekBar({
   const dragging = useRef(false)
   const [hoveredEvent, setHoveredEvent] = useState(null)
   const [internalEventTime, setInternalEventTime] = useState(null)
+  const [dragTime, setDragTime] = useState(null)
+  const lastSeekRef = useRef(0)
 
   // Clear internal pointer when mode changes
   useEffect(() => {
@@ -35,27 +37,41 @@ export default function SeekBar({
   const rangeStart = mode === 'live' && liveEdge !== null ? Math.max(0, liveEdge - 180) : (segsStart ?? bufferStart ?? (liveEdge !== null ? liveEdge - 180 : 0))
   const rangeEnd = mode === "live" && liveEdge !== null ? Math.max(liveEdge, currentTime) : Math.max(segsEnd ?? -Infinity, liveEdge ?? -Infinity, currentTime)
 
-  const seekFromEvent = useCallback((e) => {
+  const seekFromEvent = useCallback((e, isFinal = false) => {
     const rect = trackRef.current.getBoundingClientRect()
     const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     let targetTime = rangeStart + frac * (rangeEnd - rangeStart)
     if (mode === 'live' && liveEdge !== null) {
       targetTime = Math.min(targetTime, liveEdge)
     }
-    onSeek(targetTime)
+    
+    setDragTime(targetTime)
+    
+    const now = performance.now()
+    if (isFinal || now - lastSeekRef.current > 150) {
+      onSeek(targetTime)
+      lastSeekRef.current = now
+    }
   }, [rangeStart, rangeEnd, onSeek, mode, liveEdge])
 
   const onMouseDown = (e) => {
     dragging.current = true
-    seekFromEvent(e)
+    seekFromEvent(e, true)
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
   }
   const onMouseMove = useCallback((e) => {
-    if (dragging.current) seekFromEvent(e)
+    if (dragging.current) {
+      e.preventDefault()
+      seekFromEvent(e, false)
+    }
   }, [seekFromEvent])
-  const onMouseUp = useCallback(() => {
-    dragging.current = false
+  const onMouseUp = useCallback((e) => {
+    if (dragging.current) {
+      dragging.current = false
+      seekFromEvent(e, true)
+      setDragTime(null)
+    }
     window.removeEventListener('mousemove', onMouseMove)
     window.removeEventListener('mouseup', onMouseUp)
   }, [onMouseMove])
@@ -90,7 +106,8 @@ export default function SeekBar({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentTime, events, onSeek, onEventSelect, mode, liveEdge, internalEventTime, onTogglePlay]);
 
-  const playedFrac = toFraction(currentTime, rangeStart, rangeEnd)
+  const activeTime = dragTime !== null ? dragTime : currentTime
+  const playedFrac = toFraction(activeTime, rangeStart, rangeEnd)
   const bufferedFrac = toFraction(bufferedEnd ?? currentTime, rangeStart, rangeEnd)
 
   const visibleTicks = (segments || []).filter(
@@ -101,8 +118,8 @@ export default function SeekBar({
     ev => ev.time >= rangeStart && ev.time <= rangeEnd
   )
 
-  const behind = liveEdge && currentTime
-    ? Math.round(liveEdge - currentTime)
+  const behind = liveEdge && activeTime
+    ? Math.round(liveEdge - activeTime)
     : null
 
   return (
@@ -153,8 +170,8 @@ export default function SeekBar({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const referenceTime = internalEventTime !== null ? internalEventTime : currentTime;
-                const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
+                const referenceTime = internalEventTime !== null ? internalEventTime : activeTime;
+                const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : activeTime));
                 const nextEvents = validEvents.filter(ev => ev.time > referenceTime + 0.5).sort((a, b) => a.time - b.time);
                 if (nextEvents.length > 0) {
                   if (mode === 'review' && onSeek) onSeek(nextEvents[0].time);
@@ -233,8 +250,8 @@ export default function SeekBar({
           const frac = toFraction(ev.time, rangeStart, rangeEnd)
           const isHovered = hoveredEvent?.id === ev.id
           // highlight if close to current time
-          const isCurrent = Math.abs(currentTime - ev.time) < 1.0
-          const isPast = ev.time <= currentTime
+          const isCurrent = Math.abs(activeTime - ev.time) < 1.0
+          const isPast = ev.time <= activeTime
  
           return (
             <div
