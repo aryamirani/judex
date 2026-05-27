@@ -447,6 +447,7 @@ export default function App() {
             }
           }
         } else {
+          console.log(`[HLS NATIVE] Intercepted segment ${cam}/${absSegIdx} natively from video player!`)
           segmentStartTimesRef.current[cam][absSegIdx] = data.frag.start
           const entry = {
             sn: data.frag.sn,
@@ -664,6 +665,22 @@ export default function App() {
             
             if (existingAbsSegs.has(seg.absSegIdx)) continue;
             if (downloadingSegmentsRef.current[cam].has(seg.absSegIdx)) continue;
+            
+            // Skip manual fetch for the active camera ONLY IF the video is actively playing
+            // and the segment is recent enough that Hls.js is likely about to fetch it natively.
+            if (cam === activeCamRef.current && modeRef.current === 'live') {
+              const video = videoRefs[cam].current;
+              if (video && !video.paused) {
+                const latestAbsSegIdx = playlistSegs[playlistSegs.length - 1].absSegIdx;
+                const isRecent = (latestAbsSegIdx - seg.absSegIdx) <= 4;
+                if (isRecent) {
+                  console.log(`[DVR Fetcher] SKIPPING manual fetch for ${cam}/${seg.absSegIdx} (delegating to Hls.js native fetch)`);
+                  continue;
+                }
+              }
+            }
+            
+            console.log(`[DVR Fetcher] Manually fetching BACKGROUND segment ${cam}/${seg.absSegIdx}`);
             
             // Start downloading!
             downloadingSegmentsRef.current[cam].add(seg.absSegIdx);
