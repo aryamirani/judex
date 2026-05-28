@@ -373,7 +373,11 @@ export default function App() {
       const video = videoRefs[cam].current
       if (!video) return
 
-      const hls = new Hls(LIVE_CONFIG)
+      const liveConfig = { ...LIVE_CONFIG }
+      if (cam !== activeCamRef.current) {
+        liveConfig.liveMaxLatencyDurationCount = 9999
+      }
+      const hls = new Hls(liveConfig)
       hlsRefs[cam].current = hls
       hls.loadSource(CAM_STREAM_URLS[cam])
       hls.attachMedia(video)
@@ -572,6 +576,9 @@ export default function App() {
     setSyncMap(null)
     modeRef.current = 'live'
     setMode('live')
+    
+    // Force active camera to live edge when rebuilding live instances
+    setLiveEdge(null)
     initLive()
   }, [initLive, activeCam])
 
@@ -965,9 +972,13 @@ export default function App() {
     currentVideo.pause()
     if (isPlaying) {
       if (modeRef.current === 'live') {
-        const hls = hlsRefs[targetCam].current
-        if (hls) {
-          hls.config.liveMaxLatencyDurationCount = isLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
+        const hlsTarget = hlsRefs[targetCam].current
+        const hlsCurrent = hlsRefs[currentCam].current
+        if (hlsTarget) {
+          hlsTarget.config.liveMaxLatencyDurationCount = isLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
+        }
+        if (hlsCurrent) {
+          hlsCurrent.config.liveMaxLatencyDurationCount = 9999
         }
              // Instantly sync the background camera's time to the active camera so it doesn't play from the past!
         syncLiveVideos(currentVideo.currentTime)
@@ -1008,20 +1019,22 @@ export default function App() {
         const livePos = liveEdgeRef.current;
         const isLiveEdge = livePos != null && time >= livePos - 2.0
         if (isLiveEdge) {
-          // GO LIVE: seek all cameras to their true live edge and resume playback
+          // GO LIVE: restore latency enforcement ONLY for active camera
           CAMERAS.forEach(cam => {
             const hls = hlsRefs[cam].current
             const camVideo = videoRefs[cam].current
             if (!hls || !camVideo) return
-            // Restore latency enforcement
-            hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount
-            // Seek to true live position
-            if (livePos != null) camVideo.currentTime = livePos
-            // Resume playback
+            
             if (cam === activeCamRef.current) {
+              hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount
+              if (livePos != null) camVideo.currentTime = livePos
+              camVideo.play().catch(() => {})
+            } else {
+              hls.config.liveMaxLatencyDurationCount = 9999
               camVideo.play().catch(() => {})
             }
           })
+          if (livePos != null) syncLiveVideos(livePos)
           setIsPlaying(true)
         } else {
           // Seeking to a past segment: mimic pause to avoid HLS.js stream controller seek-recovery
