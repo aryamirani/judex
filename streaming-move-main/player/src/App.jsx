@@ -119,12 +119,17 @@ export default function App() {
         start: s.originalStart,
         end: s.originalStart + s.duration
       })))
-      const absSns = buf.map(s => s.absSegIdx).filter(x => x !== undefined).join(',')
+    }
+  }, [activeCam, mode])
+
+  useEffect(() => {
+    if (mode === 'live' && liveSegments.length > 0) {
+      const absSns = liveSegments.map(s => s.absSegIdx).filter(x => x !== undefined).join(',')
       if (absSns) {
         fetch(`http://localhost:8000/sync_map?from_camera=${activeCam}&sns=${absSns}`)
           .then(res => res.json())
           .then(data => setLiveSyncMap(data))
-          .catch(e => console.warn('Failed to fetch live sync map on camera switch', e))
+          .catch(e => console.warn('Failed to fetch live sync map', e))
       }
     }
   }, [activeCam, mode, liveSegments])

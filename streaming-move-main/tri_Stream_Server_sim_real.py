@@ -91,7 +91,7 @@ events_data = []
 FPS = 30.0
 
 # Placeholder for the remote flight shots path on the Jetson
-REMOTE_FLIGHT_SHOTS_PATH = "/home/judex/some_path/flight_shots.csv"
+REMOTE_FLIGHT_SHOTS_PATH = "/home/jetson/Desktop/cv_output/correlation/flight_shots.csv"
 
 _flight_shots_rows_loaded = 0
   # number of data rows already ingested (excludes header)
