@@ -295,12 +295,12 @@ export default function App() {
         }
         edge += dt; // Smoothly advance the live edge without relying on HLS.js when paused
         
-        // Softly sync with HLS.js if it's actively playing and not drifting
+        // Hls.js liveSyncPosition inherently jumps by 6 seconds every time a new chunk is appended.
+        // To prevent the UI red line from jumping or sprinting (which visually breaks the playhead position),
+        // we only snap if it has drifted catastrophically (> 10s). Otherwise, we let dt glide it perfectly smoothly.
         if (hls?.liveSyncPosition && !video.paused && !video.seeking) {
-           if (Math.abs(edge - hls.liveSyncPosition) > 2.0) {
+           if (Math.abs(edge - hls.liveSyncPosition) > 10.0) {
               edge = hls.liveSyncPosition;
-           } else {
-              edge += (hls.liveSyncPosition - edge) * 0.05;
            }
         }
         
@@ -960,6 +960,17 @@ export default function App() {
         if (hls) {
           hls.config.liveMaxLatencyDurationCount = isLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
         }
+        
+        // Instantly sync the background camera's time to the active camera so it doesn't play from the past!
+        const ct = currentVideo.currentTime;
+        let liveOffset = 0;
+        const buf = rollingBuffers[activeCam].current;
+        if (buf && buf.length > 0) {
+          const activeSeg = buf.find(s => ct >= s.originalStart && ct <= s.originalStart + s.duration) || buf[buf.length - 1];
+          const mapping = liveSyncMap?.[activeSeg.absSegIdx]?.[targetCam];
+          if (mapping) liveOffset = mapping.offset;
+        }
+        targetVideo.currentTime = Math.max(0, ct + liveOffset);
       }
       targetVideo.play().catch(e => console.log('play failed', e))
     }
