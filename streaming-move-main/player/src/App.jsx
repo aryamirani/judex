@@ -139,7 +139,11 @@ export default function App() {
     } catch (e) { console.warn('Failed to fetch events', e) }
   }
 
-  useEffect(() => { fetchEvents() }, [])
+  useEffect(() => {
+    fetchEvents()
+    const interval = setInterval(fetchEvents, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   const mappedEvents = useMemo(() => {
     const currentSegs = mode === 'live' ? liveSegments : reviewSegs[activeCam]

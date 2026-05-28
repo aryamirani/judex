@@ -256,6 +256,11 @@ export default function SeekBar({
           return (
             <div
               key={i}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (onSeek) onSeek(ev.time)
+                if (isPlaying && onTogglePlay) onTogglePlay()
+              }}
               style={{
                 position: 'absolute', left: `${frac * 100}%`,
                 width: isCurrent ? '12px' : '8px', height: isCurrent ? '12px' : '8px',
@@ -267,7 +272,8 @@ export default function SeekBar({
                 transition: 'background 0.2s, width 0.2s, height 0.2s, box-shadow 0.2s, opacity 0.2s', 
                 border: '1px solid #000',
                 opacity: isPast ? 1 : 0.25,
-                pointerEvents: 'none'
+                pointerEvents: 'auto',
+                cursor: 'pointer'
               }}
             />
           )
