@@ -1052,11 +1052,14 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
                 target_frame = current_frame
             
         if target_frame not in frame_to_seg[target_cam]:
-            available = list(frame_to_seg[target_cam].keys())
-            if available:
-                closest_start = min(available, key=lambda x: abs(x - target_frame))
-                t_seg, base_offset = frame_to_seg[target_cam][closest_start]
-                t_frame_offset = base_offset + (target_frame - closest_start)
+            if seg_to_frame[target_cam]:
+                closest_seg = min(seg_to_frame[target_cam].keys(), key=lambda s: abs(seg_to_frame[target_cam][s] - target_frame))
+                closest_start = seg_to_frame[target_cam][closest_seg]
+                frame_delta = target_frame - closest_start
+                fc = seg_frame_count[target_cam].get(closest_seg, 120)
+                seg_delta = frame_delta // fc
+                t_seg = closest_seg + seg_delta
+                t_frame_offset = frame_delta % fc
             else:
                 avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
                 t_seg = int(target_frame / avg_fc)
@@ -1110,11 +1113,14 @@ def get_sync_map(from_camera: str, sns: str):
                         target_frame = start_frame
                     
                 if target_frame not in frame_to_seg[target_cam]:
-                    available = list(frame_to_seg[target_cam].keys())
-                    if available:
-                        closest_start = min(available, key=lambda x: abs(x - target_frame))
-                        t_seg, base_offset = frame_to_seg[target_cam][closest_start]
-                        t_frame_offset = base_offset + (target_frame - closest_start)
+                    if seg_to_frame[target_cam]:
+                        closest_seg = min(seg_to_frame[target_cam].keys(), key=lambda s: abs(seg_to_frame[target_cam][s] - target_frame))
+                        closest_start = seg_to_frame[target_cam][closest_seg]
+                        frame_delta = target_frame - closest_start
+                        fc = seg_frame_count[target_cam].get(closest_seg, 120)
+                        seg_delta = frame_delta // fc
+                        t_seg = closest_seg + seg_delta
+                        t_frame_offset = frame_delta % fc
                     else:
                         avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
                         t_seg = int(target_frame / avg_fc)
