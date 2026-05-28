@@ -1042,10 +1042,10 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
         if current_frame in sync_maps[map_key]:
             target_frame = sync_maps[map_key][current_frame]
         else:
-            # Fallback if frame dropped/missing from sync map: just pick the closest
+            # Fallback if frame dropped/missing from sync map: just pick the closest and extrapolate
             if sync_maps[map_key]:
                 closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - current_frame))
-                target_frame = sync_maps[map_key][closest]
+                target_frame = sync_maps[map_key][closest] + (current_frame - closest)
             else:
                 target_frame = current_frame
             
@@ -1101,7 +1101,7 @@ def get_sync_map(from_camera: str, sns: str):
                 else:
                     if sync_maps[map_key]:
                         closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - start_frame))
-                        target_frame = sync_maps[map_key][closest]
+                        target_frame = sync_maps[map_key][closest] + (start_frame - closest)
                     else:
                         target_frame = start_frame
                     

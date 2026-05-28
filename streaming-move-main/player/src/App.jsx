@@ -127,7 +127,7 @@ export default function App() {
           .catch(e => console.warn('Failed to fetch live sync map on camera switch', e))
       }
     }
-  }, [activeCam, mode])
+  }, [activeCam, mode, liveSegments])
 
   const isLive = mode === 'live' && liveEdge !== null && currentTime >= liveEdge - LIVE_THRESHOLD
 
@@ -964,19 +964,11 @@ export default function App() {
         if (hls) {
           hls.config.liveMaxLatencyDurationCount = isLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
         }
+             // Instantly sync the background camera's time to the active camera so it doesn't play from the past!
+        syncLiveVideos(currentVideo.currentTime)
         
-        // Instantly sync the background camera's time to the active camera so it doesn't play from the past!
-        const ct = currentVideo.currentTime;
-        let liveOffset = 0;
-        const buf = rollingBuffers[activeCam].current;
-        if (buf && buf.length > 0) {
-          const activeSeg = buf.find(s => ct >= s.originalStart && ct <= s.originalStart + s.duration) || buf[buf.length - 1];
-          const mapping = liveSyncMap?.[activeSeg.absSegIdx]?.[targetCam];
-          if (mapping) liveOffset = mapping.offset;
-        }
-        targetVideo.currentTime = Math.max(0, ct + liveOffset);
+        targetVideo.play().catch(e => console.log('play failed', e))
       }
-      targetVideo.play().catch(e => console.log('play failed', e))
     }
     setActiveCam(targetCam)
     setTimeout(() => {
