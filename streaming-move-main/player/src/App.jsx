@@ -398,7 +398,9 @@ export default function App() {
                 const livePos = hls.liveSyncPosition;
                 if (livePos != null) {
                   console.log(`[HLS] Fragment permanently missing, jumping to live edge to escape 404 loop!`);
-                  hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount;
+                  if (cam === activeCamRef.current) {
+                    hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount;
+                  }
                   video.currentTime = livePos;
                 }
               }
@@ -1020,6 +1022,7 @@ export default function App() {
         const isLiveEdge = livePos != null && time >= livePos - 2.0
         if (isLiveEdge) {
           // GO LIVE: restore latency enforcement ONLY for active camera
+          let safeSyncPos = null;
           CAMERAS.forEach(cam => {
             const hls = hlsRefs[cam].current
             const camVideo = videoRefs[cam].current
@@ -1027,14 +1030,19 @@ export default function App() {
             
             if (cam === activeCamRef.current) {
               hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount
-              if (livePos != null) camVideo.currentTime = livePos
+              safeSyncPos = hls.liveSyncPosition != null ? hls.liveSyncPosition : (livePos != null ? livePos - 2.0 : null)
+              if (safeSyncPos != null) camVideo.currentTime = safeSyncPos
               camVideo.play().catch(() => {})
             } else {
               hls.config.liveMaxLatencyDurationCount = 9999
               camVideo.play().catch(() => {})
             }
           })
-          if (livePos != null) syncLiveVideos(livePos)
+          if (safeSyncPos != null) {
+             syncLiveVideos(safeSyncPos)
+          } else if (livePos != null) {
+             syncLiveVideos(livePos)
+          }
           setIsPlaying(true)
         } else {
           // Seeking to a past segment: mimic pause to avoid HLS.js stream controller seek-recovery
