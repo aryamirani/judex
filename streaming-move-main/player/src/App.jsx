@@ -973,7 +973,7 @@ export default function App() {
     if (isPlaying) {
       if (modeRef.current === 'live') {
         const hlsTarget = hlsRefs[targetCam].current
-        const hlsCurrent = hlsRefs[currentCam].current
+        const hlsCurrent = hlsRefs[activeCam].current
         if (hlsTarget) {
           hlsTarget.config.liveMaxLatencyDurationCount = isLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
         }
