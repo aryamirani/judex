@@ -12,8 +12,8 @@ const LIVE_CONFIG = {
   enableWorker: true,
   lowLatencyMode: true,
   backBufferLength: 90,
-  liveSyncDurationCount: 2,
-  liveMaxLatencyDurationCount: 4,
+  liveSyncDurationCount: 1,
+  liveMaxLatencyDurationCount: 1.5,
   liveDurationRatio: 1,
   manifestLoadingMaxRetry: 100,
   manifestLoadingRetryDelay: 500

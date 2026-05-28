@@ -262,8 +262,9 @@ def _ingest_flight_shots(csv_text, has_header=True):
                 segs[cam] = c_seg
                 offs[cam] = c_off / FPS
             else:
-                segs[cam] = int(f_num / 180)
-                offs[cam] = (f_num % 180) / FPS
+                avg_fc = 120 if not seg_frame_count[cam] else list(seg_frame_count[cam].values())[-1]
+                segs[cam] = int(f_num / avg_fc)
+                offs[cam] = (f_num % avg_fc) / FPS
         return segs, offs
 
     count = 0
@@ -486,9 +487,10 @@ def get_segment_start_frame(cam, abs_idx):
             return seg_to_frame[cam][abs_idx]
         keys = sorted(seg_to_frame[cam].keys())
         if not keys:
-            return abs_idx * 180
+            return abs_idx * 120
         closest_seg = min(keys, key=lambda x: abs(x - abs_idx))
-        return seg_to_frame[cam][closest_seg] + (abs_idx - closest_seg) * 180
+        fc = seg_frame_count[cam].get(closest_seg, 120)
+        return seg_to_frame[cam][closest_seg] + (abs_idx - closest_seg) * fc
 
 def parse_abs_seg_idx(name):
     if not name:
@@ -1020,9 +1022,9 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
         # Fallback extrapolation
         if seg_to_frame[from_camera]:
             closest_seg = min(seg_to_frame[from_camera].keys(), key=lambda x: abs(x - from_seg))
-            start_frame = seg_to_frame[from_camera][closest_seg] + (from_seg - closest_seg) * 180
+            start_frame = seg_to_frame[from_camera][closest_seg] + (from_seg - closest_seg) * 120
         else:
-            start_frame = from_seg * 180
+            start_frame = from_seg * 120
         
     current_frame = start_frame + int(from_offset * FPS)
     
@@ -1056,8 +1058,9 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
                 t_seg, base_offset = frame_to_seg[target_cam][closest_start]
                 t_frame_offset = base_offset + (target_frame - closest_start)
             else:
-                t_seg = int(target_frame / 180)
-                t_frame_offset = target_frame % 180
+                avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
+                t_seg = int(target_frame / avg_fc)
+                t_frame_offset = target_frame % avg_fc
         else:
             t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
             
@@ -1084,9 +1087,10 @@ def get_sync_map(from_camera: str, sns: str):
             else:
                 if seg_to_frame[from_camera]:
                     closest_seg = min(seg_to_frame[from_camera].keys(), key=lambda x: abs(x - sn))
-                    start_frame = seg_to_frame[from_camera][closest_seg] + (sn - closest_seg) * 180
+                    fc = seg_frame_count[from_camera].get(closest_seg, 120)
+                    start_frame = seg_to_frame[from_camera][closest_seg] + (sn - closest_seg) * fc
                 else:
-                    start_frame = sn * 180
+                    start_frame = sn * 120
             
             # Get corresponding frames at the start of this segment
             seg_res = {}
@@ -1112,8 +1116,9 @@ def get_sync_map(from_camera: str, sns: str):
                         t_seg, base_offset = frame_to_seg[target_cam][closest_start]
                         t_frame_offset = base_offset + (target_frame - closest_start)
                     else:
-                        t_seg = int(target_frame / 180)
-                        t_frame_offset = target_frame % 180
+                        avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
+                        t_seg = int(target_frame / avg_fc)
+                        t_frame_offset = target_frame % avg_fc
                 else:
                     t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
                     
@@ -1142,9 +1147,10 @@ def check_sync(
             else:
                 if seg_to_frame[cam]:
                     closest_seg = min(seg_to_frame[cam].keys(), key=lambda x: abs(x - seg))
-                    frames[cam] = seg_to_frame[cam][closest_seg] + (seg - closest_seg) * 180 + int(off * FPS)
+                    fc = seg_frame_count[cam].get(closest_seg, 120)
+                    frames[cam] = seg_to_frame[cam][closest_seg] + (seg - closest_seg) * fc + int(off * FPS)
                 else:
-                    frames[cam] = seg * 180 + int(off * FPS)
+                    frames[cam] = seg * 120 + int(off * FPS)
     
         # For each (anchor, target) pair, check CSV prediction vs actual target frame
         pairs = [("source", "sink"), ("source", "hq"), ("sink", "hq")]
