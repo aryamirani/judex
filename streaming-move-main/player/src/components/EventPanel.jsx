@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 
-export default function EventPanel({ event, onClose }) {
+export default function EventPanel({ event, activeCam, onClose }) {
   const v1 = useRef(null);
   const v2 = useRef(null);
   const v3 = useRef(null);
@@ -56,7 +56,12 @@ export default function EventPanel({ event, onClose }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ color: 'var(--amber, #f5a623)', fontWeight: 'bold', fontSize: '18px' }}>Event {event.id}</span>
-          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', fontFamily: 'monospace' }}>Frame: {event.hq_frame}</span>
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', fontFamily: 'monospace' }}>
+            {activeCam.toUpperCase()} Frame: {event.frames ? event.frames[activeCam] : 'N/A'}
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', fontFamily: 'monospace' }}>
+            (HQ Frame: {event.hq_frame})
+          </span>
         </div>
         <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '20px' }}>✕</button>
       </div>

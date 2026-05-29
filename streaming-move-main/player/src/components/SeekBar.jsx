@@ -260,6 +260,7 @@ export default function SeekBar({
               onMouseLeave={() => setHoveredEvent(null)}
               onClick={(e) => {
                 e.stopPropagation()
+                if (onEventSelect) onEventSelect(ev)
                 if (onSeek) onSeek(ev.time, true)
                 if (isPlaying && onTogglePlay) onTogglePlay()
               }}

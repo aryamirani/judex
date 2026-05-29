@@ -229,7 +229,9 @@ def _ingest_flight_shots(csv_text, has_header=True):
         
         segs = {}
         offs = {}
+        frames = {}
         for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", f_hq)]:
+            frames[cam] = f_num
             if f_num in frame_to_seg[cam]:
                 c_seg, c_off = frame_to_seg[cam][f_num]
                 segs[cam] = c_seg
@@ -238,16 +240,16 @@ def _ingest_flight_shots(csv_text, has_header=True):
                 avg_fc = 120 if not seg_frame_count[cam] else list(seg_frame_count[cam].values())[-1]
                 segs[cam] = int(f_num / avg_fc)
                 offs[cam] = (f_num % avg_fc) / FPS
-        return segs, offs
+        return segs, offs, frames
 
     count = 0
     for _, row in df.iterrows():
         if pd.isna(row.get('bounce_hq_frame')):
             continue
         hq_frame = int(row['bounce_hq_frame'])
-        segs, offs = get_segs_offs_for_hq_frame(hq_frame)
-        start_segs, start_offs = get_segs_offs_for_hq_frame(row.get('start_frame'))
-        end_segs, end_offs = get_segs_offs_for_hq_frame(row.get('end_frame'))
+        segs, offs, frames = get_segs_offs_for_hq_frame(hq_frame)
+        start_segs, start_offs, _ = get_segs_offs_for_hq_frame(row.get('start_frame'))
+        end_segs, end_offs, _ = get_segs_offs_for_hq_frame(row.get('end_frame'))
 
         metadata = {}
         for k, v in row.items():
@@ -260,6 +262,7 @@ def _ingest_flight_shots(csv_text, has_header=True):
             "id": str(row['shot_id']),
             "segments": segs,
             "offsets": offs,
+            "frames": frames,
             "start_segments": start_segs,
             "start_offsets": start_offs,
             "end_segments": end_segs,
@@ -938,7 +941,7 @@ def serve_segment(cam: str, segment: str):
     return FileResponse(dst)
 
 # For the bounce clips
-BOUNCE_CLIPS_DIR = os.path.join(ASSIGNMENT_DIR, "bounce_clips_share")
+BOUNCE_CLIPS_DIR = os.path.join(BASE_DIR, "clips", "cv_output", "bounce_clips")
 if os.path.exists(BOUNCE_CLIPS_DIR):
     app.mount("/clips", StaticFiles(directory=BOUNCE_CLIPS_DIR), name="clips")
 

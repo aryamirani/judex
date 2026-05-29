@@ -1185,7 +1185,7 @@ export default function App() {
           />
         </div>
 
-        <EventPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+        <EventPanel event={selectedEvent} activeCam={activeCam} onClose={() => setSelectedEvent(null)} />
       </div>
     </div>
   )
