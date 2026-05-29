@@ -126,7 +126,7 @@ export default function App() {
     if (mode === 'live' && liveSegments.length > 0) {
       const absSns = liveSegments.map(s => s.absSegIdx).filter(x => x !== undefined).join(',')
       if (absSns) {
-        fetch(`http://localhost:8000/sync_map?from_camera=${activeCam}&sns=${absSns}`)
+        fetch(`${backendUrl}/sync_map?from_camera=${activeCam}&sns=${absSns}`)
           .then(res => res.json())
           .then(data => setLiveSyncMap(data))
           .catch(e => console.warn('Failed to fetch live sync map', e))
@@ -138,7 +138,7 @@ export default function App() {
 
   const fetchEvents = async () => {
     try {
-      const res = await fetch('http://localhost:8000/events')
+      const res = await fetch(`${backendUrl}/events`)
       const data = await res.json()
       setEvents(data)
     } catch (e) { console.warn('Failed to fetch events', e) }
@@ -487,7 +487,7 @@ export default function App() {
               start: s.originalStart,
               end: s.originalStart + s.duration
             })))
-            fetch(`http://localhost:8000/sync_map?from_camera=${cam}&sns=${absSegIdx}`)
+            fetch(`${backendUrl}/sync_map?from_camera=${cam}&sns=${absSegIdx}`)
               .then(res => res.json())
               .then(syncData => {
                 setLiveSyncMap(prev => ({ ...prev, ...syncData }))
@@ -551,7 +551,7 @@ export default function App() {
     const activeSnapshot = rollingBuffers[activeCam].current
     const sns = activeSnapshot.map(s => s.absSegIdx).join(',')
     if (sns) {
-      fetch(`http://localhost:8000/sync_map?from_camera=${activeCam}&sns=${sns}`)
+      fetch(`${backendUrl}/sync_map?from_camera=${activeCam}&sns=${sns}`)
         .then(res => res.json())
         .then(data => setSyncMap(data))
         .catch(e => console.error('Failed to fetch sync map', e))
@@ -731,7 +731,7 @@ export default function App() {
                   })));
 
                   // Fetch live sync map for this new segment
-                  fetch(`http://localhost:8000/sync_map?from_camera=${cam}&sns=${seg.absSegIdx}`)
+                  fetch(`${backendUrl}/sync_map?from_camera=${cam}&sns=${seg.absSegIdx}`)
                     .then(r => r.json())
                     .then(syncData => {
                       if (active && modeRef.current === 'live') {
@@ -802,7 +802,7 @@ export default function App() {
     const absSegIdx = m ? parseInt(m[1], 10) : frag.sn
     const offset = Math.max(0, ct - frag.start)
     try {
-      const res = await fetch(`http://localhost:8000/sync?from_camera=${masterCam}&from_seg=${absSegIdx}&from_offset=${offset}`)
+      const res = await fetch(`${backendUrl}/sync?from_camera=${masterCam}&from_seg=${absSegIdx}&from_offset=${offset}`)
       if (!res.ok) return
       const data = await res.json()
 
@@ -851,7 +851,7 @@ export default function App() {
           hq_seg: pos.hq.seg, hq_off: pos.hq.offset,
           tolerance: 15,
         })
-        const res = await fetch(`http://localhost:8000/check_sync?${p}`)
+        const res = await fetch(`${backendUrl}/check_sync?${p}`)
         if (!res.ok) return
         const v = await res.json()
         if (v?.checks) {
@@ -899,7 +899,7 @@ export default function App() {
           const match = url.match(/seg_(\d+)\.ts/)
           const absSegIdx = match ? parseInt(match[1], 10) : frag.sn
           try {
-            const res = await fetch(`http://localhost:8000/sync?from_camera=${activeCam}&from_seg=${absSegIdx}&from_offset=${offset}`)
+            const res = await fetch(`${backendUrl}/sync?from_camera=${activeCam}&from_seg=${absSegIdx}&from_offset=${offset}`)
             if (res.ok) {
               const data = await res.json()
               const targetSync = data[targetCam]
@@ -945,7 +945,7 @@ export default function App() {
                     hq_seg: pos.hq.seg, hq_off: pos.hq.offset,
                     tolerance: 15,
                   })
-                  const vRes = await fetch(`http://localhost:8000/check_sync?${p}`)
+                  const vRes = await fetch(`${backendUrl}/check_sync?${p}`)
                   const v = await vRes.json()
                   if (v?.checks) {
                     console.log(

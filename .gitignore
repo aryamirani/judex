@@ -8,8 +8,8 @@
 **/serve/
 *.pyc
 __pycache__/
+.mypy_cache/
 
 # Provided raw data/media assets (not coded by us)
-**/bounce_clips_share/
 *.mp4
 *.ts

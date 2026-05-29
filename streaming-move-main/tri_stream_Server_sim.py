@@ -26,10 +26,10 @@ _args = _parser.parse_args()
 
 SESSION_ID = _args.session
 SPEED = _args.speed
-USE_BACKUP = _args.backup
+USE_BACKUP = True
 CAM_PORT = _args.cam_port
 
-IS_LIVE = not USE_BACKUP
+IS_LIVE = False
 
 JETSON_HOST = "jetson@192.168.0.148"
 REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
@@ -44,8 +44,6 @@ DATA_DIR = os.path.join(ASSIGNMENT_DIR, "sync_reports")
 if not os.path.exists(DATA_DIR):
     DATA_DIR = os.path.join(ASSIGNMENT_DIR, "apr17", "sync_reports")
 TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "test_work")
-if not os.path.exists(TEST_WORK_DIR):
-    TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "ssh", "test_work")
 
 WINDOW_SIZE = 30
 
@@ -69,7 +67,7 @@ seg_to_frame = { "source": {}, "sink": {}, "hq": {} } # seg_index -> cumulative_
 seg_frame_count = { "source": {}, "sink": {}, "hq": {} } # seg_index -> frame_count
 
 # Paths
-if not USE_BACKUP:
+if False:
     CAM_PATHS = {
         "source": f"http://192.168.0.111:{CAM_PORT}/live.m3u8",
         "hq":     f"http://192.168.0.112:{CAM_PORT}/live.m3u8",
@@ -92,57 +90,29 @@ events_data = []
 
 FPS = 30.0
 
-_sync_rows_loaded = 0  # number of data rows already ingested (excludes header)
+# Placeholder for the remote flight shots path on the Jetson
+REMOTE_FLIGHT_SHOTS_PATH = "/home/jetson/Desktop/cv_output/correlation/flight_shots.csv"
+
+_flight_shots_rows_loaded = 0
+  # number of data rows already ingested (excludes header)
 _sync_lock = threading.Lock()
 
 _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
 _frame_idx_lock = threading.Lock()
 
-def _fetch_local_fallback(remote_path, skip_lines=0):
-    if "hls_sync" in remote_path:
-        local_path = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
-    elif "hls_segment_frame_index.csv" in remote_path:
-        cam = None
-        for c in ["source", "sink", "hq"]:
-            if f"/{c}/" in remote_path or c in remote_path:
-                cam = c
-                break
-        if cam is None:
-            cam = "source"
-        local_path = f"/Users/aryamirani/Desktop/intern/judex/ssh/test_work/cv_output/reader/{cam}/hls_segment_frame_index.csv"
-    else:
-        raise ValueError(f"Unknown remote path: {remote_path}")
 
+def _fetch_local(local_path, skip_lines=0):
     if not os.path.exists(local_path):
-        raise FileNotFoundError(f"Local fallback file not found at: {local_path}")
-
+        raise FileNotFoundError(f"Local file not found at: {local_path}")
     with open(local_path, "r") as f:
         lines = f.readlines()
-
     if skip_lines == 0:
         return "".join(lines)
     else:
         return "".join(lines[skip_lines + 1:])
 
-def _ssh_fetch(remote_path, skip_lines=0):
-    """Fetch a file from the Jetson over SSH. If it fails, fall back to local files."""
-    if USE_BACKUP:
-        return _fetch_local_fallback(remote_path, skip_lines)
-    try:
-        remote_cmd = (f"cat {remote_path}" if skip_lines == 0
-                      else f"tail -n +{skip_lines + 2} {remote_path}")
-        result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", JETSON_HOST, remote_cmd],
-            capture_output=True, text=True, timeout=4
-        )
-        result.check_returncode()
-        return result.stdout
-    except Exception as e:
-        print(f"  [X] SSH fetch failed: {e}. (No --backup flag provided, so failing explicitly)")
-        raise e
-
 def _fetch_csv_lines(skip_lines=0):
-    return _ssh_fetch(REMOTE_CSV_PATH, skip_lines)
+    return _fetch_local(f"clips/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv", skip_lines)
 
 def _ingest_sync_rows(csv_text, has_header=True):
     """Parse csv_text and update sync_maps. Returns number of rows ingested."""
@@ -177,305 +147,23 @@ def sync_csv_poller():
     """
     global _sync_rows_loaded
     while True:
-        time.sleep(4)
         try:
-            new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded)
-            added = _ingest_sync_rows(new_text, has_header=(_sync_rows_loaded == 0))
-            if added:
-                _sync_rows_loaded += added
-                print(f"[sync poller] +{added} new rows (total {_sync_rows_loaded})")
-        except Exception as e:
-            print(f"[sync poller] fetch error: {e}")
-
-def _ingest_frame_idx_rows(cam, csv_text, has_header=True):
-    """Parse frame index CSV text and update seg_to_frame / frame_to_seg. Returns rows added."""
-    if not csv_text.strip():
-        return 0
-    # Columns: segment_index(0), seg_basename(1), cumulative_start_frame(2), frame_count(3)
-    if has_header:
-        df = pd.read_csv(io.StringIO(csv_text),
-                         usecols=["segment_index", "cumulative_start_frame", "frame_count"])
-    else:
-        df = pd.read_csv(io.StringIO(csv_text), header=None, usecols=[0, 2, 3],
-                         names=["segment_index", "cumulative_start_frame", "frame_count"])
-    count = 0
-    with _frame_idx_lock:
-        for _, row in df.iterrows():
-            seg_idx     = int(row["segment_index"])
-            start_frame = int(row["cumulative_start_frame"])
-            frame_count = int(row["frame_count"])
-            seg_to_frame[cam][seg_idx] = start_frame
-            seg_frame_count[cam][seg_idx] = frame_count
-            for f in range(start_frame, start_frame + frame_count):
-                frame_to_seg[cam][f] = (seg_idx, f - start_frame)
-            count += 1
-    return count
-
-def frame_idx_poller():
-    """Background thread: polls each camera's frame index CSV every 2 s for new segments."""
-    global _frame_idx_rows
-    while True:
-        time.sleep(2)
-        for cam in ["source", "sink", "hq"]:
+            cam, name, dst, latency = download_queue.get(timeout=1.0)
+        except queue.Empty:
+            continue
+        
+        time.sleep(latency)
+        
+        backup_src = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
+        if os.path.exists(backup_src):
             try:
-                text = _ssh_fetch(FRAME_IDX_PATHS[cam], skip_lines=_frame_idx_rows[cam])
-                added = _ingest_frame_idx_rows(cam, text, has_header=(_frame_idx_rows[cam] == 0))
-                if added:
-                    _frame_idx_rows[cam] += added
-                    print(f"[frame idx poller] {cam} +{added} segs (total {_frame_idx_rows[cam]})")
+                temp_dst = dst + ".tmp"
+                shutil.copy2(backup_src, temp_dst)
+                os.rename(temp_dst, dst)
+                print(f"[master worker] Simulated download {name}")
             except Exception as e:
-                print(f"[frame idx poller] {cam} error: {e}")
-
-def load_data():
-    global events_data, _sync_rows_loaded
-    print("Loading CSVs into memory for O(1) lookups...")
-
-    # 1. Load sync mapping from remote Jetson
-    print(f"  Fetching remote sync CSV: {REMOTE_CSV_PATH}")
-    csv_text = _fetch_csv_lines(skip_lines=0)
-    _sync_rows_loaded = _ingest_sync_rows(csv_text, has_header=True)
-    print(f"  Loaded {_sync_rows_loaded} sync rows from remote.")
-
-    # 2. Load frame-to-segment index from remote Jetson
-    for cam in ["source", "sink", "hq"]:
-        print(f"  Fetching frame index [{cam}] from remote...")
-        text = _ssh_fetch(FRAME_IDX_PATHS[cam])
-        _frame_idx_rows[cam] = _ingest_frame_idx_rows(cam, text, has_header=True)
-        print(f"  [{cam}] {_frame_idx_rows[cam]} segments, {len(frame_to_seg[cam])} frames indexed.")
-                
-    # 3. Load events
-    events_csv = os.path.join(TEST_WORK_DIR, "cv_output", "correlation", "flight_shots.csv")
-    if os.path.exists(events_csv):
-        df_events = pd.read_csv(events_csv)
-        def get_segs_offs_for_hq_frame(f_hq):
-            if pd.isna(f_hq):
-                return None, None
-            f_hq = int(f_hq)
-            # Get source frame
-            src_frame = sync_maps["hq_to_source"].get(f_hq)
-            if src_frame is None:
-                if sync_maps["hq_to_source"]:
-                    closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - f_hq))
-                    src_frame = sync_maps["hq_to_source"][closest]
-                else:
-                    src_frame = f_hq
-            
-            # Get sink frame
-            sink_frame = sync_maps["hq_to_sink"].get(f_hq)
-            if sink_frame is None:
-                if sync_maps["hq_to_sink"]:
-                    closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - f_hq))
-                    sink_frame = sync_maps["hq_to_sink"][closest]
-                else:
-                    sink_frame = f_hq
-            
-            segs = {}
-            offs = {}
-            for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", f_hq)]:
-                if f_num in frame_to_seg[cam]:
-                    c_seg, c_off = frame_to_seg[cam][f_num]
-                    segs[cam] = c_seg
-                    offs[cam] = c_off / FPS
-                else:
-                    # Fallback estimate
-                    segs[cam] = int(f_num / 180) # 180 frames = 6s
-                    offs[cam] = (f_num % 180) / FPS
-            return segs, offs
-
-        for _, row in df_events.iterrows():
-            if pd.isna(row.get('bounce_hq_frame')):
-                continue
-            hq_frame = int(row['bounce_hq_frame'])
-            segs, offs = get_segs_offs_for_hq_frame(hq_frame)
-            start_segs, start_offs = get_segs_offs_for_hq_frame(row.get('start_frame'))
-            end_segs, end_offs = get_segs_offs_for_hq_frame(row.get('end_frame'))
-
-            # Convert NaN to None for JSON compliance
-            metadata = {}
-            for k, v in row.items():
-                if pd.isna(v):
-                    metadata[k] = None
-                else:
-                    metadata[k] = v
-                    
-            events_data.append({
-                "id": str(row['shot_id']),
-                "segments": segs,
-                "offsets": offs,
-                "start_segments": start_segs,
-                "start_offsets": start_offs,
-                "end_segments": end_segs,
-                "end_offsets": end_offs,
-                "hq_frame": hq_frame,
-                "metadata": metadata
-            })
-    print("Data loading complete.")
-
-def fetch_playlist_content(path_or_url):
-    if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
-        req = urllib.request.Request(path_or_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
-            return response.read().decode('utf-8')
-    else:
-        with open(path_or_url) as f:
-            return f.read()
-
-def parse_playlist(path_or_url):
-    segments = []
-    has_endlist = False
-    try:
-        content = fetch_playlist_content(path_or_url)
-        lines = content.splitlines()
-    except Exception as e:
-        print(f"[parse_playlist] Error reading {path_or_url}: {e}")
-        return segments, has_endlist
+                print(f"Error copying {name}: {e}")
         
-    i = 0
-    while i < len(lines):
-        if lines[i].startswith("#EXT-X-ENDLIST"):
-            has_endlist = True
-            i += 1
-        elif lines[i].startswith("#EXTINF:"):
-            duration = float(lines[i].split(":")[1].rstrip(","))
-            seg = lines[i + 1].strip()
-            segments.append((duration, seg))
-            i += 2
-        else:
-            i += 1
-    return segments, has_endlist
-
-def write_playlist(cam, window, media_sequence, done=False):
-    import math
-    serve_dir = SERVE_DIRS[cam]
-    playlist_path = os.path.join(serve_dir, "live.m3u8")
-    
-    target_dur = 6
-    for item in window:
-        if isinstance(item, dict):
-            target_dur = max(target_dur, math.ceil(item["dur_global"]))
-            
-    lines = [
-        "#EXTM3U",
-        "#EXT-X-VERSION:4",
-        f"#EXT-X-TARGETDURATION:{target_dur}",
-        f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
-        "#EXT-X-ALLOW-CACHE:NO",
-        "#EXT-X-START:TIME-OFFSET=-4.0"
-    ]
-    for item in window:
-        if isinstance(item, str) and item == "#EXT-X-DISCONTINUITY":
-            lines.append(item)
-        elif isinstance(item, dict):
-            dur = item["dur_global"]
-            orig_dur = item.get("orig_durs", {}).get(cam, dur) if "orig_durs" in item else item.get("orig_dur", dur)
-            name = item["name"]
-            
-            if name and orig_dur > 0 and (dur - orig_dur) > 0.5:
-                # Add original duration and segment
-                lines.append(f"#EXTINF:{orig_dur:.6f},")
-                lines.append(name)
-                # Explicit gap to cover the rest of the time
-                lines.append("#EXT-X-DISCONTINUITY")
-                lines.append(f"#EXTINF:{(dur - orig_dur):.6f},")
-                lines.append("#EXT-X-GAP")
-                lines.append("gap.ts")
-            elif name is not None:
-                lines.append(f"#EXTINF:{dur:.6f},")
-                lines.append(name)
-            else:
-                # Name is None (segment is missing/camera offline)
-                lines.append("#EXT-X-DISCONTINUITY")
-                lines.append(f"#EXTINF:{dur:.6f},")
-                lines.append("#EXT-X-GAP")
-                lines.append("gap.ts")
-    if done:
-        lines.append("#EXT-X-ENDLIST")
-        
-    temp_path = playlist_path + ".tmp"
-    with open(temp_path, "w") as f:
-        f.write("\n".join(lines) + "\n")
-    os.rename(temp_path, playlist_path)
-
-_active_downloads = set()
-_downloads_lock = threading.Lock()
-
-def get_global_time(cam, frame):
-    if cam == "source":
-        return frame / FPS
-    map_key = f"{cam}_to_source"
-    
-    with _sync_lock:
-        if not sync_maps[map_key]:
-            return frame / FPS
-            
-        if frame in sync_maps[map_key]:
-            return sync_maps[map_key][frame] / FPS
-            
-        keys = sorted(sync_maps[map_key].keys())
-        import bisect
-        idx = bisect.bisect_left(keys, frame)
-        if idx == 0:
-            ref_f = keys[0]
-            diff = frame - ref_f
-            return (sync_maps[map_key][ref_f] + diff) / FPS
-        elif idx == len(keys):
-            ref_f = keys[-1]
-            diff = frame - ref_f
-            return (sync_maps[map_key][ref_f] + diff) / FPS
-        else:
-            f1 = keys[idx-1]
-            f2 = keys[idx]
-            s1 = sync_maps[map_key][f1]
-            s2 = sync_maps[map_key][f2]
-            ratio = (frame - f1) / (f2 - f1)
-            mapped_frame = s1 + ratio * (s2 - s1)
-            return mapped_frame / FPS
-
-def get_segment_start_frame(cam, abs_idx):
-    with _frame_idx_lock:
-        if abs_idx in seg_to_frame[cam]:
-            return seg_to_frame[cam][abs_idx]
-        keys = sorted(seg_to_frame[cam].keys())
-        if not keys:
-            return abs_idx * 180
-        closest_seg = min(keys, key=lambda x: abs(x - abs_idx))
-        return seg_to_frame[cam][closest_seg] + (abs_idx - closest_seg) * 180
-
-def parse_abs_seg_idx(name):
-    if not name:
-        return None
-    import re
-    base = os.path.basename(name)
-    m = re.search(r'(\d+)\.ts$', base)
-    if m:
-        return int(m.group(1))
-    return None
-
-def download_segment_file(src_url, dst, cam, name):
-    try:
-        if os.path.exists(dst):
-            return
-        req = urllib.request.Request(src_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
-            temp_dst = dst + ".tmp"
-            with open(temp_dst, "wb") as f_dst:
-                f_dst.write(response.read())
-            os.rename(temp_dst, dst)
-        print(f"[master worker] Downloaded segment {name} from {src_url}")
-    except Exception as e:
-        print(f"[master worker] Error downloading {src_url}: {e}")
-        # Fallback to backup
-        if USE_BACKUP:
-            backup_src = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
-            if os.path.exists(backup_src):
-                try:
-                    temp_dst = dst + ".tmp"
-                    shutil.copy2(backup_src, temp_dst)
-                    os.rename(temp_dst, dst)
-                    print(f"[master worker] Recovered {name} from backup")
-                except Exception as backup_err:
-                    print(f"[master worker] Backup recovery failed: {backup_err}")
-    finally:
         with _downloads_lock:
             _active_downloads.discard(dst)
 
@@ -500,20 +188,8 @@ def master_stream_worker():
                 segs, ended = parse_playlist(playlist_path)
             except Exception as e:
                 print(f"[master worker] Initial playlist fetch error for {cam}: {e}")
-            if not segs and USE_BACKUP:
-                    backup_playlist = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
-                    if os.path.exists(backup_playlist):
-                        playlist_path = backup_playlist
-                        try:
-                            segs, ended = parse_playlist(playlist_path)
-                        except Exception as e:
-                            print(f"[master worker] Initial fallback playlist parse error for {cam}: {e}")
         else:
             playlist_path = os.path.join(cam_path, "playlist.m3u8")
-            if not os.path.exists(playlist_path):
-                backup_playlist = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
-                if os.path.exists(backup_playlist):
-                    playlist_path = backup_playlist
             if os.path.exists(playlist_path):
                 try:
                     segs, ended = parse_playlist(playlist_path)
@@ -641,7 +317,7 @@ def master_stream_worker():
     
     start_time = time.time()
     last_time = start_time
-    target_sim_time = max(0.0, total_duration - 6.0) if IS_LIVE else 0.0
+    target_sim_time = 0.0
     
     if IS_LIVE and unified_steps:
         # Fast-forward to only fetch the last 3 segments on startup to avoid massive backlog fetching
@@ -676,20 +352,12 @@ def master_stream_worker():
                         print(f"[master worker] Error polling live playlist for {cam}: {e}")
                     
                     if not success:
-                        backup_playlist = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
-                        if os.path.exists(backup_playlist):
-                            try:
-                                segs, ended = parse_playlist(backup_playlist)
-                                success = True
-                            except Exception as e:
-                                print(f"[master worker] Error polling backup playlist for {cam}: {e}")
+                        pass
+
                 else:
                     playlist_path = os.path.join(cam_path, "playlist.m3u8")
-                    if not os.path.exists(playlist_path):
-                        backup_playlist = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
-                        if os.path.exists(backup_playlist):
-                            playlist_path = backup_playlist
                     
+
                     if os.path.exists(playlist_path):
                         try:
                             segs, ended = parse_playlist(playlist_path)
@@ -756,29 +424,13 @@ def master_stream_worker():
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     if not os.path.exists(dst):
                         if cam_path.startswith("http://") or cam_path.startswith("https://"):
-                            base_url = cam_path.rsplit('/', 1)[0]
-                            src_url = f"{base_url}/{name}"
-                            with _downloads_lock:
-                                is_downloading = dst in _active_downloads
-                            if not is_downloading:
-                                with _downloads_lock:
-                                    _active_downloads.add(dst)
-                                threading.Thread(
-                                    target=download_segment_file,
-                                    args=(src_url, dst, cam, name),
-                                    daemon=True
-                                ).start()
+                            pass # Real world: React fetches directly from Pi, no middleman download
                         else:
                             src = os.path.join(cam_path, name)
-                            if not os.path.exists(src) and USE_BACKUP:
-                                backup_src = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
-                                if os.path.exists(backup_src):
-                                    src = backup_src
-                            
                             if os.path.exists(src):
                                 def simulate_download(source, dest, camera, segment_name):
                                     import random
-                                    latency = random.uniform(3.5, 4.5)
+                                    latency = random.uniform(3.0, 6.5)
                                     time.sleep(latency)
                                     try:
                                         os.link(source, dest)
@@ -873,6 +525,7 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=master_stream_worker, daemon=True).start()
     threading.Thread(target=sync_csv_poller, daemon=True).start()
     threading.Thread(target=frame_idx_poller, daemon=True).start()
+    threading.Thread(target=flight_shots_poller, daemon=True).start()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -918,9 +571,12 @@ def get_live_m3u8(cam: str):
             name = item["name"]
             
             if name:
-                dst = os.path.join(SERVE_DIRS[cam], name)
-                # Intentionally not checking os.path.exists(dst) so we blindly publish 
-                # the segment just like the real server does for HTTP links.
+                cam_path = CAM_PATHS[cam]
+                if cam_path.startswith("http://") or cam_path.startswith("https://"):
+                    base_url = cam_path.rsplit('/', 1)[0]
+                    name = f"{base_url}/{name}"
+                else:
+                    dst = os.path.join(SERVE_DIRS[cam], name)
             
             if name and orig_dur > 0 and (dur - orig_dur) > 0.5:
                 # Add original duration and segment
@@ -978,9 +634,9 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
         # Fallback extrapolation
         if seg_to_frame[from_camera]:
             closest_seg = min(seg_to_frame[from_camera].keys(), key=lambda x: abs(x - from_seg))
-            start_frame = seg_to_frame[from_camera][closest_seg] + (from_seg - closest_seg) * 180
+            start_frame = seg_to_frame[from_camera][closest_seg] + (from_seg - closest_seg) * 120
         else:
-            start_frame = from_seg * 180
+            start_frame = from_seg * 120
         
     current_frame = start_frame + int(from_offset * FPS)
     
@@ -1000,22 +656,26 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
         if current_frame in sync_maps[map_key]:
             target_frame = sync_maps[map_key][current_frame]
         else:
-            # Fallback if frame dropped/missing from sync map: just pick the closest
+            # Fallback if frame dropped/missing from sync map: just pick the closest and extrapolate
             if sync_maps[map_key]:
                 closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - current_frame))
-                target_frame = sync_maps[map_key][closest]
+                target_frame = sync_maps[map_key][closest] + (current_frame - closest)
             else:
                 target_frame = current_frame
             
         if target_frame not in frame_to_seg[target_cam]:
-            available = list(frame_to_seg[target_cam].keys())
-            if available:
-                closest_start = min(available, key=lambda x: abs(x - target_frame))
-                t_seg, base_offset = frame_to_seg[target_cam][closest_start]
-                t_frame_offset = base_offset + (target_frame - closest_start)
+            if seg_to_frame[target_cam]:
+                closest_seg = min(seg_to_frame[target_cam].keys(), key=lambda s: abs(seg_to_frame[target_cam][s] - target_frame))
+                closest_start = seg_to_frame[target_cam][closest_seg]
+                frame_delta = target_frame - closest_start
+                fc = seg_frame_count[target_cam].get(closest_seg, 120)
+                seg_delta = frame_delta // fc
+                t_seg = closest_seg + seg_delta
+                t_frame_offset = frame_delta % fc
             else:
-                t_seg = int(target_frame / 180)
-                t_frame_offset = target_frame % 180
+                avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
+                t_seg = int(target_frame / avg_fc)
+                t_frame_offset = target_frame % avg_fc
         else:
             t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
             
@@ -1042,9 +702,10 @@ def get_sync_map(from_camera: str, sns: str):
             else:
                 if seg_to_frame[from_camera]:
                     closest_seg = min(seg_to_frame[from_camera].keys(), key=lambda x: abs(x - sn))
-                    start_frame = seg_to_frame[from_camera][closest_seg] + (sn - closest_seg) * 180
+                    fc = seg_frame_count[from_camera].get(closest_seg, 120)
+                    start_frame = seg_to_frame[from_camera][closest_seg] + (sn - closest_seg) * fc
                 else:
-                    start_frame = sn * 180
+                    start_frame = sn * 120
             
             # Get corresponding frames at the start of this segment
             seg_res = {}
@@ -1059,19 +720,23 @@ def get_sync_map(from_camera: str, sns: str):
                 else:
                     if sync_maps[map_key]:
                         closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - start_frame))
-                        target_frame = sync_maps[map_key][closest]
+                        target_frame = sync_maps[map_key][closest] + (start_frame - closest)
                     else:
                         target_frame = start_frame
                     
                 if target_frame not in frame_to_seg[target_cam]:
-                    available = list(frame_to_seg[target_cam].keys())
-                    if available:
-                        closest_start = min(available, key=lambda x: abs(x - target_frame))
-                        t_seg, base_offset = frame_to_seg[target_cam][closest_start]
-                        t_frame_offset = base_offset + (target_frame - closest_start)
+                    if seg_to_frame[target_cam]:
+                        closest_seg = min(seg_to_frame[target_cam].keys(), key=lambda s: abs(seg_to_frame[target_cam][s] - target_frame))
+                        closest_start = seg_to_frame[target_cam][closest_seg]
+                        frame_delta = target_frame - closest_start
+                        fc = seg_frame_count[target_cam].get(closest_seg, 120)
+                        seg_delta = frame_delta // fc
+                        t_seg = closest_seg + seg_delta
+                        t_frame_offset = frame_delta % fc
                     else:
-                        t_seg = int(target_frame / 180)
-                        t_frame_offset = target_frame % 180
+                        avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
+                        t_seg = int(target_frame / avg_fc)
+                        t_frame_offset = target_frame % avg_fc
                 else:
                     t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
                     
@@ -1100,9 +765,10 @@ def check_sync(
             else:
                 if seg_to_frame[cam]:
                     closest_seg = min(seg_to_frame[cam].keys(), key=lambda x: abs(x - seg))
-                    frames[cam] = seg_to_frame[cam][closest_seg] + (seg - closest_seg) * 180 + int(off * FPS)
+                    fc = seg_frame_count[cam].get(closest_seg, 120)
+                    frames[cam] = seg_to_frame[cam][closest_seg] + (seg - closest_seg) * fc + int(off * FPS)
                 else:
-                    frames[cam] = seg * 180 + int(off * FPS)
+                    frames[cam] = seg * 120 + int(off * FPS)
     
         # For each (anchor, target) pair, check CSV prediction vs actual target frame
         pairs = [("source", "sink"), ("source", "hq"), ("sink", "hq")]

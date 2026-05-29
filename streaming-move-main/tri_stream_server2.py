@@ -98,7 +98,7 @@ _frame_idx_lock = threading.Lock()
 
 def _fetch_local_fallback(remote_path, skip_lines=0):
     if "hls_sync" in remote_path:
-        local_path = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
+        local_path = f"clips/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
     elif "hls_segment_frame_index.csv" in remote_path:
         cam = None
         for c in ["source", "sink", "hq"]:
@@ -107,7 +107,7 @@ def _fetch_local_fallback(remote_path, skip_lines=0):
                 break
         if cam is None:
             cam = "source"
-        local_path = f"/Users/aryamirani/Desktop/intern/judex/ssh/test_work/cv_output/reader/{cam}/hls_segment_frame_index.csv"
+        local_path = f"clips/cv_output/reader/{cam}/hls_segment_frame_index.csv"
     else:
         raise ValueError(f"Unknown remote path: {remote_path}")
 
@@ -452,7 +452,7 @@ def download_segment_file(src_url, dst, cam, name):
         print(f"[master worker] Error downloading {src_url}: {e}")
         # Fallback to backup
         if USE_BACKUP:
-            backup_src = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
+            backup_src = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
             if os.path.exists(backup_src):
                 try:
                     temp_dst = dst + ".tmp"
@@ -487,7 +487,7 @@ def master_stream_worker():
             except Exception as e:
                 print(f"[master worker] Initial playlist fetch error for {cam}: {e}")
             if not segs and USE_BACKUP:
-                    backup_playlist = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
+                    backup_playlist = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
                     if os.path.exists(backup_playlist):
                         playlist_path = backup_playlist
                         try:
@@ -497,7 +497,7 @@ def master_stream_worker():
         else:
             playlist_path = os.path.join(cam_path, "playlist.m3u8")
             if not os.path.exists(playlist_path):
-                backup_playlist = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
+                backup_playlist = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
                 if os.path.exists(backup_playlist):
                     playlist_path = backup_playlist
             if os.path.exists(playlist_path):
@@ -658,7 +658,7 @@ def master_stream_worker():
                         print(f"[master worker] Error polling live playlist for {cam}: {e}")
                     
                     if not success:
-                        backup_playlist = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
+                        backup_playlist = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
                         if os.path.exists(backup_playlist):
                             try:
                                 segs, ended = parse_playlist(backup_playlist)
@@ -668,7 +668,7 @@ def master_stream_worker():
                 else:
                     playlist_path = os.path.join(cam_path, "playlist.m3u8")
                     if not os.path.exists(playlist_path):
-                        backup_playlist = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
+                        backup_playlist = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
                         if os.path.exists(backup_playlist):
                             playlist_path = backup_playlist
                     
@@ -753,7 +753,7 @@ def master_stream_worker():
                         else:
                             src = os.path.join(cam_path, name)
                             if not os.path.exists(src) and USE_BACKUP:
-                                backup_src = f"/Users/aryamirani/Desktop/intern/judex/ssh/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
+                                backup_src = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
                                 if os.path.exists(backup_src):
                                     src = backup_src
                             
