@@ -256,26 +256,37 @@ export default function SeekBar({
           return (
             <div
               key={i}
+              onMouseEnter={() => setHoveredEvent(ev)}
+              onMouseLeave={() => setHoveredEvent(null)}
               onClick={(e) => {
                 e.stopPropagation()
-                if (onSeek) onSeek(ev.time)
+                if (onSeek) onSeek(ev.time, true)
                 if (isPlaying && onTogglePlay) onTogglePlay()
               }}
               style={{
                 position: 'absolute', left: `${frac * 100}%`,
-                width: isCurrent ? '12px' : '8px', height: isCurrent ? '12px' : '8px',
-                borderRadius: '50%', background: isCurrent ? '#fff' : 'var(--amber)',
+                width: '24px', height: '24px',
                 transform: 'translate(-50%, -50%)', 
                 top: '50%',
-                boxShadow: isCurrent ? '0 0 10px rgba(255,255,255,0.8)' : 'none',
-                zIndex: 3, 
+                zIndex: isHovered || isCurrent ? 4 : 3, 
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+              }}
+            >
+              <div style={{
+                width: isCurrent || isHovered ? '12px' : '8px', 
+                height: isCurrent || isHovered ? '12px' : '8px',
+                borderRadius: '50%', 
+                background: isCurrent ? '#fff' : 'var(--amber)',
+                boxShadow: isHovered ? '0 0 12px 4px rgba(245,166,35,0.8)' : (isCurrent ? '0 0 10px rgba(255,255,255,0.8)' : 'none'),
                 transition: 'background 0.2s, width 0.2s, height 0.2s, box-shadow 0.2s, opacity 0.2s', 
                 border: '1px solid #000',
-                opacity: isPast ? 1 : 0.25,
-                pointerEvents: 'auto',
-                cursor: 'pointer'
-              }}
-            />
+                opacity: isPast || isHovered ? 1 : 0.25,
+              }} />
+            </div>
           )
         })}
 

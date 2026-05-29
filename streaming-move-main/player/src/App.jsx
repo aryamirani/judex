@@ -11,12 +11,15 @@ const LIVE_THRESHOLD = 2
 const LIVE_CONFIG = {
   enableWorker: true,
   lowLatencyMode: true,
-  backBufferLength: 90,
+  backBufferLength: 250, // Safely accommodates 30 segments of variable lengths (e.g. 5-6s each)
   liveSyncDurationCount: 1,
   liveMaxLatencyDurationCount: 1.5,
   liveDurationRatio: 1,
   manifestLoadingMaxRetry: 100,
-  manifestLoadingRetryDelay: 500
+  manifestLoadingRetryDelay: 500,
+  maxBufferLength: 250,
+  maxMaxBufferLength: 250,
+  maxBufferSize: 500 * 1024 * 1024 // 500 MB limit to prevent bitrate bottlenecks
 }
 const REVIEW_CONFIG = { enableWorker: true, maxBufferLength: 150, backBufferLength: 150 }
 
@@ -166,10 +169,12 @@ export default function App() {
         const segNum = segs?.[activeCam] ?? 0
         const offset = offs?.[activeCam] ?? 0
 
-        // 1. Try to use exact historical start time to prevent jitter when anchor drops out of buffer
-        const exactStart = segmentStartTimesRef.current?.[activeCam]?.[segNum]
-        if (exactStart !== undefined) {
-          return exactStart + offset
+        // 1. In live mode, try to use exact historical start time to prevent jitter
+        if (mode === 'live') {
+          const exactStart = segmentStartTimesRef.current?.[activeCam]?.[segNum]
+          if (exactStart !== undefined) {
+            return exactStart + offset
+          }
         }
 
         // 2. Fallback to current sliding window segments
@@ -326,7 +331,7 @@ export default function App() {
           // syncReviewVideos(video.currentTime)
         } else if (modeRef.current === 'live') {
           const livePos = hls?.liveSyncPosition
-          const isCurrentlyLive = livePos !== null && livePos !== undefined && video.currentTime >= livePos - 1.5
+          const isCurrentlyLive = livePos !== null && livePos !== undefined && video.currentTime >= livePos - 3.0
           if (!isCurrentlyLive) {
             // Disabled background scrubbing to prevent MediaSource crashes on paused elements
             // syncLiveVideos(video.currentTime)
@@ -547,15 +552,18 @@ export default function App() {
     setReviewSegs(newReviewSegs)
     setIsPlaying(false)
 
-    // Fetch sync map
-    const activeSnapshot = rollingBuffers[activeCam].current
-    const sns = activeSnapshot.map(s => s.absSegIdx).join(',')
-    if (sns) {
-      fetch(`${backendUrl}/sync_map?from_camera=${activeCam}&sns=${sns}`)
+    // Fetch full 3-way sync map for all cameras in the snapshot
+    Promise.all(CAMERAS.map(c => {
+      const sns = rollingBuffers[c].current.map(s => s.absSegIdx).join(',')
+      if (!sns) return Promise.resolve({ cam: c, data: {} })
+      return fetch(`${backendUrl}/sync_map?from_camera=${c}&sns=${sns}`)
         .then(res => res.json())
-        .then(data => setSyncMap(data))
-        .catch(e => console.error('Failed to fetch sync map', e))
-    }
+        .then(data => ({ cam: c, data }))
+    })).then(results => {
+      const fullMap = {}
+      results.forEach(r => { fullMap[r.cam] = r.data })
+      setSyncMap(fullMap)
+    }).catch(e => console.error('Failed to fetch full sync map', e))
 
     setLiveEdge(null)
     setBufferStart(null)
@@ -844,6 +852,7 @@ export default function App() {
     const poll = async () => {
       try {
         const pos = getAllCamPositions()
+        if (modeRef.current === 'review') return // Do not poll sync in review mode
         if (!pos.source || !pos.sink || !pos.hq) return
         const p = new URLSearchParams({
           source_seg: pos.source.seg, source_off: pos.source.offset,
@@ -959,15 +968,23 @@ export default function App() {
         }
       }
     } else {
-      // In review mode, map the local time directly, plus the exact sub-second sync offset!
+      // In review mode, perfectly map the local time using the exact sub-second sync offset from the full syncMap!
       let currentLocal = currentVideo.currentTime;
       let offset = 0;
       const currentSegs = reviewSegs[activeCam];
+      
       if (currentSegs && currentSegs.length > 0) {
         const seg = currentSegs.find(s => currentLocal >= s.localStart && currentLocal <= s.localEnd) || currentSegs[0];
-        const mapping = syncMap?.[seg.absSegIdx]?.[targetCam];
-        if (mapping) offset = mapping.offset;
+        
+        // Look up the precise offset in the fully-populated 3-way sync map
+        const mapping = syncMap?.[activeCam]?.[seg.absSegIdx]?.[targetCam];
+        if (mapping) {
+          offset = mapping.offset;
+        } else {
+          console.warn(`[SYNC] Missing mapping from ${activeCam} to ${targetCam} at seg ${seg.absSegIdx}`);
+        }
       }
+      
       targetVideo.currentTime = Math.max(0, currentLocal + offset);
     }
 
@@ -995,7 +1012,7 @@ export default function App() {
     }, 300)
   }
 
-  const handleSeek = (time) => {
+  const handleSeek = (time, forcePause = false) => {
     const video = videoRefs[activeCam].current
     if (video) {
       if (mode === 'review') {
@@ -1014,9 +1031,10 @@ export default function App() {
             videoRefs[cam].current.currentTime = Math.max(0, time + offset);
 
             // If it was playing but hit the end and got stuck, resume playing!
-            if (isPlaying) videoRefs[cam].current.play().catch(() => { });
+            if (!forcePause && isPlaying) videoRefs[cam].current.play().catch(() => { });
           }
         })
+        if (forcePause) setIsPlaying(false)
       } else {
         // In live mode: check if we're seeking to the live edge (GO LIVE button)
         const livePos = liveEdgeRef.current;
@@ -1044,7 +1062,14 @@ export default function App() {
           } else if (livePos != null) {
             syncLiveVideos(livePos)
           }
-          setIsPlaying(true)
+          if (forcePause) {
+            setIsPlaying(false)
+            CAMERAS.forEach(cam => {
+              if (videoRefs[cam].current) videoRefs[cam].current.pause()
+            })
+          } else {
+            setIsPlaying(true)
+          }
         } else {
           // Seeking to a past segment: mimic pause to avoid HLS.js stream controller seek-recovery
           CAMERAS.forEach(cam => {
@@ -1059,7 +1084,9 @@ export default function App() {
           video.currentTime = time
           syncLiveVideos(time)
 
-          if (isPlaying) {
+          if (forcePause) {
+            setIsPlaying(false)
+          } else if (isPlaying) {
             CAMERAS.forEach(cam => {
               if (videoRefs[cam].current) {
                 videoRefs[cam].current.play().catch(() => { })
@@ -1076,7 +1103,8 @@ export default function App() {
   const activeReviewSegs = inReview ? (reviewSegs[activeCam] || []) : []
   const displaySegments = inReview ? activeReviewSegs : liveSegments
   const displayLiveEdge = inReview ? (activeReviewSegs.length > 0 ? activeReviewSegs[activeReviewSegs.length - 1].end : null) : liveEdge
-  const displayBufferStart = inReview ? 0 : bufferStart
+  // Force the left edge of the timeline to perfectly lock to the 30-segment window, ignoring HLS.js's "zombie" cache
+  const displayBufferStart = inReview ? 0 : (liveSegments.length > 0 ? liveSegments[0].start : bufferStart)
   const displayBufferedEnd = inReview ? displayLiveEdge : bufferedEnd
 
   return (

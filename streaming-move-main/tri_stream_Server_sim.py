@@ -20,7 +20,6 @@ _parser = argparse.ArgumentParser()
 _parser.add_argument("--session", type=str, required=True, help="Session number, e.g. 1653")
 _parser.add_argument("--port", type=int, default=8000)
 _parser.add_argument("--speed", type=float, default=1.0)
-_parser.add_argument("--backup", action="store_true", help="Use local fallback folders if live ports fail")
 _parser.add_argument("--cam-port", type=int, default=8083, help="Port of the live camera HLS streams")
 _args = _parser.parse_args()
 
@@ -30,6 +29,8 @@ USE_BACKUP = True
 CAM_PORT = _args.cam_port
 
 IS_LIVE = False
+START_TIME = time.time()
+PRE_BUFFER = 12.0  # Matches sim_real.py fetching the last 3 segments on startup
 
 JETSON_HOST = "jetson@192.168.0.148"
 REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
@@ -54,6 +55,12 @@ server_state = {
     "hq":     {"media_sequence": 0, "window": [], "done": False, "current_index": 0, "is_gap": False},
 }
 
+_logged_segments = {
+    "source": {"loaded": set(), "removed": set()},
+    "sink": {"loaded": set(), "removed": set()},
+    "hq": {"loaded": set(), "removed": set()}
+}
+
 # Pre-computed lookup tables
 sync_maps = {
     "source_to_sink": {}, "source_to_hq": {},
@@ -67,7 +74,7 @@ seg_to_frame = { "source": {}, "sink": {}, "hq": {} } # seg_index -> cumulative_
 seg_frame_count = { "source": {}, "sink": {}, "hq": {} } # seg_index -> frame_count
 
 # Paths
-if False:
+if not USE_BACKUP:
     CAM_PATHS = {
         "source": f"http://192.168.0.111:{CAM_PORT}/live.m3u8",
         "hq":     f"http://192.168.0.112:{CAM_PORT}/live.m3u8",
@@ -101,18 +108,75 @@ _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
 _frame_idx_lock = threading.Lock()
 
 
-def _fetch_local(local_path, skip_lines=0):
+def _ssh_fetch(remote_path, skip_lines=0, delay_seconds=0):
+    if "hls_sync" in remote_path:
+        local_path = f"clips/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
+        frame_col = 0 # Source_Index is usually column 0
+    elif "hls_segment_frame_index.csv" in remote_path:
+        cam = "source"
+        for c in ["source", "sink", "hq"]:
+            if f"/{c}/" in remote_path or c in remote_path:
+                cam = c
+                break
+        local_path = f"clips/cv_output/reader/{cam}/hls_segment_frame_index.csv"
+        frame_col = 2 # cumulative_start_frame is column 2
+    elif "flight_shots" in remote_path:
+        local_path = f"clips/cv_output/correlation/flight_shots.csv"
+        frame_col = 2 # end_frame is usually column 2
+    else:
+        raise ValueError(f"Unknown simulated remote path: {remote_path}")
+
     if not os.path.exists(local_path):
-        raise FileNotFoundError(f"Local file not found at: {local_path}")
+        raise FileNotFoundError(f"Local simulated file not found at: {local_path}")
+
     with open(local_path, "r") as f:
         lines = f.readlines()
+
+    # Time-gate the lines based on simulated time, with optional delay
+    sim_time = ((time.time() - START_TIME) * SPEED) + PRE_BUFFER - delay_seconds
+    # Assuming the master camera is 'hq' at 30 fps
+    max_frame = int(sim_time * FPS)
+    
+    # We always yield the header if it exists (usually line 0 is header)
+    # But wait, flight_shots might not have header if skip_lines > 0?
+    # In python string, if we slice, we should filter by the frame number.
+    filtered_lines = []
+    for i, line in enumerate(lines):
+        if i == 0 and ("Index" in line or "frame" in line or "flight_id" in line):
+            filtered_lines.append(line)
+            continue
+        
+        parts = line.split(",")
+        if len(parts) > frame_col:
+            try:
+                frame_val = float(parts[frame_col])
+                if frame_val <= max_frame:
+                    filtered_lines.append(line)
+                else:
+                    break # Since it's chronologically ordered, we can stop
+            except ValueError:
+                filtered_lines.append(line) # Fallback for unparseable
+
+    if skip_lines == 0:
+        return "".join(filtered_lines)
+    else:
+        return "".join(filtered_lines[skip_lines + 1:])
+
+
+    if not os.path.exists(local_path):
+        raise FileNotFoundError(f"Local simulated file not found at: {local_path}")
+
+    with open(local_path, "r") as f:
+        lines = f.readlines()
+
     if skip_lines == 0:
         return "".join(lines)
     else:
         return "".join(lines[skip_lines + 1:])
 
+
 def _fetch_csv_lines(skip_lines=0):
-    return _fetch_local(f"clips/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv", skip_lines)
+    return _ssh_fetch(REMOTE_CSV_PATH, skip_lines)
 
 def _ingest_sync_rows(csv_text, has_header=True):
     """Parse csv_text and update sync_maps. Returns number of rows ingested."""
@@ -147,23 +211,343 @@ def sync_csv_poller():
     """
     global _sync_rows_loaded
     while True:
+        time.sleep(4)
         try:
-            cam, name, dst, latency = download_queue.get(timeout=1.0)
-        except queue.Empty:
+            new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded)
+            added = _ingest_sync_rows(new_text, has_header=(_sync_rows_loaded == 0))
+            if added:
+                _sync_rows_loaded += added
+                print(f"[sync poller] +{added} new rows (total {_sync_rows_loaded})")
+        except Exception as e:
+            print(f"[sync poller] fetch error: {e}")
+
+def _ingest_frame_idx_rows(cam, csv_text, has_header=True):
+    """Parse frame index CSV text and update seg_to_frame / frame_to_seg. Returns rows added."""
+    if not csv_text.strip():
+        return 0
+    # Columns: segment_index(0), seg_basename(1), cumulative_start_frame(2), frame_count(3)
+    if has_header:
+        df = pd.read_csv(io.StringIO(csv_text),
+                         usecols=["segment_index", "cumulative_start_frame", "frame_count"])
+    else:
+        df = pd.read_csv(io.StringIO(csv_text), header=None, usecols=[0, 2, 3],
+                         names=["segment_index", "cumulative_start_frame", "frame_count"])
+    count = 0
+    with _frame_idx_lock:
+        for _, row in df.iterrows():
+            seg_idx     = int(row["segment_index"])
+            start_frame = int(row["cumulative_start_frame"])
+            frame_count = int(row["frame_count"])
+            seg_to_frame[cam][seg_idx] = start_frame
+            seg_frame_count[cam][seg_idx] = frame_count
+            for f in range(start_frame, start_frame + frame_count):
+                frame_to_seg[cam][f] = (seg_idx, f - start_frame)
+            count += 1
+    return count
+
+def _ingest_flight_shots(csv_text, has_header=True):
+    if not csv_text.strip():
+        return 0
+    df = pd.read_csv(io.StringIO(csv_text)) if has_header else pd.read_csv(io.StringIO(csv_text), header=None)
+    # If header=None, we'd need to assign column names, but for simplicity we assume the header is fetched once 
+    # or we always fetch with headers if using pandas or just parse manually.
+    # Actually, pd.read_csv is tricky with skip_lines. Let's just use the same manual parsing or ensure it handles it.
+    # If has_header is False, we need to supply names. Let's assume the CSV always has the same columns.
+    # To keep it simple, let's just parse the whole file every time or just read the new lines.
+    # If reading new lines, we must supply the names:
+    col_names = ["flight_id","start_frame","end_frame","origin_track_ids","primary_origin_track_id",
+                 "crossed_sides","crossed_sides_confidence","likely_net_hit","ended_near_net",
+                 "counts_as_shot","counts_in_shot_stats","shot_id","dedupe_reason","reason_codes",
+                 "net_crossing_frame","landing_x","landing_y","landing_confidence","bounce_frame",
+                 "bounce_x","bounce_y","bounce_z","bounce_score","bounce_mode","bbox_source_x",
+                 "bbox_source_y","bbox_source_w","bbox_source_h","bbox_sink_x","bbox_sink_y",
+                 "bbox_sink_w","bbox_sink_h","bounce_hq_frame","window_frames"]
+    
+    if not has_header:
+        df = pd.read_csv(io.StringIO(csv_text), header=None, names=col_names)
+
+    def get_segs_offs_for_hq_frame(f_hq):
+        if pd.isna(f_hq):
+            return None, None
+        f_hq = int(f_hq)
+        src_frame = sync_maps["hq_to_source"].get(f_hq)
+        if src_frame is None:
+            if sync_maps["hq_to_source"]:
+                closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - f_hq))
+                src_frame = sync_maps["hq_to_source"][closest]
+            else:
+                src_frame = f_hq
+        
+        sink_frame = sync_maps["hq_to_sink"].get(f_hq)
+        if sink_frame is None:
+            if sync_maps["hq_to_sink"]:
+                closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - f_hq))
+                sink_frame = sync_maps["hq_to_sink"][closest]
+            else:
+                sink_frame = f_hq
+        
+        segs = {}
+        offs = {}
+        for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", f_hq)]:
+            if f_num in frame_to_seg[cam]:
+                c_seg, c_off = frame_to_seg[cam][f_num]
+                segs[cam] = c_seg
+                offs[cam] = c_off / FPS
+            else:
+                avg_fc = 120 if not seg_frame_count[cam] else list(seg_frame_count[cam].values())[-1]
+                segs[cam] = int(f_num / avg_fc)
+                offs[cam] = (f_num % avg_fc) / FPS
+        return segs, offs
+
+    count = 0
+    for _, row in df.iterrows():
+        if pd.isna(row.get('bounce_hq_frame')):
             continue
-        
-        time.sleep(latency)
-        
-        backup_src = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/{name}"
-        if os.path.exists(backup_src):
+        hq_frame = int(row['bounce_hq_frame'])
+        segs, offs = get_segs_offs_for_hq_frame(hq_frame)
+        start_segs, start_offs = get_segs_offs_for_hq_frame(row.get('start_frame'))
+        end_segs, end_offs = get_segs_offs_for_hq_frame(row.get('end_frame'))
+
+        metadata = {}
+        for k, v in row.items():
+            if pd.isna(v):
+                metadata[k] = None
+            else:
+                metadata[k] = v
+                
+        events_data.append({
+            "id": str(row['shot_id']),
+            "segments": segs,
+            "offsets": offs,
+            "start_segments": start_segs,
+            "start_offsets": start_offs,
+            "end_segments": end_segs,
+            "end_offsets": end_offs,
+            "hq_frame": hq_frame,
+            "metadata": metadata
+        })
+        count += 1
+    return count
+
+def frame_idx_poller():
+    """Background thread: polls each camera's frame index CSV every 2 s for new segments."""
+    global _frame_idx_rows
+    while True:
+        time.sleep(2)
+        for cam in ["source", "sink", "hq"]:
             try:
-                temp_dst = dst + ".tmp"
-                shutil.copy2(backup_src, temp_dst)
-                os.rename(temp_dst, dst)
-                print(f"[master worker] Simulated download {name}")
+                text = _ssh_fetch(FRAME_IDX_PATHS[cam], skip_lines=_frame_idx_rows[cam])
+                added = _ingest_frame_idx_rows(cam, text, has_header=(_frame_idx_rows[cam] == 0))
+                if added:
+                    _frame_idx_rows[cam] += added
+                    print(f"[frame idx poller] {cam} +{added} segs (total {_frame_idx_rows[cam]})")
             except Exception as e:
-                print(f"Error copying {name}: {e}")
+                print(f"[frame idx poller] {cam} error: {e}")
+
+def flight_shots_poller():
+    """Background thread: polls flight shots CSV every 2 s for new events."""
+    global _flight_shots_rows_loaded
+    while True:
+        time.sleep(2)
+        try:
+            text = _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=_flight_shots_rows_loaded, delay_seconds=10.0)
+            added = _ingest_flight_shots(text, has_header=(_flight_shots_rows_loaded == 0))
+            if added:
+                _flight_shots_rows_loaded += added
+                print(f"[flight shots poller] +{added} events (total {_flight_shots_rows_loaded})")
+        except Exception as e:
+            # print(f"[flight shots poller] error: {e}")
+            pass
+
+def load_data():
+    global events_data, _sync_rows_loaded
+    print("Loading CSVs into memory for O(1) lookups...")
+
+    # 1. Load sync mapping from remote Jetson
+    print(f"  Fetching remote sync CSV: {REMOTE_CSV_PATH}")
+    csv_text = _fetch_csv_lines(skip_lines=0)
+    _sync_rows_loaded = _ingest_sync_rows(csv_text, has_header=True)
+    print(f"  Loaded {_sync_rows_loaded} sync rows from remote.")
+
+    # 2. Load frame-to-segment index from remote Jetson
+    for cam in ["source", "sink", "hq"]:
+        print(f"  Fetching frame index [{cam}] from remote...")
+        text = _ssh_fetch(FRAME_IDX_PATHS[cam])
+        _frame_idx_rows[cam] = _ingest_frame_idx_rows(cam, text, has_header=True)
+        print(f"  [{cam}] {_frame_idx_rows[cam]} segments, {len(frame_to_seg[cam])} frames indexed.")
+                
+    # 3. Load events
+    global _flight_shots_rows_loaded
+    print(f"  Fetching remote flight shots CSV: {REMOTE_FLIGHT_SHOTS_PATH}")
+    try:
+        csv_text = _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=0)
+        _flight_shots_rows_loaded = _ingest_flight_shots(csv_text, has_header=True)
+        print(f"  Loaded {_flight_shots_rows_loaded} events from remote.")
+    except Exception as e:
+        print(f"  Could not load remote flight shots (will poll later). Error: {e}")
         
+    print("Data loading complete.")
+
+def fetch_playlist_content(path_or_url):
+    if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
+        req = urllib.request.Request(path_or_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            return response.read().decode('utf-8')
+    else:
+        with open(path_or_url) as f:
+            return f.read()
+
+def parse_playlist(path_or_url):
+    segments = []
+    has_endlist = False
+    try:
+        content = fetch_playlist_content(path_or_url)
+        lines = content.splitlines()
+    except Exception as e:
+        print(f"[parse_playlist] Error reading {path_or_url}: {e}")
+        return segments, has_endlist
+        
+    i = 0
+    while i < len(lines):
+        if lines[i].startswith("#EXT-X-ENDLIST"):
+            has_endlist = True
+            i += 1
+        elif lines[i].startswith("#EXTINF:"):
+            duration = float(lines[i].split(":")[1].rstrip(","))
+            seg = lines[i + 1].strip()
+            segments.append((duration, seg))
+            i += 2
+        else:
+            i += 1
+    return segments, has_endlist
+
+def write_playlist(cam, window, media_sequence, done=False):
+    import math
+    serve_dir = SERVE_DIRS[cam]
+    playlist_path = os.path.join(serve_dir, "live.m3u8")
+    
+    target_dur = 6
+    for item in window:
+        if isinstance(item, dict):
+            target_dur = max(target_dur, math.ceil(item["dur_global"]))
+            
+    lines = [
+        "#EXTM3U",
+        "#EXT-X-VERSION:4",
+        f"#EXT-X-TARGETDURATION:{target_dur}",
+        f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
+        "#EXT-X-ALLOW-CACHE:NO",
+        "#EXT-X-START:TIME-OFFSET=-4.0"
+    ]
+    for item in window:
+        if isinstance(item, str) and item == "#EXT-X-DISCONTINUITY":
+            lines.append(item)
+        elif isinstance(item, dict):
+            dur = item["dur_global"]
+            orig_dur = item.get("orig_durs", {}).get(cam, dur) if "orig_durs" in item else item.get("orig_dur", dur)
+            name = item["name"]
+            if name:
+                cam_path = CAM_PATHS[cam]
+                if cam_path.startswith("http://") or cam_path.startswith("https://"):
+                    base_url = cam_path.rsplit('/', 1)[0]
+                    name = f"{base_url}/{name}"
+            
+            if name and orig_dur > 0 and (dur - orig_dur) > 0.5:
+                # Add original duration and segment
+                lines.append(f"#EXTINF:{orig_dur:.6f},")
+                lines.append(name)
+                # Explicit gap to cover the rest of the time
+                lines.append("#EXT-X-DISCONTINUITY")
+                lines.append(f"#EXTINF:{(dur - orig_dur):.6f},")
+                lines.append("#EXT-X-GAP")
+                lines.append("gap.ts")
+            elif name is not None:
+                lines.append(f"#EXTINF:{dur:.6f},")
+                lines.append(name)
+            else:
+                # Name is None (segment is missing/camera offline)
+                lines.append("#EXT-X-DISCONTINUITY")
+                lines.append(f"#EXTINF:{dur:.6f},")
+                lines.append("#EXT-X-GAP")
+                lines.append("gap.ts")
+    if done:
+        lines.append("#EXT-X-ENDLIST")
+        
+    temp_path = playlist_path + ".tmp"
+    with open(temp_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.rename(temp_path, playlist_path)
+
+_active_downloads = set()
+_downloads_lock = threading.Lock()
+
+def get_global_time(cam, frame):
+    if cam == "source":
+        return frame / FPS
+    map_key = f"{cam}_to_source"
+    
+    with _sync_lock:
+        if not sync_maps[map_key]:
+            return frame / FPS
+            
+        if frame in sync_maps[map_key]:
+            return sync_maps[map_key][frame] / FPS
+            
+        keys = sorted(sync_maps[map_key].keys())
+        import bisect
+        idx = bisect.bisect_left(keys, frame)
+        if idx == 0:
+            ref_f = keys[0]
+            diff = frame - ref_f
+            return (sync_maps[map_key][ref_f] + diff) / FPS
+        elif idx == len(keys):
+            ref_f = keys[-1]
+            diff = frame - ref_f
+            return (sync_maps[map_key][ref_f] + diff) / FPS
+        else:
+            f1 = keys[idx-1]
+            f2 = keys[idx]
+            s1 = sync_maps[map_key][f1]
+            s2 = sync_maps[map_key][f2]
+            ratio = (frame - f1) / (f2 - f1)
+            mapped_frame = s1 + ratio * (s2 - s1)
+            return mapped_frame / FPS
+
+def get_segment_start_frame(cam, abs_idx):
+    with _frame_idx_lock:
+        if abs_idx in seg_to_frame[cam]:
+            return seg_to_frame[cam][abs_idx]
+        keys = sorted(seg_to_frame[cam].keys())
+        if not keys:
+            return abs_idx * 120
+        closest_seg = min(keys, key=lambda x: abs(x - abs_idx))
+        fc = seg_frame_count[cam].get(closest_seg, 120)
+        return seg_to_frame[cam][closest_seg] + (abs_idx - closest_seg) * fc
+
+def parse_abs_seg_idx(name):
+    if not name:
+        return None
+    import re
+    base = os.path.basename(name)
+    m = re.search(r'(\d+)\.ts$', base)
+    if m:
+        return int(m.group(1))
+    return None
+
+def download_segment_file(src_url, dst, cam, name):
+    try:
+        if os.path.exists(dst):
+            return
+        req = urllib.request.Request(src_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            temp_dst = dst + ".tmp"
+            with open(temp_dst, "wb") as f_dst:
+                f_dst.write(response.read())
+            os.rename(temp_dst, dst)
+        print(f"[master worker] Downloaded segment {name} from {src_url}")
+    except Exception as e:
+        print(f"[master worker] Error downloading {src_url}: {e}")
+    finally:
         with _downloads_lock:
             _active_downloads.discard(dst)
 
@@ -317,7 +701,7 @@ def master_stream_worker():
     
     start_time = time.time()
     last_time = start_time
-    target_sim_time = 0.0
+    target_sim_time = max(0.0, total_duration - 6.0) if IS_LIVE else 0.0
     
     if IS_LIVE and unified_steps:
         # Fast-forward to only fetch the last 3 segments on startup to avoid massive backlog fetching
@@ -529,6 +913,7 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/clips_serve", StaticFiles(directory="clips/sync_reports"), name="clips_serve")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Mount static files for the streams (Port 8000 will serve them all, much cleaner than 3 separate ports!)
@@ -542,71 +927,94 @@ import math
 
 @app.get("/stream/{cam}/live.m3u8")
 def get_live_m3u8(cam: str):
-    if cam not in server_state:
-        return PlainTextResponse("Camera not found", status_code=404)
-        
-    window = server_state[cam].get("window", [])
-    media_sequence = server_state[cam].get("media_sequence", 0)
-    done = server_state[cam].get("done", False)
+    from fastapi.responses import PlainTextResponse
+    import os
+    import time
     
-    target_dur = 6
-    for item in window:
-        if isinstance(item, dict):
-            target_dur = max(target_dur, math.ceil(item.get("dur_global", 0)))
-            
-    lines = [
-        "#EXTM3U",
-        "#EXT-X-VERSION:4",
-        f"#EXT-X-TARGETDURATION:{target_dur}",
-        f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
-        "#EXT-X-ALLOW-CACHE:NO",
-        "#EXT-X-START:TIME-OFFSET=-4.0"
-    ]
-    for item in window:
-        if isinstance(item, str) and item == "#EXT-X-DISCONTINUITY":
-            lines.append(item)
-        elif isinstance(item, dict):
-            dur = item["dur_global"]
-            orig_dur = item.get("orig_durs", {}).get(cam, dur) if "orig_durs" in item else item.get("orig_dur", dur)
-            name = item["name"]
-            
-            if name:
-                cam_path = CAM_PATHS[cam]
-                if cam_path.startswith("http://") or cam_path.startswith("https://"):
-                    base_url = cam_path.rsplit('/', 1)[0]
-                    name = f"{base_url}/{name}"
-                else:
-                    dst = os.path.join(SERVE_DIRS[cam], name)
-            
-            if name and orig_dur > 0 and (dur - orig_dur) > 0.5:
-                # Add original duration and segment
-                lines.append(f"#EXTINF:{orig_dur:.6f},")
-                lines.append(name)
-                # Explicit gap to cover the rest of the time
-                lines.append("#EXT-X-DISCONTINUITY")
-                lines.append(f"#EXTINF:{(dur - orig_dur):.6f},")
-                lines.append("#EXT-X-GAP")
-                lines.append("gap.ts")
-            elif name is not None:
-                lines.append(f"#EXTINF:{dur:.6f},")
-                lines.append(name)
-            else:
-                # Name is None (segment is missing/camera offline)
-                lines.append("#EXT-X-DISCONTINUITY")
-                lines.append(f"#EXTINF:{dur:.6f},")
-                lines.append("#EXT-X-GAP")
-                lines.append("gap.ts")
-                
-    if done:
-        lines.append("#EXT-X-ENDLIST")
+    playlist_path = f"clips/sync_reports/ts_segments_{cam}/{SESSION_ID}/playlist.m3u8"
+    if not os.path.exists(playlist_path):
+        print(f"[STRICT ENFORCEMENT] React tried to fetch live.m3u8 for {cam} before simulation started. DENIED (404)!")
+        return PlainTextResponse("Playlist not found", status_code=404)
         
-    return PlainTextResponse("\n".join(lines) + "\n")
+    sim_time = ((time.time() - START_TIME) * SPEED) + PRE_BUFFER
+    
+    with open(playlist_path, "r") as f:
+        lines = f.read().splitlines()
+        
+    header_lines = []
+    segments = []
+    
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("#EXTINF"):
+            if i + 1 < len(lines):
+                seg_line = lines[i+1]
+                duration = float(line.split(":")[1].rstrip(","))
+                segments.append((line, seg_line, duration))
+                i += 2
+                continue
+        elif line.startswith("#EXT-X-ENDLIST"):
+            i += 1
+            continue
+        else:
+            header_lines.append(line)
+        i += 1
+        
+    # Only expose segments up to sim_time based on cumulative duration
+    exposed_segments = []
+    cumulative = 0.0
+    for inf, seg, dur in segments:
+        if cumulative <= sim_time:
+            exposed_segments.append((inf, seg))
+        else:
+            break
+        cumulative += dur
+        
+    if not exposed_segments and segments:
+        exposed_segments = [(segments[0][0], segments[0][1])]
+    
+    # 30 segment sliding window
+    window_segments = exposed_segments[-30:]
+    window_seg_names = {seg for inf, seg in window_segments}
+    
+    for inf, seg in exposed_segments:
+        if seg in window_seg_names:
+            if seg not in _logged_segments[cam]["loaded"]:
+                print(f"[EVICTION LOGIC] Segment {seg} of {cam} loaded in server m3u8 playlist")
+                _logged_segments[cam]["loaded"].add(seg)
+        else:
+            if seg not in _logged_segments[cam]["removed"]:
+                print(f"[EVICTION LOGIC] Segment {seg} of {cam} removed from server m3u8 playlist (max 30 segments)")
+                _logged_segments[cam]["removed"].add(seg)
+    
+    # Rebuild m3u8
+    out_lines = header_lines[:]
+    
+    # Update sequence number
+    seq_idx = -1
+    for idx, line in enumerate(out_lines):
+        if line.startswith("#EXT-X-MEDIA-SEQUENCE"):
+            seq_idx = idx
+            break
+            
+    seq_num = max(0, len(exposed_segments) - 30)
+    if seq_idx != -1:
+        out_lines[seq_idx] = f"#EXT-X-MEDIA-SEQUENCE:{seq_num}"
+    else:
+        out_lines.append(f"#EXT-X-MEDIA-SEQUENCE:{seq_num}")
+        
+    for inf, seg in window_segments:
+        out_lines.append(inf)
+        out_lines.append(seg)
+    return PlainTextResponse("\n".join(out_lines), media_type="application/vnd.apple.mpegurl")
+
 
 from fastapi.responses import FileResponse
 
 @app.get("/stream/{cam}/{segment}.ts")
 def serve_segment(cam: str, segment: str):
-    dst = os.path.join(SERVE_DIRS[cam], f"{segment}.ts")
+    dst = os.path.join("clips/sync_reports", f"ts_segments_{cam}", str(SESSION_ID), f"{segment}.ts")
     if not os.path.exists(dst):
         print(f"[STRICT ENFORCEMENT] React tried to fetch {cam}/{segment}.ts before Wi-Fi fetch completed. DENIED (404)!")
         return PlainTextResponse("File not yet downloaded from Pi", status_code=404)
