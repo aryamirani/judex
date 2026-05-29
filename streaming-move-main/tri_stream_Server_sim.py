@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#version1 is ready - review mode shifting happens, other than that no other problem.
 import os
 import io
 import time
