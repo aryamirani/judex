@@ -60,6 +60,7 @@ export default function App() {
 
   // UI State for Active Camera
   const [currentTime, setCurrentTime] = useState(0)
+  const [playbackRate, setPlaybackRate] = useState(1.0)
   const [liveEdge, setLiveEdge] = useState(null)
   const [bufferStart, setBufferStart] = useState(null)
   const [bufferedEnd, setBufferedEnd] = useState(null)
@@ -585,6 +586,7 @@ export default function App() {
     // Clear Review UI timeline but keep Live DVR history intact!
     setReviewSegs({ source: [], sink: [], hq: [] })
     setSyncMap(null)
+    setPlaybackRate(1.0)
     modeRef.current = 'live'
     setMode('live')
 
@@ -836,6 +838,15 @@ export default function App() {
       }
     } catch (e) { console.warn('doLiveSync failed', e) }
   }, [])
+
+  // Auto-pause when entering Review mode, and apply playback rate
+  useEffect(() => {
+    CAMERAS.forEach(cam => {
+      if (videoRefs[cam].current) {
+        videoRefs[cam].current.playbackRate = playbackRate
+      }
+    })
+  }, [playbackRate])
 
   // Initial sync 2s after mount (lets manifests parse), then every 4s
   useEffect(() => {
@@ -1111,7 +1122,7 @@ export default function App() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0a0a0a', color: '#fff' }}>
       <header style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{ fontWeight: 'bold', letterSpacing: '2px', fontSize: '18px' }}>TRIPLE-CAM REVIEW</span>
+          <span style={{ fontWeight: 'bold', letterSpacing: '2px', fontSize: '18px' }}>Judex AI</span>
           <CameraSelector active={activeCam} onSwitch={handleSwitchCam} />
         </div>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -1178,6 +1189,8 @@ export default function App() {
             segments={displaySegments}
             events={mappedEvents}
             onSeek={handleSeek}
+            playbackRate={playbackRate}
+            onPlaybackRateChange={setPlaybackRate}
             onEventSelect={setSelectedEvent}
             mode={mode}
             isPlaying={isPlaying}
@@ -1185,7 +1198,16 @@ export default function App() {
           />
         </div>
 
-        <EventPanel event={selectedEvent} activeCam={activeCam} onClose={() => setSelectedEvent(null)} />
+        <EventPanel 
+          event={selectedEvent} 
+          events={mappedEvents}
+          activeCam={activeCam} 
+          onNavigate={(ev) => {
+            setSelectedEvent(ev)
+            handleSeek(ev.time, true)
+          }}
+          onClose={() => setSelectedEvent(null)} 
+        />
       </div>
     </div>
   )

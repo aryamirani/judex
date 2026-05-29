@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 
-export default function EventPanel({ event, activeCam, onClose }) {
+export default function EventPanel({ event, events = [], activeCam, onNavigate, onClose }) {
   const v1 = useRef(null);
   const v2 = useRef(null);
   const v3 = useRef(null);
@@ -23,6 +23,14 @@ export default function EventPanel({ event, activeCam, onClose }) {
       }
     });
     setPlaying(isNowPlaying);
+  };
+
+  const currentIndex = events.findIndex(ev => ev.id === event?.id);
+  const handlePrev = () => {
+    if (currentIndex > 0 && onNavigate) onNavigate(events[currentIndex - 1]);
+  };
+  const handleNext = () => {
+    if (currentIndex < events.length - 1 && onNavigate) onNavigate(events[currentIndex + 1]);
   };
 
   const handleSeek = (e) => {
@@ -101,12 +109,24 @@ export default function EventPanel({ event, activeCam, onClose }) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <button onClick={handlePrev} disabled={currentIndex <= 0} style={{
+          background: 'rgba(255,255,255,0.1)', color: currentIndex <= 0 ? 'rgba(255,255,255,0.2)' : '#fff', border: 'none',
+          padding: '8px 16px', borderRadius: '4px', cursor: currentIndex <= 0 ? 'default' : 'pointer', fontWeight: 'bold'
+        }}>
+          PREV
+        </button>
         <button onClick={handlePlayPause} style={{
           background: 'var(--amber, #f5a623)', color: '#000', border: 'none',
           width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center'
         }}>
           {playing ? '⏸' : '▶'}
+        </button>
+        <button onClick={handleNext} disabled={currentIndex >= events.length - 1 || currentIndex === -1} style={{
+          background: 'rgba(255,255,255,0.1)', color: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'rgba(255,255,255,0.2)' : '#fff', border: 'none',
+          padding: '8px 16px', borderRadius: '4px', cursor: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'default' : 'pointer', fontWeight: 'bold'
+        }}>
+          NEXT
         </button>
         <input
           type="range" min="0" max={duration} step="0.01" value={progress}

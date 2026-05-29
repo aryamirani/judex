@@ -2,9 +2,9 @@ import React from 'react';
 
 export default function CameraSelector({ active, onSwitch }) {
   const cameras = [
-    { id: 'source', label: 'SOURCE', color: 'var(--amber, #f5a623)' },
-    { id: 'sink', label: 'SINK', color: '#4a90e2' },
-    { id: 'hq', label: 'HQ', color: '#50e3c2' }
+    { id: 'source', label: 'Cam 1 - SOURCE', color: 'var(--amber, #f5a623)' },
+    { id: 'sink', label: 'Cam 2 - SINK', color: '#4a90e2' },
+    { id: 'hq', label: 'Cam 3 - HQ', color: '#50e3c2' }
   ];
 
   return (

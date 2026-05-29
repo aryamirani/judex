@@ -16,7 +16,9 @@ export default function SeekBar({
   onEventSelect,
   mode,
   isPlaying,
-  onTogglePlay
+  onTogglePlay,
+  playbackRate,
+  onPlaybackRateChange
 }) {
   const trackRef = useRef(null)
   const dragging = useRef(false)
@@ -132,22 +134,18 @@ export default function SeekBar({
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span>DVR Window · last 30 segments</span>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const referenceTime = internalEventTime !== null ? internalEventTime : currentTime;
-                const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
-                const prevEvents = validEvents.filter(ev => ev.time < referenceTime - 0.5).sort((a, b) => b.time - a.time);
-                if (prevEvents.length > 0) {
-                  if (mode === 'review' && onSeek) onSeek(prevEvents[0].time);
-                  setInternalEventTime(prevEvents[0].time);
-                  if (onEventSelect) onEventSelect(prevEvents[0]);
-                }
-              }}
-              style={{ background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', padding: '2px 6px' }}
-            >
-              ◀ PREV
-            </button>
+            {mode === 'review' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // scrub backwards 1 frame (assuming 60fps)
+                  if (onSeek) onSeek(activeTime - (1/60), true);
+                }}
+                style={{ background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', padding: '2px 6px' }}
+              >
+                ◀ PREV
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -167,22 +165,31 @@ export default function SeekBar({
             >
               {isPlaying ? 'PAUSE' : 'PLAY'}
             </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const referenceTime = internalEventTime !== null ? internalEventTime : activeTime;
-                const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : activeTime));
-                const nextEvents = validEvents.filter(ev => ev.time > referenceTime + 0.5).sort((a, b) => a.time - b.time);
-                if (nextEvents.length > 0) {
-                  if (mode === 'review' && onSeek) onSeek(nextEvents[0].time);
-                  setInternalEventTime(nextEvents[0].time);
-                  if (onEventSelect) onEventSelect(nextEvents[0]);
-                }
-              }}
-              style={{ background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', padding: '2px 6px' }}
-            >
-              NEXT ▶
-            </button>
+            {mode === 'review' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // scrub forwards 1 frame (assuming 60fps)
+                  if (onSeek) onSeek(activeTime + (1/60), true);
+                }}
+                style={{ background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', padding: '2px 6px' }}
+              >
+                NEXT ▶
+              </button>
+            )}
+            {mode === 'review' && (
+              <select
+                value={playbackRate}
+                onChange={(e) => onPlaybackRateChange && onPlaybackRateChange(parseFloat(e.target.value))}
+                style={{
+                  background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', padding: '2px 6px', marginLeft: '8px'
+                }}
+              >
+                <option value={0.25}>0.25x</option>
+                <option value={0.5}>0.5x</option>
+                <option value={1.0}>1x</option>
+              </select>
+            )}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
