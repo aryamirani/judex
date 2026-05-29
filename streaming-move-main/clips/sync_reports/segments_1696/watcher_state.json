@@ -1,0 +1,13 @@
+{
+  "source_rows_consumed": 97902,
+  "hq_rows_consumed": 97680,
+  "sink_rows_consumed": 97947,
+  "source_epoch_ns": 11984611694000,
+  "source_last_segment": 814,
+  "hq_epoch_ns": 11986233287000,
+  "hq_last_segment": 812,
+  "sink_epoch_ns": 11986145196000,
+  "sink_last_segment": 814,
+  "sync_sink_hq_committed": 97946,
+  "sync_source_committed": 97901
+}

@@ -8,7 +8,7 @@ import EventPanel from './components/EventPanel.jsx'
 const REVIEW_BUFFER_SIZE = 30
 const LIVE_THRESHOLD = 2
 
-const LIVE_CONFIG = { 
+const LIVE_CONFIG = {
   enableWorker: true,
   lowLatencyMode: true,
   backBufferLength: 90,
@@ -24,8 +24,8 @@ const CAMERAS = ['source', 'sink', 'hq']
 const backendUrl = typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:8000` : 'http://localhost:8000';
 const CAM_STREAM_URLS = {
   source: `${backendUrl}/stream/source/live.m3u8`,
-  sink:   `${backendUrl}/stream/sink/live.m3u8`,
-  hq:     `${backendUrl}/stream/hq/live.m3u8`,
+  sink: `${backendUrl}/stream/sink/live.m3u8`,
+  hq: `${backendUrl}/stream/hq/live.m3u8`,
 }
 
 function buildReviewPlaylist(segments, blobUrls) {
@@ -54,7 +54,7 @@ export default function App() {
   const [mode, setMode] = useState('live')
   const [status, setStatus] = useState('connecting')
   const [events, setEvents] = useState([])
-  
+
   // UI State for Active Camera
   const [currentTime, setCurrentTime] = useState(0)
   const [liveEdge, setLiveEdge] = useState(null)
@@ -165,7 +165,7 @@ export default function App() {
       const getPlaybackTime = (segs, offs) => {
         const segNum = segs?.[activeCam] ?? 0
         const offset = offs?.[activeCam] ?? 0
-        
+
         // 1. Try to use exact historical start time to prevent jitter when anchor drops out of buffer
         const exactStart = segmentStartTimesRef.current?.[activeCam]?.[segNum]
         if (exactStart !== undefined) {
@@ -176,8 +176,8 @@ export default function App() {
         const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
         if (matchingSeg) {
           return matchingSeg.start + offset
-        } 
-        
+        }
+
         // 3. Last resort: estimate from anchor
         return anchor.start + (segNum - (anchor.absSegIdx ?? anchor.sn)) * 6.0 + offset
       }
@@ -195,24 +195,24 @@ export default function App() {
     if (!syncMap) return
     const activeList = reviewSegs[activeCam]
     if (!activeList || activeList.length === 0) return
-    
+
     const activeSeg = activeList.find(s => activeTime >= s.start && activeTime <= s.end)
     if (!activeSeg) return
-    
+
     let sourceOffsetInSeg = activeTime - activeSeg.start
     const sn = activeSeg.absSegIdx
-    
+
     // Normalize offset back to source baseline
     const activeMapping = syncMap[sn]?.[activeCam]
     if (activeMapping) {
       sourceOffsetInSeg -= activeMapping.offset
     }
-    
+
     CAMERAS.forEach(cam => {
       if (cam === activeCam) return
       const mapping = syncMap[sn]?.[cam]
       if (!mapping) return
-      
+
       const targetList = reviewSegs[cam]
       if (!targetList) return
       const targetSeg = targetList.find(s => s.absSegIdx === mapping.segment)
@@ -244,13 +244,13 @@ export default function App() {
         return cDist < pDist ? curr : prev
       })
     }
-    
+
     if (!aFrag) return
     const aUrl = aFrag.relurl || aFrag.url || ''
     const aMatch = aUrl.match(/seg_(\d+)\.ts/)
     const sn = aMatch ? parseInt(aMatch[1], 10) : aFrag.sn
     const offsetInSeg = Math.max(0, activeTime - aFrag.start)
-    
+
     CAMERAS.forEach(targetCam => {
       if (targetCam === activeCam) return
       const targetVideo = videoRefs[targetCam].current
@@ -268,7 +268,7 @@ export default function App() {
             baseStart = tFrag.start
           }
         }
-        
+
         if (baseStart !== null) {
           const targetTime = baseStart + mapping.offset + offsetInSeg
           if (Math.abs(targetVideo.currentTime - targetTime) > 0.15) {
@@ -303,16 +303,16 @@ export default function App() {
           edge = hls?.liveSyncPosition || 0;
         }
         edge += dt; // Smoothly advance the live edge without relying on HLS.js when paused
-        
+
         // Hls.js liveSyncPosition inherently jumps by 6 seconds every time a new chunk is appended.
         // To prevent the UI red line from jumping or sprinting (which visually breaks the playhead position),
         // we only snap if it has drifted catastrophically (> 10s). Otherwise, we let dt glide it perfectly smoothly.
         if (hls?.liveSyncPosition && !video.paused && !video.seeking) {
-           if (Math.abs(edge - hls.liveSyncPosition) > 10.0) {
-              edge = hls.liveSyncPosition;
-           }
+          if (Math.abs(edge - hls.liveSyncPosition) > 10.0) {
+            edge = hls.liveSyncPosition;
+          }
         }
-        
+
         setLiveEdge(edge);
         liveEdgeRef.current = edge;
       }
@@ -345,9 +345,9 @@ export default function App() {
         const ct = v.currentTime
         const details = h.levels?.[h.currentLevel]?.details
         if (details) {
-          const frag = details.fragments.find(f => f.start <= ct && f.start + f.duration >= ct + 0.1) || 
-                       details.fragments.find(f => Math.abs(f.start - ct) < 1.0)
-          
+          const frag = details.fragments.find(f => f.start <= ct && f.start + f.duration >= ct + 0.1) ||
+            details.fragments.find(f => Math.abs(f.start - ct) < 1.0)
+
           if (frag) {
             const url = frag.relurl || frag.url || ''
             const isGap = url.includes(`gap_${cam}.ts`)
@@ -359,7 +359,7 @@ export default function App() {
         }
       }
     })
-    
+
     if (updatedGap) {
       setGapState(newGap)
     }
@@ -385,7 +385,7 @@ export default function App() {
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setStatus('playing')
         if (cam === activeCamRef.current) {
-          video.play().catch(() => {})
+          video.play().catch(() => { })
         }
       })
 
@@ -435,18 +435,19 @@ export default function App() {
         const url = data.frag.relurl || data.frag.url || ''
         const match = url.match(/seg_(\d+)\.ts/)
         const absSegIdx = match ? parseInt(match[1], 10) : data.frag.sn
-        
+
         if (!segmentStartTimesRef.current[cam]) {
           segmentStartTimesRef.current[cam] = {}
         }
-        
+
         const existing = rollingBuffers[cam].current
         const existingSeg = existing.find(s => s.absSegIdx === absSegIdx)
-        
+
         if (existingSeg) {
           const delta = data.frag.start - existingSeg.originalStart
           // Ignore massive deltas (e.g. from HLS.js seeking far back and hitting a discontinuity)
-          if (Math.abs(delta) > 0.1 && Math.abs(delta) < 5.0) { console.log('SHIFTING TIMELINE DELTA:', delta);
+          if (Math.abs(delta) > 0.1 && Math.abs(delta) < 5.0) {
+            console.log('SHIFTING TIMELINE DELTA:', delta);
             rollingBuffers[cam].current = existing.map(s => ({
               ...s,
               originalStart: s.originalStart + delta
@@ -478,7 +479,7 @@ export default function App() {
             .sort((a, b) => a.absSegIdx - b.absSegIdx)
             .slice(-REVIEW_BUFFER_SIZE)
           rollingBuffers[cam].current = updated
-          
+
           if (cam === activeCamRef.current) {
             setLiveSegments(updated.map(s => ({
               sn: s.sn,
@@ -515,17 +516,17 @@ export default function App() {
       blobUrlsRef.current.push(...fragUrls, m3u8Url)
 
       hlsRefs[cam].current?.destroy()
-      
+
       const hls = new Hls(REVIEW_CONFIG)
       hlsRefs[cam].current = hls
       hls.loadSource(m3u8Url)
       hls.attachMedia(videoRefs[cam].current)
-      
+
       hls.once(Hls.Events.MANIFEST_PARSED, () => {
         videoRefs[cam].current.currentTime = 0
         videoRefs[cam].current.pause()
       })
-      
+
       let t = 0
       newReviewSegs[cam] = snapshot.map(s => {
         const seg = {
@@ -555,7 +556,7 @@ export default function App() {
         .then(data => setSyncMap(data))
         .catch(e => console.error('Failed to fetch sync map', e))
     }
-    
+
     setLiveEdge(null)
     setBufferStart(null)
     setBufferedEnd(null)
@@ -572,13 +573,13 @@ export default function App() {
     })
     blobUrlsRef.current.forEach(URL.revokeObjectURL)
     blobUrlsRef.current = []
-    
+
     // Clear Review UI timeline but keep Live DVR history intact!
     setReviewSegs({ source: [], sink: [], hq: [] })
     setSyncMap(null)
     modeRef.current = 'live'
     setMode('live')
-    
+
     // Force active camera to live edge when rebuilding live instances
     setLiveEdge(null)
     initLive()
@@ -596,7 +597,7 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    
+
     const pollPlaylists = async () => {
       for (const cam of CAMERAS) {
         try {
@@ -604,12 +605,12 @@ export default function App() {
           const res = await fetch(playlistUrl);
           if (!res.ok) continue;
           const text = await res.text();
-          
+
           // Parse playlist
           const lines = text.split('\n');
           let mediaSequence = 0;
           const playlistSegs = [];
-          
+
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
             if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
@@ -618,13 +619,13 @@ export default function App() {
               const duration = parseFloat(line.split(':')[1].split(',')[0]);
               let name = lines[i + 1]?.trim();
               let offset = 1;
-              
+
               // Skip the #EXT-X-GAP tag if it's there
               if (name === '#EXT-X-GAP') {
                 name = lines[i + 2]?.trim();
                 offset = 2;
               }
-              
+
               if (name && name !== 'gap.ts') {
                 const match = name.match(/seg_(\d+)\.ts/)
                 const absSegIdx = match ? parseInt(match[1], 10) : (mediaSequence + playlistSegs.length);
@@ -633,16 +634,16 @@ export default function App() {
               i += offset;
             }
           }
-          
+
           if (!active) return;
-          
+
           // Compute start times for all segments in this playlist
           for (let i = 0; i < playlistSegs.length; i++) {
             const seg = playlistSegs[i];
             if (segmentStartTimesRef.current[cam][seg.absSegIdx] !== undefined) {
               continue;
             }
-            
+
             // Try to compute from previous segment in playlist
             if (i > 0) {
               const prevSeg = playlistSegs[i - 1];
@@ -652,7 +653,7 @@ export default function App() {
                 continue;
               }
             }
-            
+
             // Try to find closest defined segment in the map
             const keys = Object.keys(segmentStartTimesRef.current[cam]).map(Number).sort((a, b) => a - b);
             if (keys.length > 0) {
@@ -663,18 +664,18 @@ export default function App() {
               segmentStartTimesRef.current[cam][seg.absSegIdx] = seg.absSegIdx * 6.0;
             }
           }
-          
+
           // Now check which segments are missing from rollingBuffers
           const currentBuffer = rollingBuffers[cam].current;
           const existingAbsSegs = new Set(currentBuffer.map(s => s.absSegIdx));
-          
+
           for (const seg of playlistSegs) {
             // Ignore historical segments that were thrown away by a hard reset
             if (seg.absSegIdx < cutoffAbsSegIdxRef.current[cam]) continue;
-            
+
             if (existingAbsSegs.has(seg.absSegIdx)) continue;
             if (downloadingSegmentsRef.current[cam].has(seg.absSegIdx)) continue;
-            
+
             // Skip manual fetch for the active camera ONLY IF the video is actively playing
             // and the segment is recent enough that Hls.js is likely about to fetch it natively.
             if (cam === activeCamRef.current && modeRef.current === 'live') {
@@ -688,23 +689,23 @@ export default function App() {
                 }
               }
             }
-            
+
             // console.log(`[DVR Fetcher] Manually fetching BACKGROUND segment ${cam}/${seg.absSegIdx}`);
-            
+
             // Start downloading!
             downloadingSegmentsRef.current[cam].add(seg.absSegIdx);
-            
+
             // Construct absolute URL for segment
             const baseUrl = playlistUrl.substring(0, playlistUrl.lastIndexOf('/'));
             const segUrl = seg.name.startsWith('http') ? seg.name : `${baseUrl}/${seg.name}`;
-            
+
             fetch(segUrl)
               .then(async (segRes) => {
                 if (!segRes.ok) throw new Error(`HTTP ${segRes.status}`);
                 const arrayBuffer = await segRes.arrayBuffer();
-                
+
                 if (!active) return;
-                
+
                 const entry = {
                   sn: seg.absSegIdx,
                   absSegIdx: seg.absSegIdx,
@@ -712,15 +713,15 @@ export default function App() {
                   duration: seg.duration,
                   bytes: arrayBuffer
                 };
-                
+
                 // Merge, sort, and slice to REVIEW_BUFFER_SIZE
                 const updated = [...rollingBuffers[cam].current, entry]
                   .filter((v, idx, self) => self.findIndex(t => t.absSegIdx === v.absSegIdx) === idx)
                   .sort((a, b) => a.absSegIdx - b.absSegIdx)
                   .slice(-REVIEW_BUFFER_SIZE);
-                  
+
                 rollingBuffers[cam].current = updated;
-                
+
                 if (cam === activeCamRef.current && modeRef.current === 'live') {
                   setLiveSegments(updated.map(s => ({
                     sn: s.sn,
@@ -728,7 +729,7 @@ export default function App() {
                     start: s.originalStart,
                     end: s.originalStart + s.duration
                   })));
-                  
+
                   // Fetch live sync map for this new segment
                   fetch(`http://localhost:8000/sync_map?from_camera=${cam}&sns=${seg.absSegIdx}`)
                     .then(r => r.json())
@@ -752,10 +753,10 @@ export default function App() {
         }
       }
     };
-    
+
     pollPlaylists();
     const intervalId = setInterval(pollPlaylists, 1000);
-    
+
     return () => {
       active = false;
       clearInterval(intervalId);
@@ -794,7 +795,7 @@ export default function App() {
     if (!details?.fragments?.length) return
     const ct = video.currentTime
     let frag = details.fragments.find(f => f.start <= ct && f.start + f.duration > ct)
-              || details.fragments[details.fragments.length - 1]
+      || details.fragments[details.fragments.length - 1]
     if (!frag) return
     const url = frag.relurl || frag.url || ''
     const m = url.match(/seg_(\d+)\.ts/)
@@ -804,7 +805,7 @@ export default function App() {
       const res = await fetch(`http://localhost:8000/sync?from_camera=${masterCam}&from_seg=${absSegIdx}&from_offset=${offset}`)
       if (!res.ok) return
       const data = await res.json()
-      
+
       const targetCams = CAMERAS.filter(c => c !== masterCam)
       for (const targetCam of targetCams) {
         const targetSync = data[targetCam]
@@ -825,7 +826,7 @@ export default function App() {
             tVideo.currentTime = newTime
         }
       }
-    } catch(e) { console.warn('doLiveSync failed', e) }
+    } catch (e) { console.warn('doLiveSync failed', e) }
   }, [])
 
   // Initial sync 2s after mount (lets manifests parse), then every 4s
@@ -846,9 +847,9 @@ export default function App() {
         if (!pos.source || !pos.sink || !pos.hq) return
         const p = new URLSearchParams({
           source_seg: pos.source.seg, source_off: pos.source.offset,
-          sink_seg:   pos.sink.seg,   sink_off:   pos.sink.offset,
-          hq_seg:     pos.hq.seg,     hq_off:     pos.hq.offset,
-          tolerance:  15,
+          sink_seg: pos.sink.seg, sink_off: pos.sink.offset,
+          hq_seg: pos.hq.seg, hq_off: pos.hq.offset,
+          tolerance: 15,
         })
         const res = await fetch(`http://localhost:8000/check_sync?${p}`)
         if (!res.ok) return
@@ -859,7 +860,7 @@ export default function App() {
             `frames: SRC=${v.frames.source} SNK=${v.frames.sink} HQ=${v.frames.hq}`
           )
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     const id = setInterval(poll, 3333)
     return () => clearInterval(id)
@@ -870,25 +871,25 @@ export default function App() {
     const currentVideo = videoRefs[activeCam].current
     const targetVideo = videoRefs[targetCam].current
     if (!currentVideo || !targetVideo) return
-    
+
     ignoreSyncRef.current = true
-    
+
     // Sync API Logic
     let isLive = false;
-    
+
     if (mode === 'live') {
       const hls = hlsRefs[activeCam].current
       const activeLivePos = hls?.liveSyncPosition
       isLive = activeLivePos != null && currentVideo.currentTime >= activeLivePos - 2.0
-      
+
       const details = hls?.levels?.[hls.currentLevel]?.details
       if (details) {
         const ct = currentVideo.currentTime
         let frag = details.fragments.find(f => f.start <= ct && f.start + f.duration >= ct)
         if (!frag && details.fragments.length > 0) {
           frag = details.fragments.reduce((prev, curr) => {
-            const prevDist = Math.abs((prev.start + prev.duration/2) - ct)
-            const currDist = Math.abs((curr.start + curr.duration/2) - ct)
+            const prevDist = Math.abs((prev.start + prev.duration / 2) - ct)
+            const currDist = Math.abs((curr.start + curr.duration / 2) - ct)
             return currDist < prevDist ? curr : prev
           })
         }
@@ -905,7 +906,7 @@ export default function App() {
               const targetHls = hlsRefs[targetCam].current
               const tDetails = targetHls?.levels?.[targetHls.currentLevel]?.details
               let baseStart = null
-              
+
               if (tDetails) {
                 const tFrag = tDetails.fragments.find(f => {
                   const fUrl = f.relurl || f.url || ''
@@ -917,14 +918,14 @@ export default function App() {
                   baseStart = tFrag.start
                 }
               }
-              
+
               if (baseStart === null && segmentStartTimesRef.current[targetCam]?.[targetSync.segment] !== undefined) {
                 baseStart = segmentStartTimesRef.current[targetCam][targetSync.segment]
               }
-              
+
               if (baseStart !== null) {
                 const newTime = baseStart + targetSync.offset
-                
+
                 // If active video is at the live edge, allow jumping directly to target's live edge to avoid stale math
                 if (isLive && targetHls?.liveSyncPosition != null && Math.abs(targetHls.liveSyncPosition - newTime) < 3.0) {
                   targetVideo.currentTime = targetHls.liveSyncPosition
@@ -940,9 +941,9 @@ export default function App() {
                   if (!pos.source || !pos.sink || !pos.hq) return
                   const p = new URLSearchParams({
                     source_seg: pos.source.seg, source_off: pos.source.offset,
-                    sink_seg:   pos.sink.seg,   sink_off:   pos.sink.offset,
-                    hq_seg:     pos.hq.seg,     hq_off:     pos.hq.offset,
-                    tolerance:  15,
+                    sink_seg: pos.sink.seg, sink_off: pos.sink.offset,
+                    hq_seg: pos.hq.seg, hq_off: pos.hq.offset,
+                    tolerance: 15,
                   })
                   const vRes = await fetch(`http://localhost:8000/check_sync?${p}`)
                   const v = await vRes.json()
@@ -951,10 +952,10 @@ export default function App() {
                       `[SYNC SWITCH] ${activeCam} → ${targetCam} | frames: SRC=${v.frames.source} SNK=${v.frames.sink} HQ=${v.frames.hq}`
                     )
                   }
-                } catch(e) { console.warn('check_sync failed', e) }
+                } catch (e) { console.warn('check_sync failed', e) }
               }, 200)
             }
-          } catch(e) { console.error('Sync failed', e) }
+          } catch (e) { console.error('Sync failed', e) }
         }
       }
     } else {
@@ -969,7 +970,7 @@ export default function App() {
       }
       targetVideo.currentTime = Math.max(0, currentLocal + offset);
     }
-    
+
     // update state
     currentVideo.pause()
     if (isPlaying) {
@@ -982,9 +983,9 @@ export default function App() {
         if (hlsCurrent) {
           hlsCurrent.config.liveMaxLatencyDurationCount = 9999
         }
-             // Instantly sync the background camera's time to the active camera so it doesn't play from the past!
+        // Instantly sync the background camera's time to the active camera so it doesn't play from the past!
         syncLiveVideos(currentVideo.currentTime)
-        
+
         targetVideo.play().catch(e => console.log('play failed', e))
       }
     }
@@ -1011,9 +1012,9 @@ export default function App() {
               }
             }
             videoRefs[cam].current.currentTime = Math.max(0, time + offset);
-            
+
             // If it was playing but hit the end and got stuck, resume playing!
-            if (isPlaying) videoRefs[cam].current.play().catch(() => {});
+            if (isPlaying) videoRefs[cam].current.play().catch(() => { });
           }
         })
       } else {
@@ -1027,21 +1028,21 @@ export default function App() {
             const hls = hlsRefs[cam].current
             const camVideo = videoRefs[cam].current
             if (!hls || !camVideo) return
-            
+
             if (cam === activeCamRef.current) {
               hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount
               safeSyncPos = hls.liveSyncPosition != null ? hls.liveSyncPosition : (livePos != null ? livePos - 2.0 : null)
               if (safeSyncPos != null) camVideo.currentTime = safeSyncPos
-              camVideo.play().catch(() => {})
+              camVideo.play().catch(() => { })
             } else {
               hls.config.liveMaxLatencyDurationCount = 9999
-              camVideo.play().catch(() => {})
+              camVideo.play().catch(() => { })
             }
           })
           if (safeSyncPos != null) {
-             syncLiveVideos(safeSyncPos)
+            syncLiveVideos(safeSyncPos)
           } else if (livePos != null) {
-             syncLiveVideos(livePos)
+            syncLiveVideos(livePos)
           }
           setIsPlaying(true)
         } else {
@@ -1054,14 +1055,14 @@ export default function App() {
               videoRefs[cam].current.pause()
             }
           })
-          
+
           video.currentTime = time
           syncLiveVideos(time)
-          
+
           if (isPlaying) {
             CAMERAS.forEach(cam => {
               if (videoRefs[cam].current) {
-                videoRefs[cam].current.play().catch(() => {})
+                videoRefs[cam].current.play().catch(() => { })
               }
             })
           }
@@ -1102,8 +1103,8 @@ export default function App() {
 
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {CAMERAS.map(cam => (
-          <div 
-            key={cam} 
+          <div
+            key={cam}
             style={{
               position: 'absolute', inset: 0,
               opacity: cam === activeCam ? 1 : 0,
@@ -1141,19 +1142,19 @@ export default function App() {
         )}
 
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '40px 32px 20px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))' }}>
-            <SeekBar
-             currentTime={currentTime}
-             liveEdge={displayLiveEdge}
-             bufferStart={displayBufferStart}
-             bufferedEnd={displayBufferedEnd}
-             segments={displaySegments}
-             events={mappedEvents}
-             onSeek={handleSeek}
-             onEventSelect={setSelectedEvent}
-             mode={mode}
-             isPlaying={isPlaying}
-             onTogglePlay={handleTogglePlay}
-           />
+          <SeekBar
+            currentTime={currentTime}
+            liveEdge={displayLiveEdge}
+            bufferStart={displayBufferStart}
+            bufferedEnd={displayBufferedEnd}
+            segments={displaySegments}
+            events={mappedEvents}
+            onSeek={handleSeek}
+            onEventSelect={setSelectedEvent}
+            mode={mode}
+            isPlaying={isPlaying}
+            onTogglePlay={handleTogglePlay}
+          />
         </div>
 
         <EventPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />
