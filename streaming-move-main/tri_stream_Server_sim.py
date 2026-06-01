@@ -354,7 +354,7 @@ def flight_shots_poller():
     while True:
         time.sleep(2)
         try:
-            text = _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=_flight_shots_rows_loaded, delay_seconds=10.0)
+            text = _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=_flight_shots_rows_loaded)
             added = _ingest_flight_shots(text, has_header=(_flight_shots_rows_loaded == 0))
             if added:
                 _flight_shots_rows_loaded += added

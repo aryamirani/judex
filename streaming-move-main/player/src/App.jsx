@@ -157,43 +157,50 @@ export default function App() {
   const mappedEvents = useMemo(() => {
     const currentSegs = mode === 'live' ? liveSegments : reviewSegs[activeCam]
     if (!currentSegs || currentSegs.length === 0) {
-      return events.map(ev => ({
-        ...ev,
-        time: (ev.segments?.[activeCam] ?? 0) * 6.0 + (ev.offsets?.[activeCam] ?? 0),
-        startTime: (ev.start_segments?.[activeCam] ?? 0) * 6.0 + (ev.start_offsets?.[activeCam] ?? 0),
-        endTime: (ev.end_segments?.[activeCam] ?? 0) * 6.0 + (ev.end_offsets?.[activeCam] ?? 0)
-      }))
+      return []
     }
-    const anchor = currentSegs[0]
-    return events.map(ev => {
-      const getPlaybackTime = (segs, offs) => {
-        const segNum = segs?.[activeCam] ?? 0
-        const offset = offs?.[activeCam] ?? 0
 
-        // 1. In live mode, try to use exact historical start time to prevent jitter
-        if (mode === 'live') {
-          const exactStart = segmentStartTimesRef.current?.[activeCam]?.[segNum]
-          if (exactStart !== undefined) {
-            return exactStart + offset
-          }
+    const minAbs = currentSegs[0].absSegIdx
+    const maxAbs = currentSegs[currentSegs.length - 1].absSegIdx
+
+    const getPlaybackTime = (segs, offs) => {
+      if (!segs || !offs) return null
+      const segNum = segs[activeCam]
+      if (segNum == null || segNum < minAbs || segNum > maxAbs) return null
+
+      const offset = offs[activeCam] ?? 0
+      const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
+
+      if (mode === 'live') {
+        const exactStart = segmentStartTimesRef.current?.[activeCam]?.[segNum]
+        if (exactStart !== undefined) {
+          return exactStart + offset
         }
-
-        // 2. Fallback to current sliding window segments
-        const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
         if (matchingSeg) {
           return matchingSeg.start + offset
         }
-
-        // 3. Last resort: estimate from anchor
-        return anchor.start + (segNum - (anchor.absSegIdx ?? anchor.sn)) * 6.0 + offset
+        return null
       }
 
-      return {
+      if (matchingSeg) {
+        return (matchingSeg.localStart ?? matchingSeg.start) + offset
+      }
+      return null
+    }
+
+    return events.flatMap(ev => {
+      const time = getPlaybackTime(ev.segments, ev.offsets)
+      if (time == null || !Number.isFinite(time)) return []
+
+      const startTime = getPlaybackTime(ev.start_segments, ev.start_offsets)
+      const endTime = getPlaybackTime(ev.end_segments, ev.end_offsets)
+
+      return [{
         ...ev,
-        time: getPlaybackTime(ev.segments, ev.offsets),
-        startTime: getPlaybackTime(ev.start_segments, ev.start_offsets),
-        endTime: getPlaybackTime(ev.end_segments, ev.end_offsets)
-      }
+        time,
+        startTime: startTime ?? time,
+        endTime: endTime ?? time,
+      }]
     })
   }, [events, activeCam, mode, liveSegments, reviewSegs])
 
