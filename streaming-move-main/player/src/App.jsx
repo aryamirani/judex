@@ -31,6 +31,25 @@ const CAM_STREAM_URLS = {
   hq: `${backendUrl}/stream/hq/live.m3u8`,
 }
 
+// #region agent log
+const DEBUG_LOG_PATH = '/Users/aryamirani/Desktop/intern/judex/.cursor/debug-8bca6d.log'
+function debugLog(location, message, data, hypothesisId) {
+  fetch('http://127.0.0.1:7674/ingest/b2d87c85-b829-4336-92e6-b25865094141', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '8bca6d' },
+    body: JSON.stringify({
+      sessionId: '8bca6d',
+      location,
+      message,
+      data,
+      hypothesisId,
+      timestamp: Date.now(),
+      runId: data?.runId ?? 'pre-fix',
+    }),
+  }).catch(() => {})
+}
+// #endregion
+
 function buildReviewPlaylist(segments, blobUrls) {
   const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:6', '#EXT-X-MEDIA-SEQUENCE:0', '#EXT-X-PLAYLIST-TYPE:VOD']
   for (let i = 0; i < segments.length; i++) {
@@ -202,28 +221,21 @@ export default function App() {
     const activeList = reviewSegs[activeCam]
     if (!activeList || activeList.length === 0) return
 
-    const activeSeg = activeList.find(s => activeTime >= s.start && activeTime <= s.end)
+    const activeSeg = activeList.find(s => activeTime >= s.localStart && activeTime <= s.localEnd)
     if (!activeSeg) return
 
-    let sourceOffsetInSeg = activeTime - activeSeg.start
-    const sn = activeSeg.absSegIdx
-
-    // Normalize offset back to source baseline
-    const activeMapping = syncMap[sn]?.[activeCam]
-    if (activeMapping) {
-      sourceOffsetInSeg -= activeMapping.offset
-    }
+    const offsetInSeg = activeTime - activeSeg.localStart
 
     CAMERAS.forEach(cam => {
       if (cam === activeCam) return
-      const mapping = syncMap[sn]?.[cam]
+      const mapping = syncMap[activeCam]?.[activeSeg.absSegIdx]?.[cam]
       if (!mapping) return
 
       const targetList = reviewSegs[cam]
       if (!targetList) return
       const targetSeg = targetList.find(s => s.absSegIdx === mapping.segment)
       if (targetSeg) {
-        const targetTime = targetSeg.start + sourceOffsetInSeg + mapping.offset
+        const targetTime = targetSeg.localStart + mapping.offset + offsetInSeg
         const targetVideo = videoRefs[cam].current
         if (targetVideo) {
           const cur = targetVideo.currentTime
@@ -983,20 +995,64 @@ export default function App() {
       let currentLocal = currentVideo.currentTime;
       let offset = 0;
       const currentSegs = reviewSegs[activeCam];
-      
+      const targetSegs = reviewSegs[targetCam];
+      let seg = null;
+      let mapping = null;
+      let naiveTime = currentLocal;
+      let correctTime = null;
+
       if (currentSegs && currentSegs.length > 0) {
-        const seg = currentSegs.find(s => currentLocal >= s.localStart && currentLocal <= s.localEnd) || currentSegs[0];
-        
+        seg = currentSegs.find(s => currentLocal >= s.localStart && currentLocal <= s.localEnd) || currentSegs[0];
+
         // Look up the precise offset in the fully-populated 3-way sync map
-        const mapping = syncMap?.[activeCam]?.[seg.absSegIdx]?.[targetCam];
+        mapping = syncMap?.[activeCam]?.[seg.absSegIdx]?.[targetCam];
         if (mapping) {
           offset = mapping.offset;
+          naiveTime = currentLocal + offset;
+          const offsetInSeg = currentLocal - seg.localStart;
+          const targetSeg = targetSegs?.find(s => s.absSegIdx === mapping.segment);
+          if (targetSeg) {
+            correctTime = targetSeg.localStart + mapping.offset + offsetInSeg;
+          }
         } else {
           console.warn(`[SYNC] Missing mapping from ${activeCam} to ${targetCam} at seg ${seg.absSegIdx}`);
         }
       }
-      
-      targetVideo.currentTime = Math.max(0, currentLocal + offset);
+
+      const appliedTime = correctTime ?? naiveTime
+
+      // #region agent log
+      debugLog('App.jsx:handleSwitchCam:review', 'review camera switch seek', {
+        runId: 'post-fix',
+        activeCam,
+        targetCam,
+        currentLocal,
+        activeAbsSegIdx: seg?.absSegIdx,
+        mappingSegment: mapping?.segment,
+        mappingOffset: mapping?.offset,
+        segmentMismatch: mapping ? mapping.segment !== seg?.absSegIdx : null,
+        naiveTime,
+        correctTime,
+        appliedTime,
+        targetBefore: targetVideo.currentTime,
+        involvesHq: activeCam === 'hq' || targetCam === 'hq',
+      }, 'A');
+      // #endregion
+
+      targetVideo.currentTime = Math.max(0, appliedTime);
+
+      // #region agent log
+      setTimeout(() => {
+        debugLog('App.jsx:handleSwitchCam:review:after', 'post-seek video times', {
+          runId: 'post-fix',
+          activeCam,
+          targetCam,
+          targetAfter: targetVideo.currentTime,
+          appliedTime,
+          seekError: correctTime != null ? Math.abs(targetVideo.currentTime - correctTime) : null,
+        }, 'A');
+      }, 100);
+      // #endregion
     }
 
     // update state
@@ -1027,23 +1083,28 @@ export default function App() {
     const video = videoRefs[activeCam].current
     if (video) {
       if (mode === 'review') {
-        // Seek all cameras perfectly using the sub-second offset!
-        CAMERAS.forEach(cam => {
-          if (videoRefs[cam].current) {
-            let offset = 0;
-            if (cam !== activeCamRef.current) {
-              const activeSegs = reviewSegs[activeCamRef.current];
-              if (activeSegs && activeSegs.length > 0) {
-                const seg = activeSegs.find(s => time >= s.localStart && time <= s.localEnd) || activeSegs[0];
-                const mapping = syncMap?.[seg.absSegIdx]?.[cam];
-                if (mapping) offset = mapping.offset;
-              }
-            }
-            videoRefs[cam].current.currentTime = Math.max(0, time + offset);
+        const master = activeCamRef.current
+        const activeSegs = reviewSegs[master]
+        const seg = activeSegs?.length
+          ? (activeSegs.find(s => time >= s.localStart && time <= s.localEnd) || activeSegs[0])
+          : null
+        const offsetInSeg = seg ? time - seg.localStart : 0
 
-            // If it was playing but hit the end and got stuck, resume playing!
-            if (!forcePause && isPlaying) videoRefs[cam].current.play().catch(() => { });
+        CAMERAS.forEach(cam => {
+          const v = videoRefs[cam].current
+          if (!v) return
+
+          let seekTime = time
+          if (cam !== master && seg) {
+            const mapping = syncMap?.[master]?.[seg.absSegIdx]?.[cam]
+            const targetSeg = reviewSegs[cam]?.find(s => s.absSegIdx === mapping?.segment)
+            if (mapping && targetSeg) {
+              seekTime = targetSeg.localStart + mapping.offset + offsetInSeg
+            }
           }
+          v.currentTime = Math.max(0, seekTime)
+
+          if (!forcePause && isPlaying) v.play().catch(() => { })
         })
         if (forcePause) setIsPlaying(false)
       } else {
