@@ -132,7 +132,6 @@ export default function SeekBar({
         textTransform: 'uppercase', color: 'var(--muted)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span>DVR Window · last 30 segments</span>
           <div style={{ display: 'flex', gap: '4px' }}>
             {mode === 'review' && (
               <button
@@ -141,9 +140,9 @@ export default function SeekBar({
                   // scrub backwards 1 frame (assuming 60fps)
                   if (onSeek) onSeek(activeTime - (1/60), true);
                 }}
-                style={{ background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', padding: '2px 6px' }}
+                style={{ background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', padding: '4px 10px', fontWeight: 'bold', transition: 'background 0.2s' }}
               >
-                ◀ PREV
+                -1 FRAME
               </button>
             )}
             <button
@@ -152,18 +151,19 @@ export default function SeekBar({
                 if (onTogglePlay) onTogglePlay();
               }}
               style={{
-                background: 'var(--amber, #f5a623)',
+                background: 'linear-gradient(135deg, var(--amber, #f5a623), #d48812)',
                 border: 'none',
                 color: '#000',
-                borderRadius: '4px',
+                borderRadius: '6px',
                 cursor: 'pointer',
-                fontSize: '9px',
-                padding: '2px 8px',
+                fontSize: '12px',
+                padding: '4px 12px',
                 fontWeight: 'bold',
-                minWidth: '55px'
+                minWidth: '40px',
+                boxShadow: '0 2px 8px rgba(245, 166, 35, 0.3)'
               }}
             >
-              {isPlaying ? 'PAUSE' : 'PLAY'}
+              {isPlaying ? '⏸' : '▶'}
             </button>
             {mode === 'review' && (
               <button
@@ -172,9 +172,9 @@ export default function SeekBar({
                   // scrub forwards 1 frame (assuming 60fps)
                   if (onSeek) onSeek(activeTime + (1/60), true);
                 }}
-                style={{ background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', padding: '2px 6px' }}
+                style={{ background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', padding: '4px 10px', fontWeight: 'bold', transition: 'background 0.2s' }}
               >
-                NEXT ▶
+                +1 FRAME
               </button>
             )}
             {mode === 'review' && (
@@ -182,7 +182,7 @@ export default function SeekBar({
                 value={playbackRate}
                 onChange={(e) => onPlaybackRateChange && onPlaybackRateChange(parseFloat(e.target.value))}
                 style={{
-                  background: '#222', border: '1px solid #444', color: '#fff', borderRadius: '4px', cursor: 'pointer', fontSize: '9px', padding: '2px 6px', marginLeft: '8px'
+                  background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', padding: '4px 8px', marginLeft: '8px', fontWeight: 'bold'
                 }}
               >
                 <option value={0.25}>0.25x</option>

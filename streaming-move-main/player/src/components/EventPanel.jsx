@@ -9,9 +9,9 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   const [duration, setDuration] = useState(2); // fallback
 
   const cameras = [
-    { id: 'source', label: 'SOURCE', ref: v1 },
-    { id: 'sink', label: 'SINK', ref: v2 },
-    { id: 'hq', label: 'HQ', ref: v3 }
+    { id: 'source', label: 'Cam 1 - SOURCE', ref: v1 },
+    { id: 'sink', label: 'Cam 2 - SINK', ref: v2 },
+    { id: 'hq', label: 'Cam 3 - HQ', ref: v3 }
   ];
 
   const handlePlayPause = () => {
@@ -51,15 +51,10 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
   return (
     <div style={{
-      position: 'absolute', bottom: '120px', left: '20px', right: '20px',
-      background: 'rgba(20,20,20,0.95)', border: '1px solid rgba(255,255,255,0.1)',
-      borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)',
-      boxShadow: '0 10px 40px rgba(0,0,0,0.5)', zIndex: 50,
-      animation: 'slideUp 0.3s ease-out'
+      width: '100%', height: '100%',
+      background: '#0a0a0a', padding: '16px 32px',
+      display: 'flex', flexDirection: 'column', boxSizing: 'border-box'
     }}>
-      <style>{`
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-      `}</style>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -74,7 +69,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
         <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '20px' }}>✕</button>
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flex: 1, minHeight: 0 }}>
         {cameras.map(cam => {
           // clip format is bounce_{bounce_frame}_{flight_id:05d}.mp4
           // located in /clips/{cam.id}/
@@ -101,7 +96,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
                 onLoadedMetadata={(e) => {
                   if (cam.id === 'hq') setDuration(e.target.duration || 2);
                 }}
-                style={{ width: '100%', aspectRatio: '16/9', objectFit: 'contain' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
               />
             </div>
           );
@@ -111,22 +106,22 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <button onClick={handlePrev} disabled={currentIndex <= 0} style={{
           background: 'rgba(255,255,255,0.1)', color: currentIndex <= 0 ? 'rgba(255,255,255,0.2)' : '#fff', border: 'none',
-          padding: '8px 16px', borderRadius: '4px', cursor: currentIndex <= 0 ? 'default' : 'pointer', fontWeight: 'bold'
+          padding: '8px 16px', borderRadius: '6px', cursor: currentIndex <= 0 ? 'default' : 'pointer', fontWeight: 'bold', fontSize: '12px', transition: 'background 0.2s'
         }}>
-          PREV
+          ◀ PREV EVENT
         </button>
         <button onClick={handlePlayPause} style={{
-          background: 'var(--amber, #f5a623)', color: '#000', border: 'none',
+          background: 'linear-gradient(135deg, var(--amber, #f5a623), #d48812)', color: '#000', border: 'none',
           width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', boxShadow: '0 2px 8px rgba(245, 166, 35, 0.3)'
         }}>
           {playing ? '⏸' : '▶'}
         </button>
         <button onClick={handleNext} disabled={currentIndex >= events.length - 1 || currentIndex === -1} style={{
           background: 'rgba(255,255,255,0.1)', color: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'rgba(255,255,255,0.2)' : '#fff', border: 'none',
-          padding: '8px 16px', borderRadius: '4px', cursor: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'default' : 'pointer', fontWeight: 'bold'
+          padding: '8px 16px', borderRadius: '6px', cursor: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'default' : 'pointer', fontWeight: 'bold', fontSize: '12px', transition: 'background 0.2s'
         }}>
-          NEXT
+          NEXT EVENT ▶
         </button>
         <input
           type="range" min="0" max={duration} step="0.01" value={progress}

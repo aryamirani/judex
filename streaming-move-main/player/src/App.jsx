@@ -1129,10 +1129,12 @@ export default function App() {
           <button
             onClick={inReview ? exitReview : enterReview}
             style={{
-              padding: '8px 24px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-              background: inReview ? '#4a90e2' : 'var(--amber, #f5a623)',
-              color: '#000', fontWeight: 'bold', fontSize: '14px',
-              boxShadow: '0 0 10px rgba(245,166,35,0.2)'
+              padding: '10px 28px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+              background: inReview ? 'linear-gradient(135deg, #4a90e2, #2e6db4)' : 'linear-gradient(135deg, var(--amber, #f5a623), #d48812)',
+              color: '#000', fontWeight: '800', fontSize: '14px', letterSpacing: '1px',
+              boxShadow: inReview ? '0 4px 15px rgba(74, 144, 226, 0.4)' : '0 4px 15px rgba(245, 166, 35, 0.4)',
+              transition: 'all 0.2s ease-in-out',
+              textTransform: 'uppercase'
             }}
           >
             {inReview ? 'GO LIVE' : 'ENTER REVIEW'}
@@ -1140,7 +1142,8 @@ export default function App() {
         </div>
       </header>
 
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {CAMERAS.map(cam => (
           <div
             key={cam}
@@ -1198,16 +1201,28 @@ export default function App() {
           />
         </div>
 
-        <EventPanel 
-          event={selectedEvent} 
-          events={mappedEvents}
-          activeCam={activeCam} 
-          onNavigate={(ev) => {
-            setSelectedEvent(ev)
-            handleSeek(ev.time, true)
-          }}
-          onClose={() => setSelectedEvent(null)} 
-        />
+        </div>
+
+        <div style={{ 
+          height: selectedEvent ? '50%' : '0px', 
+          transition: 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)', 
+          overflow: 'hidden',
+          background: '#0a0a0a',
+          borderTop: selectedEvent ? '1px solid #222' : 'none',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <EventPanel 
+            event={selectedEvent} 
+            events={mappedEvents}
+            activeCam={activeCam} 
+            onNavigate={(ev) => {
+              setSelectedEvent(ev)
+              handleSeek(ev.time, true)
+            }}
+            onClose={() => setSelectedEvent(null)} 
+          />
+        </div>
       </div>
     </div>
   )
