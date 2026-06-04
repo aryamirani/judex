@@ -86,15 +86,16 @@ SERVE_DIRS = {
     "hq": os.path.join(BASE_DIR, "serve", "hq")
 }
 
-events_data = []
-
 FPS = 30.0
 
-# Placeholder for the remote flight shots path on the Jetson
+# Jetson paths (adjust on deployment if layout differs)
 REMOTE_FLIGHT_SHOTS_PATH = "/home/jetson/Desktop/cv_output/correlation/flight_shots.csv"
+REMOTE_BOUNCE_CLIPS_DIR = "/home/jetson/Desktop/cv_output/bounce_clips"
 
 _flight_shots_rows_loaded = 0
-  # number of data rows already ingested (excludes header)
+_events_by_id = {}
+_events_lock = threading.Lock()
+_sync_rows_loaded = 0
 _sync_lock = threading.Lock()
 
 _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
@@ -102,7 +103,7 @@ _frame_idx_lock = threading.Lock()
 
 
 def _ssh_fetch(remote_path, skip_lines=0):
-    """Fetch a file from the Jetson over SSH. If it fails, fall back to local files."""
+    """Fetch text from the Jetson over SSH."""
     try:
         remote_cmd = (f"cat {remote_path}" if skip_lines == 0
                       else f"tail -n +{skip_lines + 2} {remote_path}")
@@ -115,6 +116,29 @@ def _ssh_fetch(remote_path, skip_lines=0):
     except Exception as e:
         print(f"  [X] SSH fetch failed: {e}. (No --backup flag provided, so failing explicitly)")
         raise e
+
+
+def _ssh_file_exists(remote_path):
+    try:
+        remote_cmd = f"test -f {remote_path}"
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", JETSON_HOST, remote_cmd],
+            capture_output=True, text=True, timeout=4
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def _ssh_fetch_bytes(remote_path):
+    """Fetch binary file from Jetson (bounce clips)."""
+    remote_cmd = f"cat {remote_path}"
+    result = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", JETSON_HOST, remote_cmd],
+        capture_output=True, timeout=60
+    )
+    result.check_returncode()
+    return result.stdout
 
 def _fetch_csv_lines(skip_lines=0):
     return _ssh_fetch(REMOTE_CSV_PATH, skip_lines)
@@ -258,7 +282,7 @@ def _ingest_flight_shots(csv_text, has_header=True):
             else:
                 metadata[k] = v
                 
-        events_data.append({
+        event = {
             "id": str(row['shot_id']),
             "segments": segs,
             "offsets": offs,
@@ -269,8 +293,12 @@ def _ingest_flight_shots(csv_text, has_header=True):
             "end_offsets": end_offs,
             "hq_frame": hq_frame,
             "metadata": metadata
-        })
-        count += 1
+        }
+        with _events_lock:
+            is_new = event["id"] not in _events_by_id
+            _events_by_id[event["id"]] = event
+        if is_new:
+            count += 1
     return count
 
 def frame_idx_poller():
@@ -289,7 +317,7 @@ def frame_idx_poller():
                 print(f"[frame idx poller] {cam} error: {e}")
 
 def flight_shots_poller():
-    """Background thread: polls flight shots CSV every 2 s for new events."""
+    """Poll growing flight_shots.csv on Jetson; new bounce rows appear as dots when ready."""
     global _flight_shots_rows_loaded
     while True:
         time.sleep(2)
@@ -298,13 +326,14 @@ def flight_shots_poller():
             added = _ingest_flight_shots(text, has_header=(_flight_shots_rows_loaded == 0))
             if added:
                 _flight_shots_rows_loaded += added
-                print(f"[flight shots poller] +{added} events (total {_flight_shots_rows_loaded})")
+                with _events_lock:
+                    total = len(_events_by_id)
+                print(f"[flight shots poller] +{added} new bounces (csv rows={_flight_shots_rows_loaded}, events={total})")
         except Exception as e:
-            # print(f"[flight shots poller] error: {e}")
-            pass
+            print(f"[flight shots poller] error: {e}")
 
 def load_data():
-    global events_data, _sync_rows_loaded
+    global _events_by_id, _sync_rows_loaded
     print("Loading CSVs into memory for O(1) lookups...")
 
     # 1. Load sync mapping from remote Jetson
@@ -940,10 +969,28 @@ def serve_segment(cam: str, segment: str):
         return PlainTextResponse("File not yet downloaded from Pi", status_code=404)
     return FileResponse(dst)
 
-# For the bounce clips
-BOUNCE_CLIPS_DIR = os.path.join(BASE_DIR, "clips", "cv_output", "bounce_clips")
-if os.path.exists(BOUNCE_CLIPS_DIR):
-    app.mount("/clips", StaticFiles(directory=BOUNCE_CLIPS_DIR), name="clips")
+@app.get("/clips/{cam}/{clip_file}")
+def serve_bounce_clip(cam: str, clip_file: str):
+    """Serve bounce clip MP4 from Jetson over SSH (clips may land after the CSV row)."""
+    import re
+    if cam not in ("source", "sink", "hq"):
+        return PlainTextResponse("Unknown camera", status_code=404)
+    if not re.fullmatch(r"bounce_\d+_\d+\.mp4", clip_file):
+        return PlainTextResponse("Invalid clip name", status_code=404)
+
+    remote_path = f"{REMOTE_BOUNCE_CLIPS_DIR}/{cam}/{clip_file}"
+    if not _ssh_file_exists(remote_path):
+        print(f"[bounce clip] not on Jetson yet: {remote_path}")
+        return PlainTextResponse("Bounce clip not ready on Jetson", status_code=404)
+
+    try:
+        data = _ssh_fetch_bytes(remote_path)
+    except Exception as e:
+        print(f"[bounce clip] SSH fetch failed for {remote_path}: {e}")
+        return PlainTextResponse("Failed to fetch clip from Jetson", status_code=502)
+
+    from fastapi.responses import Response
+    return Response(content=data, media_type="video/mp4")
 
 @app.get("/cameras")
 def get_cameras():
@@ -1135,7 +1182,8 @@ def check_sync(
 
 @app.get("/events")
 def get_events():
-    return events_data
+    with _events_lock:
+        return list(_events_by_id.values())
 
 @app.get("/status")
 def get_status():
