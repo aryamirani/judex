@@ -253,7 +253,7 @@ export default function SeekBar({
         */}
  
         {/* EVENT DOTS */}
-        {visibleEvents.map((ev, i) => {
+        {visibleEvents.map((ev) => {
           const frac = toFraction(ev.time, rangeStart, rangeEnd)
           const isHovered = hoveredEvent?.id === ev.id
           // highlight if close to current time
@@ -262,7 +262,7 @@ export default function SeekBar({
  
           return (
             <div
-              key={i}
+              key={ev.id}
               onMouseEnter={() => setHoveredEvent(ev)}
               onMouseLeave={() => setHoveredEvent(null)}
               onClick={(e) => {

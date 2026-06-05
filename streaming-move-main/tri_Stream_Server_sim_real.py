@@ -84,6 +84,9 @@ FPS = 30.0
 # Jetson paths (adjust on deployment if layout differs)
 REMOTE_FLIGHT_SHOTS_PATH = "/home/jetson/Desktop/cv_output/correlation/flight_shots.csv"
 REMOTE_BOUNCE_CLIPS_DIR = "/home/jetson/Desktop/cv_output/bounce_clips"
+FLIGHT_SHOTS_POLL_INTERVAL = 2.0
+# Match the player's live DVR scrub window (SeekBar liveEdge - 180s)
+BOUNCE_EVENT_WINDOW_SEC = 180
 
 _flight_shots_rows_loaded = 0
 _events_by_id = {}
@@ -250,70 +253,274 @@ def _ingest_frame_idx_rows(cam, csv_text, has_header=True):
             count += 1
     return count
 
-def _ingest_flight_shots(csv_text, has_header=True):
-    if not csv_text.strip():
-        return 0
-    df = pd.read_csv(io.StringIO(csv_text)) if has_header else pd.read_csv(io.StringIO(csv_text), header=None)
-    # If header=None, we'd need to assign column names, but for simplicity we assume the header is fetched once 
-    # or we always fetch with headers if using pandas or just parse manually.
-    # Actually, pd.read_csv is tricky with skip_lines. Let's just use the same manual parsing or ensure it handles it.
-    # If has_header is False, we need to supply names. Let's assume the CSV always has the same columns.
-    # To keep it simple, let's just parse the whole file every time or just read the new lines.
-    # If reading new lines, we must supply the names:
-    col_names = ["flight_id","start_frame","end_frame","origin_track_ids","primary_origin_track_id",
-                 "crossed_sides","crossed_sides_confidence","likely_net_hit","ended_near_net",
-                 "counts_as_shot","counts_in_shot_stats","shot_id","dedupe_reason","reason_codes",
-                 "net_crossing_frame","landing_x","landing_y","landing_confidence","bounce_frame",
-                 "bounce_x","bounce_y","bounce_z","bounce_score","bounce_mode","bbox_source_x",
-                 "bbox_source_y","bbox_source_w","bbox_source_h","bbox_sink_x","bbox_sink_y",
-                 "bbox_sink_w","bbox_sink_h","bounce_hq_frame","window_frames"]
-    
-    if not has_header:
-        df = pd.read_csv(io.StringIO(csv_text), header=None, names=col_names)
+def _safe_frame_int(val):
+    """Parse a frame index; return None if missing or non-numeric (e.g. misaligned '73,72')."""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return None
+    if isinstance(val, str):
+        val = val.strip()
+        if not val or "," in val:
+            return None
+    try:
+        return int(float(val))
+    except (ValueError, TypeError):
+        return None
 
-    def get_segs_offs_for_hq_frame(f_hq):
-        if pd.isna(f_hq):
-            return None, None
-        f_hq = int(f_hq)
-        src_frame = sync_maps["hq_to_source"].get(f_hq)
-        if src_frame is None:
-            if sync_maps["hq_to_source"]:
-                closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - f_hq))
-                src_frame = sync_maps["hq_to_source"][closest]
-            else:
-                src_frame = f_hq
-        
-        sink_frame = sync_maps["hq_to_sink"].get(f_hq)
-        if sink_frame is None:
-            if sync_maps["hq_to_sink"]:
-                closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - f_hq))
-                sink_frame = sync_maps["hq_to_sink"][closest]
-            else:
-                sink_frame = f_hq
-        
-        segs = {}
-        offs = {}
-        frames = {}
-        for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", f_hq)]:
-            frames[cam] = f_num
-            if f_num in frame_to_seg[cam]:
-                c_seg, c_off = frame_to_seg[cam][f_num]
-                segs[cam] = c_seg
-                offs[cam] = c_off / FPS
+
+def _fetch_flight_shots_csv(skip_data_rows=0):
+    """Fetch flight_shots.csv; incremental polls prepend the header so pandas always parses correctly."""
+    if skip_data_rows == 0:
+        return _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=0)
+    remote_cmd = (
+        f"(head -1 {REMOTE_FLIGHT_SHOTS_PATH}; "
+        f"tail -n +{skip_data_rows + 2} {REMOTE_FLIGHT_SHOTS_PATH})"
+    )
+    return _ssh_fetch_with_cmd(remote_cmd)
+
+
+def _ssh_fetch_with_cmd(remote_cmd, allow_empty=False):
+    try:
+        result = subprocess.run(
+            _ssh_argv(JETSON_HOST, remote_cmd),
+            capture_output=True, text=True, timeout=4,
+        )
+        if result.returncode != 0 and not allow_empty:
+            result.check_returncode()
+        return result.stdout
+    except Exception as e:
+        if allow_empty:
+            return ""
+        raise e
+
+
+def _current_hq_frame_unlocked():
+    """Read live HQ frame without acquiring locks (caller must hold locks if needed)."""
+    if frame_to_seg["hq"]:
+        return max(frame_to_seg["hq"].keys())
+    if seg_to_frame["hq"]:
+        latest_seg = max(seg_to_frame["hq"].keys())
+        start = seg_to_frame["hq"][latest_seg]
+        fc = seg_frame_count["hq"].get(latest_seg, 120)
+        return start + max(fc - 1, 0)
+    if sync_maps["hq_to_source"]:
+        return max(sync_maps["hq_to_source"].keys())
+    return None
+
+
+def _current_hq_frame():
+    """Best estimate of the live HQ frame (end of indexed stream)."""
+    with _frame_idx_lock:
+        if frame_to_seg["hq"]:
+            return max(frame_to_seg["hq"].keys())
+        if seg_to_frame["hq"]:
+            latest_seg = max(seg_to_frame["hq"].keys())
+            start = seg_to_frame["hq"][latest_seg]
+            fc = seg_frame_count["hq"].get(latest_seg, 120)
+            return start + max(fc - 1, 0)
+    with _sync_lock:
+        if sync_maps["hq_to_source"]:
+            return max(sync_maps["hq_to_source"].keys())
+    return None
+
+
+def _bounce_window_min_hq_frame_unlocked():
+    live = _current_hq_frame_unlocked()
+    if live is None:
+        return None
+    return live - int(BOUNCE_EVENT_WINDOW_SEC * FPS)
+
+
+def _bounce_window_min_hq_frame():
+    live = _current_hq_frame()
+    if live is None:
+        return None
+    return live - int(BOUNCE_EVENT_WINDOW_SEC * FPS)
+
+
+def _hq_frame_in_bounce_window_unlocked(hq_frame):
+    """Window check without re-acquiring locks (for /events while locks are held)."""
+    hq_frame = _safe_frame_int(hq_frame)
+    if hq_frame is None:
+        return False
+    min_frame = _bounce_window_min_hq_frame_unlocked()
+    if min_frame is None:
+        return True
+    return hq_frame >= min_frame
+
+
+def _hq_frame_in_bounce_window(hq_frame):
+    """True if this bounce is within the live DVR window."""
+    hq_frame = _safe_frame_int(hq_frame)
+    if hq_frame is None:
+        return False
+    min_frame = _bounce_window_min_hq_frame()
+    if min_frame is None:
+        return True
+    return hq_frame >= min_frame
+
+
+def _prune_stale_events_unlocked():
+    """Prune stale events; caller already holds _events_lock (+ sync/frame locks)."""
+    min_frame = _bounce_window_min_hq_frame_unlocked()
+    if min_frame is None:
+        return 0
+    stale = [eid for eid, ev in _events_by_id.items() if (ev.get("hq_frame") or 0) < min_frame]
+    for eid in stale:
+        del _events_by_id[eid]
+    return len(stale)
+
+
+def _prune_stale_events():
+    """Drop in-memory events that have fallen outside the DVR window."""
+    with _events_lock:
+        return _prune_stale_events_unlocked()
+
+
+def _map_frame_through_sync_unlocked(sync_key, frame):
+    """Map a frame through a sync table without acquiring _sync_lock."""
+    frame = _safe_frame_int(frame)
+    if frame is None:
+        return None
+    mapping = sync_maps.get(sync_key) or {}
+    if not mapping:
+        return None
+    if frame in mapping:
+        return int(mapping[frame])
+    closest = min(mapping.keys(), key=lambda x: abs(x - frame))
+    return int(mapping[closest] + (frame - closest))
+
+
+def _map_frame_through_sync(sync_key, frame):
+    """Map a frame through a sync table, linearly extrapolating from the nearest key."""
+    with _sync_lock:
+        return _map_frame_through_sync_unlocked(sync_key, frame)
+
+
+def _resolve_bounce_hq_frame_unlocked(bounce_frame, bounce_hq_frame):
+    """
+    HQ frame for timeline dot position (no lock).
+    bounce_hq_frame when set; otherwise map source bounce_frame via source_to_hq.
+    """
+    hq = _safe_frame_int(bounce_hq_frame)
+    if hq is not None:
+        return hq
+    return _map_frame_through_sync_unlocked("source_to_hq", bounce_frame)
+
+
+def _resolve_bounce_hq_frame(bounce_frame, bounce_hq_frame):
+    """
+    HQ frame for timeline dot position.
+    Never treat bounce_frame as an HQ frame directly (different coordinate systems).
+    """
+    hq = _safe_frame_int(bounce_hq_frame)
+    if hq is not None:
+        return hq
+    with _sync_lock:
+        return _map_frame_through_sync_unlocked("source_to_hq", bounce_frame)
+
+
+def _position_from_hq_frame(f_hq):
+    """Map an HQ frame number to per-camera segment+offset using sync/frame indexes."""
+    f_hq = _safe_frame_int(f_hq)
+    if f_hq is None:
+        return None, None, None
+    src_frame = sync_maps["hq_to_source"].get(f_hq)
+    if src_frame is None:
+        if sync_maps["hq_to_source"]:
+            closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - f_hq))
+            src_frame = sync_maps["hq_to_source"][closest] + (f_hq - closest)
+        else:
+            src_frame = f_hq
+
+    sink_frame = sync_maps["hq_to_sink"].get(f_hq)
+    if sink_frame is None:
+        if sync_maps["hq_to_sink"]:
+            closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - f_hq))
+            sink_frame = sync_maps["hq_to_sink"][closest] + (f_hq - closest)
+        else:
+            sink_frame = f_hq
+
+    segs = {}
+    offs = {}
+    frames = {}
+    for cam, f_num in [("source", src_frame), ("sink", sink_frame), ("hq", f_hq)]:
+        frames[cam] = int(f_num)
+        if f_num in frame_to_seg[cam]:
+            c_seg, c_off = frame_to_seg[cam][f_num]
+            segs[cam] = c_seg
+            offs[cam] = c_off / FPS
+        else:
+            if seg_to_frame[cam]:
+                closest_seg = min(seg_to_frame[cam].keys(), key=lambda s: abs(seg_to_frame[cam][s] - f_num))
+                closest_start = seg_to_frame[cam][closest_seg]
+                fc = seg_frame_count[cam].get(closest_seg, 120)
+                frame_delta = f_num - closest_start
+                segs[cam] = closest_seg + frame_delta // fc
+                offs[cam] = (frame_delta % fc) / FPS
             else:
                 avg_fc = 120 if not seg_frame_count[cam] else list(seg_frame_count[cam].values())[-1]
                 segs[cam] = int(f_num / avg_fc)
                 offs[cam] = (f_num % avg_fc) / FPS
-        return segs, offs, frames
+    return segs, offs, frames
+
+
+def _refresh_event_positions(event, unlocked=False):
+    """Recompute segment positions from hq_frame (frame index may have grown since ingest)."""
+    meta = event.get("metadata") or {}
+    bounce_frame = event.get("bounce_frame") or _safe_frame_int(meta.get("bounce_frame"))
+    if unlocked:
+        hq_frame = _resolve_bounce_hq_frame_unlocked(bounce_frame, meta.get("bounce_hq_frame"))
+    else:
+        hq_frame = _resolve_bounce_hq_frame(bounce_frame, meta.get("bounce_hq_frame"))
+    if hq_frame is None:
+        return event
+
+    segs, offs, frames = _position_from_hq_frame(hq_frame)
+    if segs is None:
+        return event
+
+    refreshed = dict(event)
+    refreshed["segments"] = segs
+    refreshed["offsets"] = offs
+    refreshed["frames"] = frames
+    refreshed["hq_frame"] = hq_frame
+
+    start_segs, start_offs, _ = _position_from_hq_frame(meta.get("start_frame"))
+    end_segs, end_offs, _ = _position_from_hq_frame(meta.get("end_frame"))
+    if start_segs is not None:
+        refreshed["start_segments"] = start_segs
+        refreshed["start_offsets"] = start_offs
+    if end_segs is not None:
+        refreshed["end_segments"] = end_segs
+        refreshed["end_offsets"] = end_offs
+    return refreshed
+
+
+def _ingest_flight_shots(csv_text):
+    """Returns (new_events_count, csv_data_rows_parsed)."""
+    if not csv_text.strip():
+        return 0, 0
+    df = pd.read_csv(io.StringIO(csv_text))
+    rows_parsed = len(df)
 
     count = 0
     for _, row in df.iterrows():
-        if pd.isna(row.get('bounce_hq_frame')):
+        # bounce_frame is ground truth: clip is bounce_{bounce_frame}_{flight_id}.mp4
+        # Only show when this column has a value (e.g. 48331, 48338 — not empty like row 16)
+        bounce_frame = _safe_frame_int(row.get('bounce_frame'))
+        if bounce_frame is None:
             continue
-        hq_frame = int(row['bounce_hq_frame'])
-        segs, offs, frames = get_segs_offs_for_hq_frame(hq_frame)
-        start_segs, start_offs, _ = get_segs_offs_for_hq_frame(row.get('start_frame'))
-        end_segs, end_offs, _ = get_segs_offs_for_hq_frame(row.get('end_frame'))
+
+        hq_frame = _resolve_bounce_hq_frame(bounce_frame, row.get('bounce_hq_frame'))
+        if hq_frame is None:
+            continue
+        if not _hq_frame_in_bounce_window(hq_frame):
+            continue
+        segs, offs, frames = _position_from_hq_frame(hq_frame)
+        if segs is None:
+            continue
+        start_segs, start_offs, _ = _position_from_hq_frame(row.get('start_frame'))
+        end_segs, end_offs, _ = _position_from_hq_frame(row.get('end_frame'))
 
         metadata = {}
         for k, v in row.items():
@@ -321,7 +528,7 @@ def _ingest_flight_shots(csv_text, has_header=True):
                 metadata[k] = None
             else:
                 metadata[k] = v
-                
+
         event = {
             "id": str(row['shot_id']),
             "segments": segs,
@@ -332,6 +539,7 @@ def _ingest_flight_shots(csv_text, has_header=True):
             "end_segments": end_segs,
             "end_offsets": end_offs,
             "hq_frame": hq_frame,
+            "bounce_frame": bounce_frame,
             "metadata": metadata
         }
         with _events_lock:
@@ -339,7 +547,7 @@ def _ingest_flight_shots(csv_text, has_header=True):
             _events_by_id[event["id"]] = event
         if is_new:
             count += 1
-    return count
+    return count, rows_parsed
 
 def frame_idx_poller():
     """Background thread: polls each camera's frame index CSV every 2 s for new segments."""
@@ -357,20 +565,21 @@ def frame_idx_poller():
                 print(f"[frame idx poller] {cam} error: {e}")
 
 def flight_shots_poller():
-    """Poll growing flight_shots.csv on Jetson; new bounce rows appear as dots when ready."""
+    """Poll growing flight_shots.csv on Jetson every FLIGHT_SHOTS_POLL_INTERVAL seconds."""
     global _flight_shots_rows_loaded
     while True:
-        time.sleep(2)
         try:
-            text = _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=_flight_shots_rows_loaded)
-            added = _ingest_flight_shots(text, has_header=(_flight_shots_rows_loaded == 0))
+            text = _fetch_flight_shots_csv(skip_data_rows=_flight_shots_rows_loaded)
+            added, rows = _ingest_flight_shots(text)
+            if rows:
+                _flight_shots_rows_loaded += rows
             if added:
-                _flight_shots_rows_loaded += added
                 with _events_lock:
                     total = len(_events_by_id)
                 print(f"[flight shots poller] +{added} new bounces (csv rows={_flight_shots_rows_loaded}, events={total})")
         except Exception as e:
             print(f"[flight shots poller] error: {e}")
+        time.sleep(FLIGHT_SHOTS_POLL_INTERVAL)
 
 def load_data():
     global _events_by_id, _sync_rows_loaded
@@ -393,9 +602,12 @@ def load_data():
     global _flight_shots_rows_loaded
     print(f"  Fetching remote flight shots CSV: {REMOTE_FLIGHT_SHOTS_PATH}")
     try:
-        csv_text = _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=0)
-        _flight_shots_rows_loaded = _ingest_flight_shots(csv_text, has_header=True)
-        print(f"  Loaded {_flight_shots_rows_loaded} events from remote.")
+        csv_text = _fetch_flight_shots_csv(skip_data_rows=0)
+        events_added, _flight_shots_rows_loaded = _ingest_flight_shots(csv_text)
+        print(
+            f"  Parsed {_flight_shots_rows_loaded} flight_shots rows; "
+            f"ingested {events_added} bounces within last {BOUNCE_EVENT_WINDOW_SEC}s DVR window."
+        )
     except Exception as e:
         print(f"  Could not load remote flight shots (will poll later). Error: {e}")
         
@@ -1228,8 +1440,16 @@ def check_sync(
 
 @app.get("/events")
 def get_events():
-    with _events_lock:
-        return list(_events_by_id.values())
+    # Hold all three locks once; use *_unlocked helpers to avoid re-entrant deadlock.
+    with _events_lock, _sync_lock, _frame_idx_lock:
+        pruned = _prune_stale_events_unlocked()
+        if pruned:
+            print(f"[events] pruned {pruned} bounces outside {BOUNCE_EVENT_WINDOW_SEC}s window")
+        return [
+            _refresh_event_positions(ev, unlocked=True)
+            for ev in _events_by_id.values()
+            if _hq_frame_in_bounce_window_unlocked(ev.get("hq_frame"))
+        ]
 
 @app.get("/status")
 def get_status():

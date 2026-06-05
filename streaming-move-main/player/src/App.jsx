@@ -7,6 +7,7 @@ import EventPanel from './components/EventPanel.jsx'
 
 const REVIEW_BUFFER_SIZE = 30
 const LIVE_THRESHOLD = 2
+const EVENTS_POLL_INTERVAL = 2000
 
 const LIVE_CONFIG = {
   enableWorker: true,
@@ -92,6 +93,9 @@ export default function App() {
   const [bufferStart, setBufferStart] = useState(null)
   const [bufferedEnd, setBufferedEnd] = useState(null)
   const [liveSegments, setLiveSegments] = useState([])
+  const [timelineRevision, setTimelineRevision] = useState(0)
+  const eventTimeCacheRef = useRef({})
+  const bumpTimeline = useCallback(() => setTimelineRevision(v => v + 1), [])
   const [reviewSegs, setReviewSegs] = useState({ source: [], sink: [], hq: [] })
   const [syncMap, setSyncMap] = useState(null)
   const [liveSyncMap, setLiveSyncMap] = useState({})
@@ -167,22 +171,51 @@ export default function App() {
 
   const isLive = mode === 'live' && liveEdge !== null && currentTime >= liveEdge - LIVE_THRESHOLD
 
-  const fetchEvents = async () => {
+  const fetchEvents = useCallback(async () => {
     try {
       const res = await fetch(`${backendUrl}/events`)
       const data = await res.json()
       setEvents(data)
+      bumpTimeline()
     } catch (e) { console.warn('Failed to fetch events', e) }
-  }
+  }, [bumpTimeline])
 
   useEffect(() => {
     fetchEvents()
-    const interval = setInterval(fetchEvents, 5000)
+    const interval = setInterval(fetchEvents, EVENTS_POLL_INTERVAL)
     return () => clearInterval(interval)
+  }, [fetchEvents])
+
+  const bufferToSegs = useCallback((cam) => {
+    return (rollingBuffers[cam].current || []).map(s => ({
+      sn: s.sn,
+      absSegIdx: s.absSegIdx,
+      start: s.originalStart,
+      end: s.originalStart + s.duration,
+      duration: s.duration,
+    }))
   }, [])
 
   const mappedEvents = useMemo(() => {
-    const currentSegs = mode === 'live' ? liveSegments : reviewSegs[activeCam]
+    // Always pair activeCam with its rolling buffer (not liveSegments state) to avoid
+    // one-frame desync on camera switch where activeCam updates before liveSegments.
+    let currentSegs = mode === 'live'
+      ? bufferToSegs(activeCam)
+      : reviewSegs[activeCam]
+
+    if ((!currentSegs || currentSegs.length === 0) && mode === 'live') {
+      const times = segmentStartTimesRef.current[activeCam] || {}
+      const keys = Object.keys(times).map(Number).sort((a, b) => a - b)
+      if (keys.length > 0) {
+        currentSegs = keys.slice(-REVIEW_BUFFER_SIZE).map(k => ({
+          absSegIdx: k,
+          start: times[k],
+          end: times[k] + 6,
+          duration: 6,
+        }))
+      }
+    }
+
     if (!currentSegs || currentSegs.length === 0) {
       return []
     }
@@ -190,25 +223,55 @@ export default function App() {
     const minAbs = currentSegs[0].absSegIdx
     const maxAbs = currentSegs[currentSegs.length - 1].absSegIdx
 
+    const segTimeFromAnchor = (segNum, offset) => {
+      const times = segmentStartTimesRef.current?.[activeCam] || {}
+
+      const exactStart = times[segNum]
+      if (exactStart !== undefined) {
+        return exactStart + offset
+      }
+
+      const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
+      if (matchingSeg) {
+        return matchingSeg.start + offset
+      }
+
+      // Extrapolate from closest known segment (not live edge — avoids placing at fetch time)
+      const knownSegs = [...new Set([
+        ...Object.keys(times).map(Number),
+        ...currentSegs.map(s => s.absSegIdx),
+      ])]
+      if (knownSegs.length === 0) return null
+
+      const closest = knownSegs.reduce((p, c) =>
+        Math.abs(c - segNum) < Math.abs(p - segNum) ? c : p
+      )
+      let anchorStart = times[closest]
+      let anchorDur = 6
+      const bufSeg = currentSegs.find(s => s.absSegIdx === closest)
+      if (anchorStart === undefined && bufSeg) {
+        anchorStart = bufSeg.start
+      }
+      if (bufSeg) {
+        anchorDur = bufSeg.duration || 6
+      }
+      if (anchorStart === undefined) return null
+
+      return anchorStart + (segNum - closest) * anchorDur + offset
+    }
+
     const getPlaybackTime = (segs, offs) => {
       if (!segs || !offs) return null
       const segNum = segs[activeCam]
-      if (segNum == null || segNum < minAbs || segNum > maxAbs) return null
-
+      if (segNum == null) return null
       const offset = offs[activeCam] ?? 0
-      const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
 
       if (mode === 'live') {
-        const exactStart = segmentStartTimesRef.current?.[activeCam]?.[segNum]
-        if (exactStart !== undefined) {
-          return exactStart + offset
-        }
-        if (matchingSeg) {
-          return matchingSeg.start + offset
-        }
-        return null
+        return segTimeFromAnchor(segNum, offset)
       }
 
+      if (segNum < minAbs || segNum > maxAbs) return null
+      const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
       if (matchingSeg) {
         return (matchingSeg.localStart ?? matchingSeg.start) + offset
       }
@@ -216,7 +279,19 @@ export default function App() {
     }
 
     return events.flatMap(ev => {
-      const time = getPlaybackTime(ev.segments, ev.offsets)
+      // Only show bounces where bounce_frame is set (clip exists on Jetson)
+      const bounceFrame = ev.bounce_frame ?? ev.metadata?.bounce_frame
+      if (bounceFrame == null || bounceFrame === '') return []
+
+      let time = getPlaybackTime(ev.segments, ev.offsets)
+      const cacheForEvent = eventTimeCacheRef.current[ev.id]
+      if (time != null && Number.isFinite(time)) {
+        if (!eventTimeCacheRef.current[ev.id]) eventTimeCacheRef.current[ev.id] = {}
+        eventTimeCacheRef.current[ev.id][activeCam] = time
+      } else if (cacheForEvent?.[activeCam] != null) {
+        // Keep last good position when /events refresh briefly breaks mapping
+        time = cacheForEvent[activeCam]
+      }
       if (time == null || !Number.isFinite(time)) return []
 
       const startTime = getPlaybackTime(ev.start_segments, ev.start_offsets)
@@ -229,7 +304,7 @@ export default function App() {
         endTime: endTime ?? time,
       }]
     })
-  }, [events, activeCam, mode, liveSegments, reviewSegs])
+  }, [events, activeCam, mode, liveSegments, reviewSegs, timelineRevision, bufferToSegs])
 
   const syncReviewVideos = useCallback((activeTime) => {
     if (!syncMap) return
@@ -550,6 +625,7 @@ export default function App() {
                 end: s.originalStart + s.duration
               })))
             }
+            bumpTimeline()
           }
         } else {
           // console.log(`[HLS NATIVE] Intercepted segment ${cam}/${absSegIdx} natively from video player!`)
@@ -580,12 +656,13 @@ export default function App() {
               })
               .catch(e => console.warn('Failed to fetch live sync segment map', e))
           }
+          bumpTimeline()
         }
       })
     })
     modeRef.current = 'live'
     setMode('live')
-  }, [])
+  }, [bumpTimeline])
 
   const enterReview = useCallback(() => {
     console.log('[MODE] Entering Review Mode')
@@ -728,11 +805,13 @@ export default function App() {
           if (!active) return;
 
           // Compute start times for all segments in this playlist
+          let timesAdded = false
           for (let i = 0; i < playlistSegs.length; i++) {
             const seg = playlistSegs[i];
             if (segmentStartTimesRef.current[cam][seg.absSegIdx] !== undefined) {
               continue;
             }
+            timesAdded = true
 
             // Try to compute from previous segment in playlist
             if (i > 0) {
@@ -754,6 +833,7 @@ export default function App() {
               segmentStartTimesRef.current[cam][seg.absSegIdx] = seg.absSegIdx * 6.0;
             }
           }
+          if (timesAdded) bumpTimeline()
 
           // Now check which segments are missing from rollingBuffers
           const currentBuffer = rollingBuffers[cam].current;
@@ -830,6 +910,7 @@ export default function App() {
                     })
                     .catch(e => console.warn('Failed to fetch sync map for downloaded segment', e));
                 }
+                bumpTimeline()
               })
               .catch((err) => {
                 console.warn(`Error downloading segment ${seg.name} in background:`, err);
@@ -851,7 +932,7 @@ export default function App() {
       active = false;
       clearInterval(intervalId);
     };
-  }, [activeCam, setLiveSegments, setLiveSyncMap]);
+  }, [activeCam, setLiveSegments, setLiveSyncMap, bumpTimeline]);
 
   const getAllCamPositions = useCallback(() => {
     const pos = {}
@@ -1098,6 +1179,16 @@ export default function App() {
           hlsCurrent.config.liveMaxLatencyDurationCount = 9999
         }
 
+        // Sync liveSegments to target buffer before activeCam state flips (prevents dot flash)
+        const targetBuf = rollingBuffers[targetCam].current
+        setLiveSegments(targetBuf.map(s => ({
+          sn: s.sn,
+          absSegIdx: s.absSegIdx,
+          start: s.originalStart,
+          end: s.originalStart + s.duration
+        })))
+        bumpTimeline()
+
         activeCamRef.current = targetCam
         setActiveCam(targetCam)
 
@@ -1155,6 +1246,7 @@ export default function App() {
 
         currentVideo.pause()
         targetVideo.currentTime = Math.max(0, targetTime)
+        bumpTimeline()
         activeCamRef.current = targetCam
         setActiveCam(targetCam)
         if (shouldPlay) await safePlay(targetVideo)

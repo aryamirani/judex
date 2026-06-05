@@ -96,7 +96,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   if (!event) return null
 
   const flightIdStr = String(event.metadata.flight_id).padStart(5, '0')
-  const bounceFrame = event.metadata.bounce_frame
+  const bounceFrame = event.bounce_frame ?? event.metadata.bounce_frame
   const masterLanding = landingByCam.hq || landingByCam.sink || landingByCam.source
   const landingMarkerPct = masterLanding && duration > 0
     ? (masterLanding.timeSec / duration) * 100
