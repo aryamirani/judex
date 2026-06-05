@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import io
+import json
 import time
 import shutil
 import subprocess
@@ -10,21 +11,28 @@ import urllib.request
 import pandas as pd
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
 from contextlib import asynccontextmanager
 
 # Parse args at module level so SESSION_ID is available before lifespan runs
 _parser = argparse.ArgumentParser()
-_parser.add_argument("--session", type=str, required=True, help="Session number, e.g. 1653")
+_parser.add_argument(
+    "--session", type=str, default=None,
+    help="Override session ID (default: read counter from source Pi track_video_index.json)",
+)
 _parser.add_argument("--port", type=int, default=8000)
 _parser.add_argument("--speed", type=float, default=1.0)
 _parser.add_argument("--backup", action="store_true", help="Use local fallback folders if live ports fail")
 _parser.add_argument("--cam-port", type=int, default=8083, help="Port of the live camera HLS streams")
+_parser.add_argument(
+    "--source-pi-host",
+    type=str,
+    default="pi@192.168.0.111",
+    help="SSH target for source Pi (track_video_index.json lives here)",
+)
 _args = _parser.parse_args()
 
-SESSION_ID = _args.session
 SPEED = _args.speed
 USE_BACKUP = _args.backup
 CAM_PORT = _args.cam_port
@@ -32,14 +40,13 @@ CAM_PORT = _args.cam_port
 IS_LIVE = not USE_BACKUP
 
 JETSON_HOST = "jetson@192.168.0.148"
-REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
-FRAME_IDX_PATHS = {
-    cam: f"/home/jetson/Desktop/cv_output/reader/{cam}/hls_segment_frame_index.csv"
-    for cam in ["source", "sink", "hq"]
-}
+SOURCE_PI_HOST = _args.source_pi_host
+TRACK_VIDEO_INDEX_PATH = "/home/pi/source_code/variable_files/track_video_index.json"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSIGNMENT_DIR = os.path.dirname(BASE_DIR)
+INTERN_DIR = os.path.dirname(ASSIGNMENT_DIR)
+SSH_KEY_PATH = os.path.join(INTERN_DIR, "id_rsa")
 DATA_DIR = os.path.join(ASSIGNMENT_DIR, "sync_reports")
 if not os.path.exists(DATA_DIR):
     DATA_DIR = os.path.join(ASSIGNMENT_DIR, "apr17", "sync_reports")
@@ -66,20 +73,6 @@ frame_to_seg = { "source": {}, "sink": {}, "hq": {} }
 seg_to_frame = { "source": {}, "sink": {}, "hq": {} } # seg_index -> cumulative_start_frame
 seg_frame_count = { "source": {}, "sink": {}, "hq": {} } # seg_index -> frame_count
 
-# Paths
-if not USE_BACKUP:
-    CAM_PATHS = {
-        "source": f"http://192.168.0.111:{CAM_PORT}/live.m3u8",
-        "hq":     f"http://192.168.0.112:{CAM_PORT}/live.m3u8",
-        "sink":   f"http://192.168.0.113:{CAM_PORT}/live.m3u8"
-    }
-else:
-    CAM_PATHS = {
-        "source": os.path.join(DATA_DIR, "ts_segments_source", SESSION_ID),
-        "sink": os.path.join(DATA_DIR, "ts_segments_sink", SESSION_ID),
-        "hq": os.path.join(DATA_DIR, "ts_segments_hq", SESSION_ID)
-    }
-
 SERVE_DIRS = {
     "source": os.path.join(BASE_DIR, "serve", "source"),
     "sink": os.path.join(BASE_DIR, "serve", "sink"),
@@ -102,18 +95,76 @@ _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
 _frame_idx_lock = threading.Lock()
 
 
-def _ssh_fetch(remote_path, skip_lines=0):
+def _ssh_argv(host, remote_cmd):
+    return [
+        "ssh",
+        "-i", SSH_KEY_PATH,
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=2",
+        "-o", "StrictHostKeyChecking=accept-new",
+        host,
+        remote_cmd,
+    ]
+
+
+def _fetch_session_from_source_pi():
+    """Read session counter from source Pi track_video_index.json over SSH."""
+    result = subprocess.run(
+        _ssh_argv(SOURCE_PI_HOST, f"cat {TRACK_VIDEO_INDEX_PATH}"),
+        capture_output=True, text=True, timeout=5,
+    )
+    result.check_returncode()
+    data = json.loads(result.stdout.strip())
+    if "counter" not in data:
+        raise ValueError(f"Missing 'counter' in {TRACK_VIDEO_INDEX_PATH}: {data!r}")
+    return str(data["counter"])
+
+
+def resolve_session_id():
+    if _args.session:
+        print(f"  Session ID (override): {_args.session}")
+        return str(_args.session)
+    session = _fetch_session_from_source_pi()
+    print(f"  Session ID from {SOURCE_PI_HOST}:{TRACK_VIDEO_INDEX_PATH} → counter={session}")
+    return session
+
+
+SESSION_ID = resolve_session_id()
+REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
+FRAME_IDX_PATHS = {
+    cam: f"/home/jetson/Desktop/cv_output/reader/{cam}/hls_segment_frame_index.csv"
+    for cam in ["source", "sink", "hq"]
+}
+
+if not USE_BACKUP:
+    CAM_PATHS = {
+        "source": f"http://192.168.0.111:{CAM_PORT}/live.m3u8",
+        "hq":     f"http://192.168.0.112:{CAM_PORT}/live.m3u8",
+        "sink":   f"http://192.168.0.113:{CAM_PORT}/live.m3u8"
+    }
+else:
+    CAM_PATHS = {
+        "source": os.path.join(DATA_DIR, "ts_segments_source", SESSION_ID),
+        "sink": os.path.join(DATA_DIR, "ts_segments_sink", SESSION_ID),
+        "hq": os.path.join(DATA_DIR, "ts_segments_hq", SESSION_ID)
+    }
+
+
+def _ssh_fetch(remote_path, skip_lines=0, allow_empty=False):
     """Fetch text from the Jetson over SSH."""
     try:
         remote_cmd = (f"cat {remote_path}" if skip_lines == 0
-                      else f"tail -n +{skip_lines + 2} {remote_path}")
+                      else f"tail -n +{skip_lines + 2} {remote_path} 2>/dev/null || true")
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", JETSON_HOST, remote_cmd],
+            _ssh_argv(JETSON_HOST, remote_cmd),
             capture_output=True, text=True, timeout=4
         )
-        result.check_returncode()
+        if result.returncode != 0 and not allow_empty:
+            result.check_returncode()
         return result.stdout
     except Exception as e:
+        if allow_empty:
+            return ""
         print(f"  [X] SSH fetch failed: {e}. (No --backup flag provided, so failing explicitly)")
         raise e
 
@@ -122,26 +173,15 @@ def _ssh_file_exists(remote_path):
     try:
         remote_cmd = f"test -f {remote_path}"
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", JETSON_HOST, remote_cmd],
+            _ssh_argv(JETSON_HOST, remote_cmd),
             capture_output=True, text=True, timeout=4
         )
         return result.returncode == 0
     except Exception:
         return False
 
-
-def _ssh_fetch_bytes(remote_path):
-    """Fetch binary file from Jetson (bounce clips)."""
-    remote_cmd = f"cat {remote_path}"
-    result = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", JETSON_HOST, remote_cmd],
-        capture_output=True, timeout=60
-    )
-    result.check_returncode()
-    return result.stdout
-
-def _fetch_csv_lines(skip_lines=0):
-    return _ssh_fetch(REMOTE_CSV_PATH, skip_lines)
+def _fetch_csv_lines(skip_lines=0, allow_empty=False):
+    return _ssh_fetch(REMOTE_CSV_PATH, skip_lines, allow_empty=allow_empty)
 
 def _ingest_sync_rows(csv_text, has_header=True):
     """Parse csv_text and update sync_maps. Returns number of rows ingested."""
@@ -178,7 +218,7 @@ def sync_csv_poller():
     while True:
         time.sleep(4)
         try:
-            new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded)
+            new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded, allow_empty=True)
             added = _ingest_sync_rows(new_text, has_header=(_sync_rows_loaded == 0))
             if added:
                 _sync_rows_loaded += added
@@ -308,7 +348,7 @@ def frame_idx_poller():
         time.sleep(2)
         for cam in ["source", "sink", "hq"]:
             try:
-                text = _ssh_fetch(FRAME_IDX_PATHS[cam], skip_lines=_frame_idx_rows[cam])
+                text = _ssh_fetch(FRAME_IDX_PATHS[cam], skip_lines=_frame_idx_rows[cam], allow_empty=True)
                 added = _ingest_frame_idx_rows(cam, text, has_header=(_frame_idx_rows[cam] == 0))
                 if added:
                     _frame_idx_rows[cam] += added
@@ -971,7 +1011,7 @@ def serve_segment(cam: str, segment: str):
 
 @app.get("/clips/{cam}/{clip_file}")
 def serve_bounce_clip(cam: str, clip_file: str):
-    """Serve bounce clip MP4 from Jetson over SSH (clips may land after the CSV row)."""
+    """Stream bounce clip MP4 from Jetson over SSH (no local copy)."""
     import re
     if cam not in ("source", "sink", "hq"):
         return PlainTextResponse("Unknown camera", status_code=404)
@@ -984,20 +1024,26 @@ def serve_bounce_clip(cam: str, clip_file: str):
         return PlainTextResponse("Bounce clip not ready on Jetson", status_code=404)
 
     try:
-        data = _ssh_fetch_bytes(remote_path)
+        proc = subprocess.Popen(
+            _ssh_argv(JETSON_HOST, f"cat {remote_path}"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
     except Exception as e:
-        print(f"[bounce clip] SSH fetch failed for {remote_path}: {e}")
+        print(f"[bounce clip] SSH stream failed for {remote_path}: {e}")
         return PlainTextResponse("Failed to fetch clip from Jetson", status_code=502)
 
-    from fastapi.responses import Response
-    return Response(content=data, media_type="video/mp4")
+    return StreamingResponse(proc.stdout, media_type="video/mp4")
 
 @app.get("/cameras")
 def get_cameras():
+    port = _args.port
     return {
-        "source": "http://localhost:8000/stream/source/live.m3u8",
-        "sink": "http://localhost:8000/stream/sink/live.m3u8",
-        "hq": "http://localhost:8000/stream/hq/live.m3u8"
+        "source": f"http://localhost:{port}/stream/source/live.m3u8",
+        "sink": f"http://localhost:{port}/stream/sink/live.m3u8",
+        "hq": f"http://localhost:{port}/stream/hq/live.m3u8",
+        "bounce_clips_base": f"http://localhost:{port}/clips",
+        "session_id": SESSION_ID,
     }
 
 @app.get("/sync")
