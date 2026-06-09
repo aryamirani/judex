@@ -100,6 +100,7 @@ export default function App() {
   const [liveSegments, setLiveSegments] = useState([])
   const [timelineRevision, setTimelineRevision] = useState(0)
   const eventTimeCacheRef = useRef({})
+  const bounceTimeLockRef = useRef({}) // bounce_frame -> { time, hlsLocked }
   const bumpTimeline = useCallback(() => setTimelineRevision(v => v + 1), [])
   const [reviewSegs, setReviewSegs] = useState({ source: [], sink: [], hq: [] })
   const [syncMap, setSyncMap] = useState(null)
@@ -294,21 +295,46 @@ export default function App() {
       return null
     }
 
-    return events.flatMap(ev => {
+    const mapped = events.flatMap(ev => {
       // Only show bounces where bounce_frame is set (clip exists on Jetson)
       const bounceFrame = ev.bounce_frame ?? ev.metadata?.bounce_frame
       if (bounceFrame == null || bounceFrame === '') return []
 
+      const bfKey = String(bounceFrame)
+      const segNum = ev.segments?.[timelineCam]
+      const isHlsAnchored = mode === 'live'
+        && segNum != null
+        && hlsAnchoredSegsRef.current[timelineCam]?.has(segNum)
+
       let time = getPlaybackTime(ev.segments, ev.offsets)
+
+      if (mode === 'live') {
+        const lock = bounceTimeLockRef.current[bfKey]
+        if (lock?.hlsLocked) {
+          // Locked to HLS-anchored time — never drift on later polls
+          time = lock.time
+        } else if (time != null && Number.isFinite(time)) {
+          if (isHlsAnchored) {
+            bounceTimeLockRef.current[bfKey] = { time, hlsLocked: true }
+          } else if (!lock) {
+            bounceTimeLockRef.current[bfKey] = { time, hlsLocked: false }
+          } else {
+            time = lock.time
+          }
+        } else if (lock) {
+          time = lock.time
+        }
+      }
+
       const cacheKey = mode === 'live' ? REVIEW_MASTER_CAM : activeCam
-      const cacheForEvent = eventTimeCacheRef.current[ev.id]
       if (time != null && Number.isFinite(time)) {
         if (!eventTimeCacheRef.current[ev.id]) eventTimeCacheRef.current[ev.id] = {}
         eventTimeCacheRef.current[ev.id][cacheKey] = time
-      } else if (cacheForEvent?.[cacheKey] != null) {
-        // Fallback only when live mapping briefly unavailable (e.g. /events ahead of buffer)
-        time = cacheForEvent[cacheKey]
+      } else {
+        const cached = eventTimeCacheRef.current[ev.id]?.[cacheKey]
+        if (cached != null) time = cached
       }
+
       if (time == null || !Number.isFinite(time)) return []
 
       const startTime = getPlaybackTime(ev.start_segments, ev.start_offsets)
@@ -321,6 +347,20 @@ export default function App() {
         endTime: endTime ?? time,
       }]
     })
+
+    // One dot per physical bounce — server can return multiple shot_ids per bounce_frame
+    if (mode === 'live') {
+      const byBounce = new Map()
+      for (const ev of mapped) {
+        const bf = ev.bounce_frame ?? ev.metadata?.bounce_frame
+        const k = bf != null ? String(bf) : ev.id
+        const prev = byBounce.get(k)
+        if (!prev || ev.time >= prev.time) byBounce.set(k, ev)
+      }
+      return [...byBounce.values()]
+    }
+
+    return mapped
   }, [events, activeCam, mode, liveSegments, reviewSegs, timelineRevision, bufferToSegs])
 
   const syncReviewVideos = useCallback((activeTime) => {

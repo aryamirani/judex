@@ -1306,10 +1306,19 @@ def check_sync(
 @app.get("/events")
 def get_events():
     with _events_lock, _sync_lock, _frame_idx_lock:
-        return [
-            _refresh_event_positions(ev)
-            for ev in _events_by_id.values()
-        ]
+        refreshed = [_refresh_event_positions(ev) for ev in _events_by_id.values()]
+        # One event per bounce_frame — CSV can contain duplicate shot rows for the same clip
+        by_bounce = {}
+        for ev in refreshed:
+            bf = ev.get("bounce_frame") or _safe_frame_int((ev.get("metadata") or {}).get("bounce_frame"))
+            if bf is None:
+                by_bounce[f"id:{ev['id']}"] = ev
+                continue
+            key = f"bf:{bf}"
+            prev = by_bounce.get(key)
+            if prev is None or (ev.get("hq_frame") or 0) >= (prev.get("hq_frame") or 0):
+                by_bounce[key] = ev
+        return list(by_bounce.values())
 
 @app.get("/status")
 def get_status():

@@ -7,14 +7,17 @@ function toFraction(t, start, end) {
   return Math.max(0, Math.min(1, (t - start) / (end - start)))
 }
 
-/** Stable key for React — bounce_frame alone can repeat across rows/events. */
-function bounceEventKey(ev) {
+/** Stable identity for one dot per physical bounce (never include time — it drifts each poll). */
+function bounceIdentityKey(ev) {
   const bf = ev.bounce_frame ?? ev.metadata?.bounce_frame
-  const hq = ev.hq_frame ?? ''
-  const t = Number.isFinite(ev.time) ? ev.time.toFixed(3) : ''
-  if (bf != null && bf !== '') return `bf-${bf}-hq${hq}-t${t}`
-  if (ev.hq_frame != null) return `hq-${ev.hq_frame}-t${t}`
-  return `${ev.id}-${t}`
+  if (bf != null && bf !== '') return `bf-${bf}`
+  if (ev.hq_frame != null) return `hq-${ev.hq_frame}`
+  return `id-${ev.id}`
+}
+
+/** React render key — same as identity; time must not be part of the key. */
+function bounceEventKey(ev) {
+  return bounceIdentityKey(ev)
 }
 
 export default function SeekBar({
