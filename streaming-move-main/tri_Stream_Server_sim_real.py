@@ -1445,11 +1445,23 @@ def get_events():
         pruned = _prune_stale_events_unlocked()
         if pruned:
             print(f"[events] pruned {pruned} bounces outside {BOUNCE_EVENT_WINDOW_SEC}s window")
-        return [
+        refreshed = [
             _refresh_event_positions(ev, unlocked=True)
             for ev in _events_by_id.values()
             if _hq_frame_in_bounce_window_unlocked(ev.get("hq_frame"))
         ]
+        # One event per bounce_frame — CSV can contain duplicate shot rows for the same clip
+        by_bounce = {}
+        for ev in refreshed:
+            bf = ev.get("bounce_frame") or _safe_frame_int((ev.get("metadata") or {}).get("bounce_frame"))
+            if bf is None:
+                by_bounce[f"id:{ev['id']}"] = ev
+                continue
+            key = f"bf:{bf}"
+            prev = by_bounce.get(key)
+            if prev is None or (ev.get("hq_frame") or 0) >= (prev.get("hq_frame") or 0):
+                by_bounce[key] = ev
+        return list(by_bounce.values())
 
 @app.get("/status")
 def get_status():
