@@ -6,6 +6,7 @@ import CameraSelector from './components/CameraSelector.jsx'
 import EventPanel from './components/EventPanel.jsx'
 
 const REVIEW_BUFFER_SIZE = 30
+const REVIEW_MASTER_CAM = 'hq'
 const LIVE_THRESHOLD = 2
 const EVENTS_POLL_INTERVAL = 2000
 
@@ -74,12 +75,16 @@ export default function App() {
   const rollingBuffers = { source: useRef([]), sink: useRef([]), hq: useRef([]) }
   const blobUrlsRef = useRef([])
   const segmentStartTimesRef = useRef({ source: {}, sink: {}, hq: {} })
+  const hlsAnchoredSegsRef = useRef({ source: new Set(), sink: new Set(), hq: new Set() })
   const downloadingSegmentsRef = useRef({ source: new Set(), sink: new Set(), hq: new Set() })
 
   const rafRef = useRef(null)
   const modeRef = useRef('live')
   const lastTickRef = useRef(performance.now())
   const liveEdgeRef = useRef(null)
+  const dvrActiveRef = useRef(false)
+  const dvrTimeRef = useRef(null)
+  const isPlayingRef = useRef(true)
 
   const [activeCam, setActiveCam] = useState('hq')
   const [mode, setMode] = useState('live')
@@ -102,6 +107,10 @@ export default function App() {
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [isPlaying, setIsPlaying] = useState(true)
 
+  useEffect(() => {
+    isPlayingRef.current = isPlaying
+  }, [isPlaying])
+
   const handleTogglePlay = useCallback(() => {
     setIsPlaying(prev => {
       const nextPlaying = !prev
@@ -114,15 +123,22 @@ export default function App() {
               safePlay(video)
             } else if (cam === activeCamRef.current) {
               // In live mode, only play the active camera to save Wi-Fi bandwidth
+              if (dvrActiveRef.current && dvrTimeRef.current != null) {
+                video.currentTime = dvrTimeRef.current
+              }
               safePlay(video)
             }
-            // Resuming: check if we're at the live edge — if so, re-enable latency enforcement
+            // Resuming: stay in DVR until GO LIVE — never re-enable latency while behind live
             if (modeRef.current === 'live') {
               const hls = hlsRefs[cam].current
-              const livePos = hls?.liveSyncPosition
-              const isAtLive = livePos && Math.abs(video.currentTime - livePos) < 2.0
               if (hls) {
-                hls.config.liveMaxLatencyDurationCount = isAtLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
+                const livePos = hls.liveSyncPosition
+                const atLiveEdge = !dvrActiveRef.current
+                  && livePos != null
+                  && Math.abs(video.currentTime - livePos) < 2.0
+                hls.config.liveMaxLatencyDurationCount = atLiveEdge
+                  ? LIVE_CONFIG.liveMaxLatencyDurationCount
+                  : 9999
               }
             }
           } else {
@@ -197,14 +213,14 @@ export default function App() {
   }, [])
 
   const mappedEvents = useMemo(() => {
-    // Always pair activeCam with its rolling buffer (not liveSegments state) to avoid
-    // one-frame desync on camera switch where activeCam updates before liveSegments.
+    const timelineCam = mode === 'live' ? REVIEW_MASTER_CAM : activeCam
+    // Bounce dots always sit on the HQ clock in live mode so they never shift on camera switch.
     let currentSegs = mode === 'live'
-      ? bufferToSegs(activeCam)
+      ? bufferToSegs(REVIEW_MASTER_CAM)
       : reviewSegs[activeCam]
 
     if ((!currentSegs || currentSegs.length === 0) && mode === 'live') {
-      const times = segmentStartTimesRef.current[activeCam] || {}
+      const times = segmentStartTimesRef.current[REVIEW_MASTER_CAM] || {}
       const keys = Object.keys(times).map(Number).sort((a, b) => a - b)
       if (keys.length > 0) {
         currentSegs = keys.slice(-REVIEW_BUFFER_SIZE).map(k => ({
@@ -224,7 +240,7 @@ export default function App() {
     const maxAbs = currentSegs[currentSegs.length - 1].absSegIdx
 
     const segTimeFromAnchor = (segNum, offset) => {
-      const times = segmentStartTimesRef.current?.[activeCam] || {}
+      const times = segmentStartTimesRef.current?.[timelineCam] || {}
 
       const exactStart = times[segNum]
       if (exactStart !== undefined) {
@@ -262,9 +278,9 @@ export default function App() {
 
     const getPlaybackTime = (segs, offs) => {
       if (!segs || !offs) return null
-      const segNum = segs[activeCam]
+      const segNum = segs[timelineCam]
       if (segNum == null) return null
-      const offset = offs[activeCam] ?? 0
+      const offset = offs[timelineCam] ?? 0
 
       if (mode === 'live') {
         return segTimeFromAnchor(segNum, offset)
@@ -284,13 +300,14 @@ export default function App() {
       if (bounceFrame == null || bounceFrame === '') return []
 
       let time = getPlaybackTime(ev.segments, ev.offsets)
+      const cacheKey = mode === 'live' ? REVIEW_MASTER_CAM : activeCam
       const cacheForEvent = eventTimeCacheRef.current[ev.id]
       if (time != null && Number.isFinite(time)) {
         if (!eventTimeCacheRef.current[ev.id]) eventTimeCacheRef.current[ev.id] = {}
-        eventTimeCacheRef.current[ev.id][activeCam] = time
-      } else if (cacheForEvent?.[activeCam] != null) {
-        // Keep last good position when /events refresh briefly breaks mapping
-        time = cacheForEvent[activeCam]
+        eventTimeCacheRef.current[ev.id][cacheKey] = time
+      } else if (cacheForEvent?.[cacheKey] != null) {
+        // Fallback only when live mapping briefly unavailable (e.g. /events ahead of buffer)
+        time = cacheForEvent[cacheKey]
       }
       if (time == null || !Number.isFinite(time)) return []
 
@@ -452,6 +469,24 @@ export default function App() {
           if (!seg) seg = segs.reduce((p, c) => Math.abs(video.currentTime - p.localStart) < Math.abs(video.currentTime - c.localStart) ? p : c);
           globalTime = seg.start + (video.currentTime - seg.localStart);
         }
+      } else if (dvrActiveRef.current && video.paused && dvrTimeRef.current != null) {
+        // While paused in DVR, keep UI playhead where the user scrubbed — don't follow HLS snap-to-live.
+        globalTime = dvrTimeRef.current
+      } else if (dvrActiveRef.current && !video.paused) {
+        const livePos = hls?.liveSyncPosition
+        const saved = dvrTimeRef.current
+        if (livePos != null && Math.abs(globalTime - livePos) < 2.5) {
+          dvrActiveRef.current = false
+          dvrTimeRef.current = null
+        } else if (livePos != null && saved != null
+          && Math.abs(globalTime - livePos) < 2
+          && livePos - saved > 5) {
+          video.currentTime = saved
+          if (hls) hls.config.liveMaxLatencyDurationCount = 9999
+          globalTime = saved
+        } else {
+          dvrTimeRef.current = globalTime
+        }
       }
       setCurrentTime(globalTime)
       if (modeRef.current === 'live') {
@@ -464,12 +499,9 @@ export default function App() {
         // Hls.js liveSyncPosition inherently jumps by 6 seconds every time a new chunk is appended.
         // To prevent the UI red line from jumping or sprinting (which visually breaks the playhead position),
         // we only snap if it has drifted catastrophically (> 10s). Otherwise, we let dt glide it perfectly smoothly.
-        if (hls?.liveSyncPosition && !video.seeking) {
+        if (hls?.liveSyncPosition && !video.seeking && !dvrActiveRef.current) {
           const drift = Math.abs(edge - hls.liveSyncPosition)
-          if (video.paused && drift > 3.0) {
-            // While paused (e.g. after scrub), keep UI edge near real HLS live for GO LIVE
-            edge = hls.liveSyncPosition
-          } else if (!video.paused && drift > 10.0) {
+          if (drift > 3.0) {
             edge = hls.liveSyncPosition
           }
         }
@@ -557,7 +589,7 @@ export default function App() {
               console.log(`[HLS] Fatal network error for ${cam}, trying to recover...`);
               if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
                 const livePos = hls.liveSyncPosition;
-                if (livePos != null) {
+                if (livePos != null && !dvrActiveRef.current) {
                   console.log(`[HLS] Fragment permanently missing, jumping to live edge to escape 404 loop!`);
                   if (cam === activeCamRef.current) {
                     hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount;
@@ -603,22 +635,19 @@ export default function App() {
 
         const existing = rollingBuffers[cam].current
         const existingSeg = existing.find(s => s.absSegIdx === absSegIdx)
+        const hlsStart = data.frag.start
+
+        segmentStartTimesRef.current[cam][absSegIdx] = hlsStart
+        if (!hlsAnchoredSegsRef.current[cam]) hlsAnchoredSegsRef.current[cam] = new Set()
+        hlsAnchoredSegsRef.current[cam].add(absSegIdx)
 
         if (existingSeg) {
-          const delta = data.frag.start - existingSeg.originalStart
-          // Ignore massive deltas (e.g. from HLS.js seeking far back and hitting a discontinuity)
-          if (Math.abs(delta) > 0.1 && Math.abs(delta) < 5.0) {
-            console.log('SHIFTING TIMELINE DELTA:', delta);
-            rollingBuffers[cam].current = existing.map(s => ({
-              ...s,
-              originalStart: s.originalStart + delta
-            }))
-            for (const key in segmentStartTimesRef.current[cam]) {
-              segmentStartTimesRef.current[cam][key] += delta
-            }
+          if (Math.abs(existingSeg.originalStart - hlsStart) > 0.01) {
+            rollingBuffers[cam].current = existing.map(s =>
+              s.absSegIdx === absSegIdx ? { ...s, originalStart: hlsStart } : s
+            )
             if (cam === activeCamRef.current && modeRef.current === 'live') {
-              const updated = rollingBuffers[cam].current
-              setLiveSegments(updated.map(s => ({
+              setLiveSegments(rollingBuffers[cam].current.map(s => ({
                 sn: s.sn,
                 absSegIdx: s.absSegIdx,
                 start: s.originalStart,
@@ -628,12 +657,10 @@ export default function App() {
             bumpTimeline()
           }
         } else {
-          // console.log(`[HLS NATIVE] Intercepted segment ${cam}/${absSegIdx} natively from video player!`)
-          segmentStartTimesRef.current[cam][absSegIdx] = data.frag.start
           const entry = {
             sn: data.frag.sn,
             absSegIdx: absSegIdx,
-            originalStart: data.frag.start,
+            originalStart: hlsStart,
             duration: data.frag.duration,
             bytes: data.payload.slice(0)
           }
@@ -804,33 +831,38 @@ export default function App() {
 
           if (!active) return;
 
-          // Compute start times for all segments in this playlist
+          // Compute start times — chain through playlist durations; never overwrite HLS anchors
+          if (!segmentStartTimesRef.current[cam]) {
+            segmentStartTimesRef.current[cam] = {}
+          }
           let timesAdded = false
           for (let i = 0; i < playlistSegs.length; i++) {
-            const seg = playlistSegs[i];
-            if (segmentStartTimesRef.current[cam][seg.absSegIdx] !== undefined) {
-              continue;
-            }
+            const seg = playlistSegs[i]
+            if (hlsAnchoredSegsRef.current[cam]?.has(seg.absSegIdx)) continue
+            if (segmentStartTimesRef.current[cam][seg.absSegIdx] !== undefined) continue
             timesAdded = true
 
-            // Try to compute from previous segment in playlist
             if (i > 0) {
-              const prevSeg = playlistSegs[i - 1];
-              const prevStart = segmentStartTimesRef.current[cam][prevSeg.absSegIdx];
+              const prevSeg = playlistSegs[i - 1]
+              const prevStart = segmentStartTimesRef.current[cam][prevSeg.absSegIdx]
               if (prevStart !== undefined) {
-                segmentStartTimesRef.current[cam][seg.absSegIdx] = prevStart + prevSeg.duration;
-                continue;
+                segmentStartTimesRef.current[cam][seg.absSegIdx] = prevStart + prevSeg.duration
+                continue
               }
             }
 
-            // Try to find closest defined segment in the map
-            const keys = Object.keys(segmentStartTimesRef.current[cam]).map(Number).sort((a, b) => a - b);
+            const keys = Object.keys(segmentStartTimesRef.current[cam]).map(Number).sort((a, b) => a - b)
             if (keys.length > 0) {
-              const closest = keys.reduce((prev, curr) => Math.abs(curr - seg.absSegIdx) < Math.abs(prev - seg.absSegIdx) ? curr : prev);
-              const closestStart = segmentStartTimesRef.current[cam][closest];
-              segmentStartTimesRef.current[cam][seg.absSegIdx] = closestStart + (seg.absSegIdx - closest) * 6.0;
+              const closest = keys.reduce((prev, curr) =>
+                Math.abs(curr - seg.absSegIdx) < Math.abs(prev - seg.absSegIdx) ? curr : prev
+              )
+              const closestStart = segmentStartTimesRef.current[cam][closest]
+              const bufSeg = rollingBuffers[cam].current.find(s => s.absSegIdx === closest)
+              const stepDur = bufSeg?.duration ?? 6.0
+              segmentStartTimesRef.current[cam][seg.absSegIdx] =
+                closestStart + (seg.absSegIdx - closest) * stepDur
             } else {
-              segmentStartTimesRef.current[cam][seg.absSegIdx] = seg.absSegIdx * 6.0;
+              segmentStartTimesRef.current[cam][seg.absSegIdx] = seg.absSegIdx * seg.duration
             }
           }
           if (timesAdded) bumpTimeline()
@@ -959,6 +991,9 @@ export default function App() {
   const goLive = useCallback(async () => {
     if (modeRef.current !== 'live') return
 
+    dvrActiveRef.current = false
+    dvrTimeRef.current = null
+
     const masterCam = activeCamRef.current
     const masterHls = hlsRefs[masterCam].current
     const masterVideo = videoRefs[masterCam].current
@@ -996,8 +1031,12 @@ export default function App() {
       }
     })
 
-    masterHls.startLoad(-1)
+    // Seek on the existing MSE timeline — startLoad(-1) resets the buffer and
+    // re-anchors time near zero, which orphan all bounce dots and DVR history.
     masterVideo.currentTime = livePos
+    if (masterHls.streamController?.paused) {
+      masterHls.startLoad(livePos)
+    }
     liveEdgeRef.current = livePos
     setLiveEdge(livePos)
     setCurrentTime(livePos)
@@ -1298,7 +1337,12 @@ export default function App() {
             goLive()
           }
         } else {
-          // Seeking to a past segment: mimic pause to avoid HLS.js stream controller seek-recovery
+          // Seeking to a past segment: pause and stay in DVR until GO LIVE
+          dvrActiveRef.current = true
+          dvrTimeRef.current = time
+          setCurrentTime(time)
+          ignoreSyncRef.current = true
+
           CAMERAS.forEach(cam => {
             if (hlsRefs[cam].current) {
               hlsRefs[cam].current.config.liveMaxLatencyDurationCount = 9999
@@ -1311,15 +1355,11 @@ export default function App() {
           video.currentTime = time
           syncLiveVideos(time)
 
-          if (forcePause) {
-            setIsPlaying(false)
-          } else if (isPlaying) {
-            CAMERAS.forEach(cam => {
-              if (videoRefs[cam].current) {
-                videoRefs[cam].current.play().catch(() => { })
-              }
-            })
-          }
+          setIsPlaying(false)
+
+          setTimeout(() => {
+            ignoreSyncRef.current = false
+          }, 300)
         }
       }
     }

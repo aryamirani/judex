@@ -1,8 +1,20 @@
-import { useRef, useCallback, useState, useEffect } from 'react'
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
+
+const BOUNCE_GAP_SEC = 6
 
 function toFraction(t, start, end) {
   if (end <= start) return 0
   return Math.max(0, Math.min(1, (t - start) / (end - start)))
+}
+
+/** Stable key for React — bounce_frame alone can repeat across rows/events. */
+function bounceEventKey(ev) {
+  const bf = ev.bounce_frame ?? ev.metadata?.bounce_frame
+  const hq = ev.hq_frame ?? ''
+  const t = Number.isFinite(ev.time) ? ev.time.toFixed(3) : ''
+  if (bf != null && bf !== '') return `bf-${bf}-hq${hq}-t${t}`
+  if (ev.hq_frame != null) return `hq-${ev.hq_frame}-t${t}`
+  return `${ev.id}-${t}`
 }
 
 export default function SeekBar({
@@ -51,7 +63,7 @@ export default function SeekBar({
     
     const now = performance.now()
     if (isFinal || now - lastSeekRef.current > 150) {
-      onSeek(targetTime)
+      onSeek(targetTime, mode === 'live')
       lastSeekRef.current = now
     }
   }, [rangeStart, rangeEnd, onSeek, mode, liveEdge])
@@ -72,11 +84,18 @@ export default function SeekBar({
     if (dragging.current) {
       dragging.current = false
       seekFromEvent(e, true)
-      setDragTime(null)
     }
     window.removeEventListener('mousemove', onMouseMove)
     window.removeEventListener('mouseup', onMouseUp)
-  }, [onMouseMove])
+  }, [onMouseMove, seekFromEvent])
+
+  // Keep scrub preview until App currentTime catches up (prevents playhead snap on release)
+  useEffect(() => {
+    if (dragTime === null) return
+    if (Math.abs(currentTime - dragTime) < 0.35) {
+      setDragTime(null)
+    }
+  }, [currentTime, dragTime])
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -116,9 +135,27 @@ export default function SeekBar({
     s => s.start > rangeStart && s.start < rangeEnd
   )
 
-  const visibleEvents = events.filter(
-    ev => ev.time >= rangeStart && ev.time <= rangeEnd
-  )
+  const visibleEvents = useMemo(() => {
+    const byKey = new Map()
+    for (const ev of events) {
+      if (ev.time < rangeStart || ev.time > rangeEnd) continue
+      const k = bounceEventKey(ev)
+      const prev = byKey.get(k)
+      if (!prev || ev.time >= prev.time) byKey.set(k, ev)
+    }
+    return [...byKey.values()].sort((a, b) => a.time - b.time)
+  }, [events, rangeStart, rangeEnd])
+
+  const longGapEventKeys = useMemo(() => {
+    const sorted = [...events].sort((a, b) => a.time - b.time)
+    const keys = new Set()
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].time - sorted[i - 1].time > BOUNCE_GAP_SEC) {
+        keys.add(bounceEventKey(sorted[i]))
+      }
+    }
+    return keys
+  }, [events])
 
   const behind = liveEdge && activeTime
     ? Math.round(liveEdge - activeTime)
@@ -255,14 +292,17 @@ export default function SeekBar({
         {/* EVENT DOTS */}
         {visibleEvents.map((ev) => {
           const frac = toFraction(ev.time, rangeStart, rangeEnd)
-          const isHovered = hoveredEvent?.id === ev.id
-          // highlight if close to current time
+          const evKey = bounceEventKey(ev)
+          const isLongGap = longGapEventKeys.has(evKey)
+          const isHovered = hoveredEvent && bounceEventKey(hoveredEvent) === evKey
           const isCurrent = Math.abs(activeTime - ev.time) < 1.0
           const isPast = ev.time <= activeTime
+          const dotColor = isCurrent ? '#fff' : (isLongGap ? '#4a90e2' : 'var(--amber)')
+          const hoverGlow = isLongGap ? 'rgba(74,144,226,0.8)' : 'rgba(245,166,35,0.8)'
  
           return (
             <div
-              key={ev.id}
+              key={evKey}
               onMouseEnter={() => setHoveredEvent(ev)}
               onMouseLeave={() => setHoveredEvent(null)}
               onClick={(e) => {
@@ -288,8 +328,8 @@ export default function SeekBar({
                 width: isCurrent || isHovered ? '12px' : '8px', 
                 height: isCurrent || isHovered ? '12px' : '8px',
                 borderRadius: '50%', 
-                background: isCurrent ? '#fff' : 'var(--amber)',
-                boxShadow: isHovered ? '0 0 12px 4px rgba(245,166,35,0.8)' : (isCurrent ? '0 0 10px rgba(255,255,255,0.8)' : 'none'),
+                background: dotColor,
+                boxShadow: isHovered ? `0 0 12px 4px ${hoverGlow}` : (isCurrent ? '0 0 10px rgba(255,255,255,0.8)' : 'none'),
                 transition: 'background 0.2s, width 0.2s, height 0.2s, box-shadow 0.2s, opacity 0.2s', 
                 border: '1px solid #000',
                 opacity: isPast || isHovered ? 1 : 0.25,
