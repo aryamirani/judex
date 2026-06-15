@@ -42,6 +42,35 @@ function buildReviewPlaylist(segments, blobUrls) {
   return lines.join('\n')
 }
 
+/** Map a server event to VOD-local time on the HQ review timeline (0 … snapshot duration). */
+function reviewTimeFromEvent(ev, hqReviewSegs) {
+  const bounceFrame = ev.bounce_frame ?? ev.metadata?.bounce_frame
+  if (bounceFrame == null || bounceFrame === '' || !hqReviewSegs?.length) return null
+  const segNum = ev.segments?.hq
+  if (segNum == null) return null
+  const offset = ev.offsets?.hq ?? 0
+  const minAbs = hqReviewSegs[0].absSegIdx
+  const maxAbs = hqReviewSegs[hqReviewSegs.length - 1].absSegIdx
+  if (segNum < minAbs || segNum > maxAbs) return null
+  const matchingSeg = hqReviewSegs.find(s => s.absSegIdx === segNum)
+  if (!matchingSeg) return null
+  return matchingSeg.localStart + offset
+}
+
+function buildReviewMappedEvents(eventsList, hqReviewSegs) {
+  const byBounce = new Map()
+  for (const ev of eventsList) {
+    const time = reviewTimeFromEvent(ev, hqReviewSegs)
+    if (time == null || !Number.isFinite(time)) continue
+    const bf = ev.bounce_frame ?? ev.metadata?.bounce_frame
+    const k = bf != null ? String(bf) : ev.id
+    const mapped = { ...ev, time, startTime: time, endTime: time }
+    const prev = byBounce.get(k)
+    if (!prev || time >= prev.time) byBounce.set(k, mapped)
+  }
+  return [...byBounce.values()].sort((a, b) => a.time - b.time)
+}
+
 function waitForSeek(video) {
   return new Promise(resolve => {
     if (!video || !video.seeking) {
@@ -69,6 +98,26 @@ async function safePlay(video) {
   }
 }
 
+/** True if time t falls inside any buffered range of the video (with small slack). */
+function isTimeBuffered(video, t) {
+  if (!video) return false
+  for (let i = 0; i < video.buffered.length; i++) {
+    if (t >= video.buffered.start(i) - 0.5 && t <= video.buffered.end(i) + 0.5) return true
+  }
+  return false
+}
+
+/** Start of the next buffered range strictly ahead of the playhead, or null. */
+function findForwardPlayable(video) {
+  if (!video || video.buffered.length === 0) return null
+  const ct = video.currentTime
+  for (let i = 0; i < video.buffered.length; i++) {
+    const s = video.buffered.start(i)
+    if (s > ct + 0.5) return s + 0.05
+  }
+  return null
+}
+
 export default function App() {
   const videoRefs = { source: useRef(null), sink: useRef(null), hq: useRef(null) }
   const hlsRefs = { source: useRef(null), sink: useRef(null), hq: useRef(null) }
@@ -84,6 +133,7 @@ export default function App() {
   const liveEdgeRef = useRef(null)
   const dvrActiveRef = useRef(false)
   const dvrTimeRef = useRef(null)
+  const reviewEntryHoldRef = useRef(null)
   const isPlayingRef = useRef(true)
 
   const [activeCam, setActiveCam] = useState('hq')
@@ -214,14 +264,23 @@ export default function App() {
   }, [])
 
   const mappedEvents = useMemo(() => {
-    const timelineCam = mode === 'live' ? REVIEW_MASTER_CAM : activeCam
-    // Bounce dots always sit on the HQ clock in live mode so they never shift on camera switch.
-    let currentSegs = mode === 'live'
-      ? bufferToSegs(REVIEW_MASTER_CAM)
-      : reviewSegs[activeCam]
+    // Review: VOD-local HQ timeline only — never reuse live HLS absolute times.
+    if (mode === 'review') {
+      const hqSegs = reviewSegs[REVIEW_MASTER_CAM] || []
+      if (hqSegs.length === 0) return []
+      return buildReviewMappedEvents(events, hqSegs)
+    }
 
-    if ((!currentSegs || currentSegs.length === 0) && mode === 'live') {
-      const times = segmentStartTimesRef.current[REVIEW_MASTER_CAM] || {}
+    // Dots must live on the SAME clock as the SeekBar range / playhead, which are
+    // built from the *active* camera's own HLS timeline (rollingBuffers[activeCam]
+    // → originalStart). Each camera's media timeline is independent, so pinning dots
+    // to HQ while the range is on source/sink makes them cluster or vanish. Use the
+    // active camera's per-event segment/offset sync mapping instead.
+    const timelineCam = activeCam
+    let currentSegs = bufferToSegs(activeCam)
+
+    if (!currentSegs || currentSegs.length === 0) {
+      const times = segmentStartTimesRef.current[activeCam] || {}
       const keys = Object.keys(times).map(Number).sort((a, b) => a - b)
       if (keys.length > 0) {
         currentSegs = keys.slice(-REVIEW_BUFFER_SIZE).map(k => ({
@@ -286,12 +345,6 @@ export default function App() {
       if (mode === 'live') {
         return segTimeFromAnchor(segNum, offset)
       }
-
-      if (segNum < minAbs || segNum > maxAbs) return null
-      const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
-      if (matchingSeg) {
-        return (matchingSeg.localStart ?? matchingSeg.start) + offset
-      }
       return null
     }
 
@@ -300,7 +353,9 @@ export default function App() {
       const bounceFrame = ev.bounce_frame ?? ev.metadata?.bounce_frame
       if (bounceFrame == null || bounceFrame === '') return []
 
-      const bfKey = String(bounceFrame)
+      // Lock/cache are per-camera-clock: the same bounce maps to a different
+      // absolute time on each camera's independent HLS timeline.
+      const bfKey = `${bounceFrame}|${timelineCam}`
       const segNum = ev.segments?.[timelineCam]
       const isHlsAnchored = mode === 'live'
         && segNum != null
@@ -326,7 +381,7 @@ export default function App() {
         }
       }
 
-      const cacheKey = mode === 'live' ? REVIEW_MASTER_CAM : activeCam
+      const cacheKey = timelineCam
       if (time != null && Number.isFinite(time)) {
         if (!eventTimeCacheRef.current[ev.id]) eventTimeCacheRef.current[ev.id] = {}
         eventTimeCacheRef.current[ev.id][cacheKey] = time
@@ -349,18 +404,14 @@ export default function App() {
     })
 
     // One dot per physical bounce — server can return multiple shot_ids per bounce_frame
-    if (mode === 'live') {
-      const byBounce = new Map()
-      for (const ev of mapped) {
-        const bf = ev.bounce_frame ?? ev.metadata?.bounce_frame
-        const k = bf != null ? String(bf) : ev.id
-        const prev = byBounce.get(k)
-        if (!prev || ev.time >= prev.time) byBounce.set(k, ev)
-      }
-      return [...byBounce.values()]
+    const byBounce = new Map()
+    for (const ev of mapped) {
+      const bf = ev.bounce_frame ?? ev.metadata?.bounce_frame
+      const k = bf != null ? String(bf) : ev.id
+      const prev = byBounce.get(k)
+      if (!prev || ev.time >= prev.time) byBounce.set(k, ev)
     }
-
-    return mapped
+    return [...byBounce.values()]
   }, [events, activeCam, mode, liveSegments, reviewSegs, timelineRevision, bufferToSegs])
 
   const syncReviewVideos = useCallback((activeTime) => {
@@ -436,7 +487,15 @@ export default function App() {
     if (baseStart === undefined) return false
 
     const newTime = baseStart + syncInfo.offset
-    if (Math.abs(video.currentTime - newTime) > 0.15) {
+    const hls = hlsRefs[cam].current
+    if (!isTimeBuffered(video, newTime) && hls) {
+      // Target fell outside the buffer (long pause → evicted segments). Flush the
+      // loader and restart it AT the target so HLS fetches it directly instead of
+      // slow-catching-up from the old position (which causes visible jumps/desync).
+      hls.stopLoad()
+      video.currentTime = newTime
+      hls.startLoad(newTime)
+    } else if (Math.abs(video.currentTime - newTime) > 0.15) {
       video.currentTime = newTime
     }
     return true
@@ -494,8 +553,12 @@ export default function App() {
   }, [liveSyncMap])
 
   const tick = useCallback(() => {
-    const video = videoRefs[activeCam].current
-    const hls = hlsRefs[activeCam].current
+    // Read the live ref, not a captured closure — the rAF loop is started once at
+    // mount, so using `activeCam` here would forever read the mount-time camera (hq)
+    // and freeze the playhead when switched to sink/source (which pause hq).
+    const cam = activeCamRef.current
+    const video = videoRefs[cam].current
+    const hls = hlsRefs[cam].current
     if (video) {
       const now = performance.now()
       const dt = (now - lastTickRef.current) / 1000
@@ -503,11 +566,19 @@ export default function App() {
 
       let globalTime = video.currentTime;
       if (modeRef.current === 'review') {
-        const segs = reviewSegs[activeCam];
-        if (segs && segs.length > 0) {
-          let seg = segs.find(s => video.currentTime >= s.localStart && video.currentTime <= s.localEnd);
-          if (!seg) seg = segs.reduce((p, c) => Math.abs(video.currentTime - p.localStart) < Math.abs(video.currentTime - c.localStart) ? p : c);
-          globalTime = seg.start + (video.currentTime - seg.localStart);
+        const hqVideo = videoRefs[REVIEW_MASTER_CAM].current
+        const entryHold = reviewEntryHoldRef.current
+        if (entryHold != null) {
+          globalTime = entryHold
+          if (hqVideo && !hqVideo.seeking && Math.abs(hqVideo.currentTime - entryHold) < 0.25) {
+            reviewEntryHoldRef.current = null
+          }
+        } else if (hqVideo) {
+          globalTime = hqVideo.currentTime
+        }
+        if (hqVideo && hqVideo.buffered.length > 0) {
+          setBufferStart(0)
+          setBufferedEnd(hqVideo.buffered.end(hqVideo.buffered.length - 1))
         }
       } else if (dvrActiveRef.current && video.paused && dvrTimeRef.current != null) {
         // While paused in DVR, keep UI playhead where the user scrubbed — don't follow HLS snap-to-live.
@@ -568,37 +639,41 @@ export default function App() {
       }
     }
 
-    // Check for GAP segments to show "NO FRAMES" precisely aligned with playhead
-    let updatedGap = false;
-    const newGap = { ...gapState }
-    CAMERAS.forEach(cam => {
-      const v = videoRefs[cam].current
-      const h = hlsRefs[cam].current
+    // Check for GAP segments to show "NO FRAMES" precisely aligned with playhead.
+    // Use functional setState so we compare against the latest value (the rAF loop
+    // captures a mount-time closure, so reading `gapState` directly would be stale).
+    const nextGap = {}
+    CAMERAS.forEach(c => {
+      const v = videoRefs[c].current
+      const h = hlsRefs[c].current
       if (v && h && v.readyState >= 2) { // Ensure there is enough data
         const ct = v.currentTime
         const details = h.levels?.[h.currentLevel]?.details
         if (details) {
           const frag = details.fragments.find(f => f.start <= ct && f.start + f.duration >= ct + 0.1) ||
             details.fragments.find(f => Math.abs(f.start - ct) < 1.0)
-
           if (frag) {
             const url = frag.relurl || frag.url || ''
-            const isGap = url.includes(`gap_${cam}.ts`)
-            if (newGap[cam] !== isGap) {
-              newGap[cam] = isGap
-              updatedGap = true
-            }
+            nextGap[c] = url.includes(`gap_${c}.ts`)
           }
         }
       }
     })
 
-    if (updatedGap) {
-      setGapState(newGap)
-    }
+    setGapState(prev => {
+      let changed = false
+      const merged = { ...prev }
+      for (const c of CAMERAS) {
+        if (nextGap[c] !== undefined && nextGap[c] !== prev[c]) {
+          merged[c] = nextGap[c]
+          changed = true
+        }
+      }
+      return changed ? merged : prev
+    })
 
     rafRef.current = requestAnimationFrame(tick)
-  }, [activeCam, syncReviewVideos, syncLiveVideos, gapState])
+  }, [])
 
   const initLive = useCallback(() => {
     setIsPlaying(true)
@@ -630,11 +705,32 @@ export default function App() {
               if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
                 const livePos = hls.liveSyncPosition;
                 if (livePos != null && !dvrActiveRef.current) {
-                  console.log(`[HLS] Fragment permanently missing, jumping to live edge to escape 404 loop!`);
-                  if (cam === activeCamRef.current) {
-                    hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount;
+                  const behind = livePos - video.currentTime;
+                  if (behind <= 12) {
+                    // At/near live: a fragment briefly 404'd (slow Pi) → recover to live edge.
+                    console.log(`[HLS] Fragment missing near live, recovering to live edge.`);
+                    if (cam === activeCamRef.current) {
+                      hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount;
+                    }
+                    video.currentTime = livePos;
+                  } else {
+                    // DVR territory (e.g. resumed after a long pause and hit an evicted
+                    // gap): hop to the next available buffered region instead of snapping
+                    // all the way to live. Keep latency disabled so we aren't yanked forward.
+                    const next = findForwardPlayable(video);
+                    if (next != null) {
+                      console.log(`[HLS] Evicted gap in DVR, hopping to next buffered region @ ${next.toFixed(2)}s.`);
+                      video.currentTime = next;
+                      hls.config.liveMaxLatencyDurationCount = 9999;
+                    } else {
+                      // Nothing buffered ahead — unavoidable: jump to live to avoid stalling.
+                      console.log(`[HLS] No buffered data ahead, jumping to live edge.`);
+                      if (cam === activeCamRef.current) {
+                        hls.config.liveMaxLatencyDurationCount = LIVE_CONFIG.liveMaxLatencyDurationCount;
+                      }
+                      video.currentTime = livePos;
+                    }
                   }
-                  video.currentTime = livePos;
                 }
               }
               hls.startLoad();
@@ -731,38 +827,48 @@ export default function App() {
     setMode('live')
   }, [bumpTimeline])
 
-  const enterReview = useCallback(() => {
+  const seekReviewToTime = useCallback((time, segsByCam, map) => {
+    const master = REVIEW_MASTER_CAM
+    const activeSegs = segsByCam[master]
+    if (!activeSegs?.length) return
+
+    const seg = activeSegs.find(s => time >= s.localStart && time <= s.localEnd)
+      || activeSegs.reduce((p, c) =>
+        Math.abs(c.localStart + c.duration / 2 - time) < Math.abs(p.localStart + p.duration / 2 - time) ? c : p
+      )
+    const offsetInSeg = seg ? time - seg.localStart : 0
+
+    CAMERAS.forEach(cam => {
+      const v = videoRefs[cam].current
+      if (!v) return
+
+      let seekTime = time
+      if (cam !== master && seg) {
+        const mapping = map?.[master]?.[seg.absSegIdx]?.[cam]
+        const targetSeg = segsByCam[cam]?.find(s => s.absSegIdx === mapping?.segment)
+        if (mapping && targetSeg) {
+          seekTime = targetSeg.localStart + mapping.offset + offsetInSeg
+        }
+      }
+      v.currentTime = Math.max(0, seekTime)
+      v.pause()
+    })
+    setCurrentTime(time)
+  }, [])
+
+  const enterReview = useCallback(async () => {
     console.log('[MODE] Entering Review Mode')
     if (rollingBuffers[activeCam].current.length === 0) return false
 
     const newReviewSegs = { source: [], sink: [], hq: [] }
-
     CAMERAS.forEach(cam => {
-      let snapshot = rollingBuffers[cam].current.slice()
-
-      const fragUrls = snapshot.map(s => URL.createObjectURL(new Blob([s.bytes], { type: 'video/mp2t' })))
-      const m3u8 = buildReviewPlaylist(snapshot, fragUrls)
-      const m3u8Url = URL.createObjectURL(new Blob([m3u8], { type: 'application/vnd.apple.mpegurl' }))
-      blobUrlsRef.current.push(...fragUrls, m3u8Url)
-
-      hlsRefs[cam].current?.destroy()
-
-      const hls = new Hls(REVIEW_CONFIG)
-      hlsRefs[cam].current = hls
-      hls.loadSource(m3u8Url)
-      hls.attachMedia(videoRefs[cam].current)
-
-      hls.once(Hls.Events.MANIFEST_PARSED, () => {
-        videoRefs[cam].current.currentTime = 0
-        videoRefs[cam].current.pause()
-      })
-
+      const snapshot = rollingBuffers[cam].current.slice()
       let t = 0
       newReviewSegs[cam] = snapshot.map(s => {
         const seg = {
           sn: s.sn,
           absSegIdx: s.absSegIdx,
-          start: t, // Local time IS global time in Review mode, making it mathematically gapless
+          start: t,
           end: t + s.duration,
           localStart: t,
           localEnd: t + s.duration,
@@ -774,29 +880,74 @@ export default function App() {
       })
     })
 
-    setReviewSegs(newReviewSegs)
-    setIsPlaying(false)
+    const mapped = buildReviewMappedEvents(events, newReviewSegs[REVIEW_MASTER_CAM])
+    const latestBounce = mapped.length > 0 ? mapped[mapped.length - 1] : null
+    const pendingSeekTime = latestBounce?.time ?? 0
 
-    // Fetch full 3-way sync map for all cameras in the snapshot
-    Promise.all(CAMERAS.map(c => {
-      const sns = rollingBuffers[c].current.map(s => s.absSegIdx).join(',')
-      if (!sns) return Promise.resolve({ cam: c, data: {} })
-      return fetch(`${backendUrl}/sync_map?from_camera=${c}&sns=${sns}`)
-        .then(res => res.json())
-        .then(data => ({ cam: c, data }))
-    })).then(results => {
-      const fullMap = {}
+    let fullMap = {}
+    try {
+      const results = await Promise.all(CAMERAS.map(c => {
+        const sns = rollingBuffers[c].current.map(s => s.absSegIdx).join(',')
+        if (!sns) return Promise.resolve({ cam: c, data: {} })
+        return fetch(`${backendUrl}/sync_map?from_camera=${c}&sns=${sns}`)
+          .then(res => res.json())
+          .then(data => ({ cam: c, data }))
+      }))
       results.forEach(r => { fullMap[r.cam] = r.data })
-      setSyncMap(fullMap)
-    }).catch(e => console.error('Failed to fetch full sync map', e))
+    } catch (e) {
+      console.error('Failed to fetch full sync map', e)
+    }
 
+    let manifestsReady = 0
+    const finishReviewEntrySeek = async () => {
+      seekReviewToTime(pendingSeekTime, newReviewSegs, fullMap)
+      await Promise.all(CAMERAS.map(cam => waitForSeek(videoRefs[cam].current)))
+      // Start buffering from the seek point (latest bounce), NOT from position 0.
+      // startLoad(-1) would make HLS.js fetch segments from 0 forward, so when the
+      // user hits play at pendingSeekTime nothing is buffered there yet — causing the
+      // sequential "fast-forward loading" artifact and the wrong playhead position.
+      // Passing pendingSeekTime tells HLS.js to begin fetching from that offset.
+      CAMERAS.forEach(cam => {
+        const hls = hlsRefs[cam].current
+        if (hls && modeRef.current === 'review') hls.startLoad(pendingSeekTime)
+      })
+    }
+
+    CAMERAS.forEach(cam => {
+      const snapshot = rollingBuffers[cam].current.slice()
+      const fragUrls = snapshot.map(s => URL.createObjectURL(new Blob([s.bytes], { type: 'video/mp2t' })))
+      const m3u8 = buildReviewPlaylist(snapshot, fragUrls)
+      const m3u8Url = URL.createObjectURL(new Blob([m3u8], { type: 'application/vnd.apple.mpegurl' }))
+      blobUrlsRef.current.push(...fragUrls, m3u8Url)
+
+      hlsRefs[cam].current?.destroy()
+
+      const hls = new Hls(REVIEW_CONFIG)
+      hlsRefs[cam].current = hls
+      hls.once(Hls.Events.MANIFEST_PARSED, () => {
+        manifestsReady += 1
+        if (manifestsReady === CAMERAS.length) {
+          finishReviewEntrySeek()
+        }
+      })
+      hls.loadSource(m3u8Url)
+      hls.attachMedia(videoRefs[cam].current)
+    })
+
+    setReviewSegs(newReviewSegs)
+    setSyncMap(fullMap)
+    setIsPlaying(false)
+    setSelectedEvent(latestBounce)
+    reviewEntryHoldRef.current = pendingSeekTime
+    setCurrentTime(pendingSeekTime)
     setLiveEdge(null)
     setBufferStart(null)
     setBufferedEnd(null)
     modeRef.current = 'review'
     setMode('review')
+
     return true
-  }, [activeCam, liveEdge, liveSegments, liveSyncMap])
+  }, [activeCam, events, seekReviewToTime])
 
   const exitReview = useCallback(() => {
     console.log('[MODE] Exiting Review Mode (returning to Live)')
@@ -810,6 +961,8 @@ export default function App() {
     // Clear Review UI timeline but keep Live DVR history intact!
     setReviewSegs({ source: [], sink: [], hq: [] })
     setSyncMap(null)
+    setSelectedEvent(null)
+    reviewEntryHoldRef.current = null
     setPlaybackRate(1.0)
     modeRef.current = 'live'
     setMode('live')
@@ -1051,11 +1204,15 @@ export default function App() {
       return
     }
 
-    // Clamp to buffered range so we don't seek into empty space
-    if (masterVideo.buffered.length > 0) {
-      const bufEnd = masterVideo.buffered.end(masterVideo.buffered.length - 1)
-      if (livePos > bufEnd - 0.25) {
-        livePos = Math.max(masterVideo.currentTime, bufEnd - 1.0)
+    // Is the live edge already inside the buffered range? (short pause)
+    // After a long pause the segments between us and live get evicted from the
+    // server playlist, so livePos lands in an unbuffered gap.
+    let liveBuffered = false
+    for (let i = 0; i < masterVideo.buffered.length; i++) {
+      if (livePos >= masterVideo.buffered.start(i) - 0.5 &&
+          livePos <= masterVideo.buffered.end(i) + 0.5) {
+        liveBuffered = true
+        break
       }
     }
 
@@ -1071,17 +1228,27 @@ export default function App() {
       }
     })
 
-    // Seek on the existing MSE timeline — startLoad(-1) resets the buffer and
-    // re-anchors time near zero, which orphan all bounce dots and DVR history.
-    masterVideo.currentTime = livePos
-    if (masterHls.streamController?.paused) {
+    // Jump to the live edge on the existing MSE timeline (never startLoad(-1) —
+    // that re-anchors time near zero and orphans dots/DVR history).
+    // When the target is outside the buffered range (long pause → evicted
+    // segments), flush the loader and restart it AT livePos so HLS fetches the
+    // live fragments directly instead of slow-catching-up (which causes jumps).
+    if (!liveBuffered) {
+      masterHls.stopLoad()
+      masterVideo.currentTime = livePos
       masterHls.startLoad(livePos)
+    } else {
+      masterVideo.currentTime = livePos
+      if (masterHls.streamController?.paused) {
+        masterHls.startLoad(livePos)
+      }
     }
     liveEdgeRef.current = livePos
     setLiveEdge(livePos)
     setCurrentTime(livePos)
 
     const details = masterHls.levels?.[masterHls.currentLevel]?.details
+    let lastSyncData = null
     if (details?.fragments?.length) {
       const frag = details.fragments.find(f => f.start <= livePos && f.start + f.duration > livePos)
         || details.fragments[details.fragments.length - 1]
@@ -1093,8 +1260,8 @@ export default function App() {
         try {
           const res = await fetch(`${backendUrl}/sync?from_camera=${masterCam}&from_seg=${absSegIdx}&from_offset=${offset}`)
           if (res.ok) {
-            const data = await res.json()
-            CAMERAS.filter(c => c !== masterCam).forEach(cam => seekCamToSyncPosition(cam, data[cam]))
+            lastSyncData = await res.json()
+            CAMERAS.filter(c => c !== masterCam).forEach(cam => seekCamToSyncPosition(cam, lastSyncData[cam]))
           }
         } catch (e) {
           console.warn('goLive sync failed', e)
@@ -1105,9 +1272,21 @@ export default function App() {
     setIsPlaying(true)
     await safePlay(masterVideo)
 
+    // Re-apply secondary sync once their freshly-loaded live fragments are buffered.
+    // On a far jump (evicted segments) the first seek lands in an unbuffered gap; this
+    // second pass corrects the sub-second alignment without waiting for the 4s poller.
+    if (lastSyncData) {
+      setTimeout(() => {
+        if (modeRef.current !== 'live') return
+        CAMERAS.filter(c => c !== masterCam).forEach(cam => {
+          seekCamToSyncPosition(cam, lastSyncData[cam])
+        })
+      }, 700)
+    }
+
     setTimeout(() => {
       ignoreSyncRef.current = false
-    }, 300)
+    }, 1000)
   }, [seekCamToSyncPosition])
 
   const doLiveSync = useCallback(async () => {
@@ -1341,30 +1520,10 @@ export default function App() {
     const video = videoRefs[activeCam].current
     if (video) {
       if (mode === 'review') {
-        const master = activeCamRef.current
-        const activeSegs = reviewSegs[master]
-        const seg = activeSegs?.length
-          ? (activeSegs.find(s => time >= s.localStart && time <= s.localEnd) || activeSegs[0])
-          : null
-        const offsetInSeg = seg ? time - seg.localStart : 0
-
-        CAMERAS.forEach(cam => {
-          const v = videoRefs[cam].current
-          if (!v) return
-
-          let seekTime = time
-          if (cam !== master && seg) {
-            const mapping = syncMap?.[master]?.[seg.absSegIdx]?.[cam]
-            const targetSeg = reviewSegs[cam]?.find(s => s.absSegIdx === mapping?.segment)
-            if (mapping && targetSeg) {
-              seekTime = targetSeg.localStart + mapping.offset + offsetInSeg
-            }
-          }
-          v.currentTime = Math.max(0, seekTime)
-
-          if (!forcePause && isPlaying) v.play().catch(() => { })
-        })
-        if (forcePause) setIsPlaying(false)
+        reviewEntryHoldRef.current = null
+        setCurrentTime(time)
+        seekReviewToTime(time, reviewSegs, syncMap)
+        setIsPlaying(false)
       } else {
         // GO LIVE button seeks to liveEdge — jump to real HLS live position and resume
         const livePos = liveEdgeRef.current
@@ -1412,7 +1571,7 @@ export default function App() {
   const displayLiveEdge = inReview ? (activeReviewSegs.length > 0 ? activeReviewSegs[activeReviewSegs.length - 1].end : null) : liveEdge
   // Force the left edge of the timeline to perfectly lock to the 30-segment window, ignoring HLS.js's "zombie" cache
   const displayBufferStart = inReview ? 0 : (liveSegments.length > 0 ? liveSegments[0].start : bufferStart)
-  const displayBufferedEnd = inReview ? displayLiveEdge : bufferedEnd
+  const displayBufferedEnd = inReview ? (bufferedEnd ?? displayLiveEdge) : bufferedEnd
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0a0a0a', color: '#fff' }}>

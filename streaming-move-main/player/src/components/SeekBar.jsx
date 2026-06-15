@@ -66,7 +66,7 @@ export default function SeekBar({
     
     const now = performance.now()
     if (isFinal || now - lastSeekRef.current > 150) {
-      onSeek(targetTime, mode === 'live')
+      onSeek(targetTime, true)
       lastSeekRef.current = now
     }
   }, [rangeStart, rangeEnd, onSeek, mode, liveEdge])
@@ -107,7 +107,7 @@ export default function SeekBar({
         const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
         const prevEvents = validEvents.filter(ev => ev.time < referenceTime - 0.5).sort((a, b) => b.time - a.time);
         if (prevEvents.length > 0) {
-          if (mode === 'review' && onSeek) onSeek(prevEvents[0].time);
+          if (onSeek) onSeek(prevEvents[0].time, mode === 'review')
           setInternalEventTime(prevEvents[0].time);
           if (onEventSelect) onEventSelect(prevEvents[0]);
         }
@@ -116,7 +116,7 @@ export default function SeekBar({
         const validEvents = events.filter(ev => ev.time <= (liveEdge !== null ? liveEdge : currentTime));
         const nextEvents = validEvents.filter(ev => ev.time > referenceTime + 0.5).sort((a, b) => a.time - b.time);
         if (nextEvents.length > 0) {
-          if (mode === 'review' && onSeek) onSeek(nextEvents[0].time);
+          if (onSeek) onSeek(nextEvents[0].time, mode === 'review')
           setInternalEventTime(nextEvents[0].time);
           if (onEventSelect) onEventSelect(nextEvents[0]);
         }
@@ -150,7 +150,7 @@ export default function SeekBar({
   }, [events, rangeStart, rangeEnd])
 
   const longGapEventKeys = useMemo(() => {
-    const sorted = [...events].sort((a, b) => a.time - b.time)
+    const sorted = [...visibleEvents]
     const keys = new Set()
     for (let i = 1; i < sorted.length; i++) {
       if (sorted[i].time - sorted[i - 1].time > BOUNCE_GAP_SEC) {
@@ -158,7 +158,7 @@ export default function SeekBar({
       }
     }
     return keys
-  }, [events])
+  }, [visibleEvents])
 
   const behind = liveEdge && activeTime
     ? Math.round(liveEdge - activeTime)
