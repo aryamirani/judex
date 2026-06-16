@@ -191,7 +191,7 @@ export default function SeekBar({
                 if (onTogglePlay) onTogglePlay();
               }}
               style={{
-                background: 'linear-gradient(135deg, var(--amber, #f5a623), #d48812)',
+                background: 'linear-gradient(135deg, #e8e8e8, #c0c0c0)',
                 border: 'none',
                 color: '#000',
                 borderRadius: '6px',
@@ -200,7 +200,7 @@ export default function SeekBar({
                 padding: '4px 12px',
                 fontWeight: 'bold',
                 minWidth: '40px',
-                boxShadow: '0 2px 8px rgba(245, 166, 35, 0.3)'
+                boxShadow: '0 2px 8px rgba(232, 232, 232, 0.2)'
               }}
             >
               {isPlaying ? '⏸' : '▶'}
@@ -272,7 +272,7 @@ export default function SeekBar({
         }}>
           <div style={{
             position: 'absolute', left: 0, width: `${bufferedFrac * 100}%`, height: '100%',
-            background: 'rgba(245,166,35,0.22)',
+            background: 'rgba(232,232,232,0.15)',
           }} />
           <div style={{
             position: 'absolute', left: 0, width: `${playedFrac * 100}%`, height: '100%',
@@ -301,7 +301,7 @@ export default function SeekBar({
           const isCurrent = Math.abs(activeTime - ev.time) < 1.0
           const isPast = ev.time <= activeTime
           const dotColor = isCurrent ? '#fff' : (isLongGap ? '#4a90e2' : 'var(--amber)')
-          const hoverGlow = isLongGap ? 'rgba(74,144,226,0.8)' : 'rgba(245,166,35,0.8)'
+          const hoverGlow = isLongGap ? 'rgba(74,144,226,0.8)' : 'rgba(232,232,232,0.8)'
  
           return (
             <div
@@ -344,7 +344,7 @@ export default function SeekBar({
         <div style={{
           position: 'absolute', left: `${playedFrac * 100}%`, transform: 'translateX(-50%)',
           width: '12px', height: '12px', borderRadius: '50%', background: 'var(--amber)',
-          boxShadow: '0 0 0 2px rgba(245,166,35,0.3)', pointerEvents: 'none', zIndex: 2,
+          boxShadow: '0 0 0 2px rgba(232,232,232,0.2)', pointerEvents: 'none', zIndex: 2,
         }} />
 
         <div style={{

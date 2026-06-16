@@ -444,7 +444,7 @@ export default function Player({ src }) {
           position: 'absolute', top: '16px', left: '50%',
           transform: 'translateX(-50%)',
           background: 'rgba(0,0,0,0.75)',
-          border: '1px solid rgba(245,166,35,0.4)',
+          border: '1px solid rgba(232,232,232,0.25)',
           borderRadius: '4px',
           padding: '5px 14px',
           fontFamily: 'var(--condensed)',

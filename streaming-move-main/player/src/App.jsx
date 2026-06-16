@@ -1575,19 +1575,33 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0a0a0a', color: '#fff' }}>
-      <header style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{ fontWeight: 'bold', letterSpacing: '2px', fontSize: '18px' }}>Judex AI</span>
+      <header style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222' }}>
+        {/* Left: brand + camera tabs */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, flexWrap: 'nowrap', flexShrink: 0 }}>
+          <span style={{ fontWeight: 'bold', letterSpacing: '2px', fontSize: '16px', whiteSpace: 'nowrap', flexShrink: 0 }}>Judex AI</span>
           <CameraSelector active={activeCam} onSwitch={handleSwitchCam} />
         </div>
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+        {/* Center: current mode */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <span style={{
+            fontSize: '13px', fontWeight: '700', letterSpacing: '3px', textTransform: 'uppercase',
+            padding: '5px 16px', borderRadius: '20px',
+            background: inReview ? 'rgba(74,144,226,0.15)' : 'rgba(232,232,232,0.08)',
+            color: inReview ? '#4a90e2' : '#e8e8e8',
+            border: inReview ? '1px solid rgba(74,144,226,0.35)' : '1px solid rgba(232,232,232,0.25)',
+          }}>
+            {inReview ? 'Review' : 'Live'}
+          </span>
+        </div>
+        {/* Right: mode toggle button */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
           <button
             onClick={inReview ? exitReview : enterReview}
             style={{
-              padding: '10px 28px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-              background: inReview ? 'linear-gradient(135deg, #4a90e2, #2e6db4)' : 'linear-gradient(135deg, var(--amber, #f5a623), #d48812)',
-              color: '#000', fontWeight: '800', fontSize: '14px', letterSpacing: '1px',
-              boxShadow: inReview ? '0 4px 15px rgba(74, 144, 226, 0.4)' : '0 4px 15px rgba(245, 166, 35, 0.4)',
+              padding: '6px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+              background: inReview ? 'linear-gradient(135deg, #4a90e2, #2e6db4)' : 'linear-gradient(135deg, #e8e8e8, #c0c0c0)',
+              color: '#000', fontWeight: '800', fontSize: '11px', letterSpacing: '1px',
+              boxShadow: inReview ? '0 4px 15px rgba(74, 144, 226, 0.4)' : '0 4px 15px rgba(232, 232, 232, 0.2)',
               transition: 'all 0.2s ease-in-out',
               textTransform: 'uppercase'
             }}

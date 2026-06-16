@@ -111,7 +111,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--amber, #f5a623)', fontWeight: 'bold', fontSize: '18px' }}>Event {event.id}</span>
+          <span style={{ color: '#e8e8e8', fontWeight: 'bold', fontSize: '18px' }}>Event {event.id}</span>
           <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', fontFamily: 'monospace' }}>
             {activeCam.toUpperCase()} Frame: {event.frames ? event.frames[activeCam] : 'N/A'}
           </span>
@@ -195,7 +195,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
           ◀ PREV EVENT
         </button>
         <button onClick={handlePlayPause} style={{
-          background: 'linear-gradient(135deg, var(--amber, #f5a623), #d48812)', color: '#000', border: 'none',
+          background: 'linear-gradient(135deg, #e8e8e8, #c0c0c0)', color: '#000', border: 'none',
           width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px',
         }}>
