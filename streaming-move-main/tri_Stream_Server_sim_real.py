@@ -1182,8 +1182,11 @@ def get_live_m3u8(cam: str):
             if name:
                 cam_path = CAM_PATHS[cam]
                 if cam_path.startswith("http://") or cam_path.startswith("https://"):
-                    base_url = cam_path.rsplit('/', 1)[0]
-                    name = f"{base_url}/{name}"
+                    # Use a relative name so the browser requests /stream/{cam}/{seg}.ts
+                    # from localhost:8000, which has CORS enabled. Embedding the absolute
+                    # Pi IP causes the browser to fetch cross-origin from 192.168.x.x:8083
+                    # which has no CORS headers → NetworkError + black screen.
+                    name = os.path.basename(name)
                 else:
                     dst = os.path.join(SERVE_DIRS[cam], name)
             
@@ -1216,10 +1219,33 @@ from fastapi.responses import FileResponse
 @app.get("/stream/{cam}/{segment}.ts")
 def serve_segment(cam: str, segment: str):
     dst = os.path.join(SERVE_DIRS[cam], f"{segment}.ts")
-    if not os.path.exists(dst):
-        print(f"[STRICT ENFORCEMENT] React tried to fetch {cam}/{segment}.ts before Wi-Fi fetch completed. DENIED (404)!")
-        return PlainTextResponse("File not yet downloaded from Pi", status_code=404)
-    return FileResponse(dst)
+    if os.path.exists(dst):
+        return FileResponse(dst)
+
+    if IS_LIVE:
+        # Proxy-fetch directly from the Pi camera server on demand.
+        # This is a transparent one-hop pass-through — no disk write, no extra latency
+        # beyond the Pi fetch itself. Required because the Pi HTTP server has no CORS
+        # headers so the browser cannot fetch from 192.168.x.x:8083 cross-origin.
+        cam_path = CAM_PATHS.get(cam, "")
+        if cam_path.startswith("http://") or cam_path.startswith("https://"):
+            base_url = cam_path.rsplit('/', 1)[0]
+            pi_url = f"{base_url}/{SESSION_ID}/{segment}.ts"
+            try:
+                req = urllib.request.Request(pi_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = resp.read()
+                return StreamingResponse(
+                    iter([data]),
+                    media_type="video/mp2t",
+                    headers={"Cache-Control": "no-cache"}
+                )
+            except Exception as e:
+                print(f"[serve_segment] Pi proxy fetch failed for {cam}/{segment}.ts: {e}")
+                return PlainTextResponse(f"Segment not available on Pi: {e}", status_code=502)
+
+    print(f"[serve_segment] {cam}/{segment}.ts not found locally.")
+    return PlainTextResponse("Segment not found", status_code=404)
 
 @app.get("/clips/{cam}/{clip_file}")
 def serve_bounce_clip(cam: str, clip_file: str):
