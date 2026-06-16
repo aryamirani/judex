@@ -187,7 +187,11 @@ def _fetch_csv_lines(skip_lines=0, allow_empty=False):
     return _ssh_fetch(REMOTE_CSV_PATH, skip_lines, allow_empty=allow_empty)
 
 def _ingest_sync_rows(csv_text, has_header=True):
-    """Parse csv_text and update sync_maps. Returns number of rows ingested."""
+    """Parse csv_text and update sync_maps. Returns number of rows ingested.
+    Any combination of missing cameras is tolerated — mappings are loaded for
+    whichever pair(s) of cameras have valid indices in each row. A warning is
+    printed once per ingest call for each camera that has missing data.
+    """
     if not csv_text.strip():
         return 0
     if has_header:
@@ -197,21 +201,38 @@ def _ingest_sync_rows(csv_text, has_header=True):
         df = pd.read_csv(io.StringIO(csv_text), header=None, usecols=[0, 1, 2],
                          names=["Source_Index", "Sink_Index", "HQ_Index"])
     count = 0
+    missing = {"source": 0, "sink": 0, "hq": 0}
     with _sync_lock:
         for _, row in df.iterrows():
-            if pd.isna(row['Source_Index']) or pd.isna(row['Sink_Index']) or pd.isna(row['HQ_Index']):
-                continue
-            src_idx = int(row['Source_Index'])
-            snk_idx = int(row['Sink_Index'])
-            hq_idx  = int(row['HQ_Index'])
-            sync_maps["source_to_sink"][src_idx] = snk_idx
-            sync_maps["source_to_hq"][src_idx]   = hq_idx
-            sync_maps["sink_to_source"][snk_idx]  = src_idx
-            sync_maps["sink_to_hq"][snk_idx]      = hq_idx
-            sync_maps["hq_to_source"][hq_idx]     = src_idx
-            sync_maps["hq_to_sink"][hq_idx]       = snk_idx
+            has_src = not pd.isna(row['Source_Index'])
+            has_snk = not pd.isna(row['Sink_Index'])
+            has_hq  = not pd.isna(row['HQ_Index'])
+            if not has_src: missing["source"] += 1
+            if not has_snk: missing["sink"]   += 1
+            if not has_hq:  missing["hq"]     += 1
+            if not has_src and not has_snk and not has_hq:
+                continue  # nothing to load for this row
+            src_idx = int(row['Source_Index']) if has_src else None
+            snk_idx = int(row['Sink_Index'])   if has_snk else None
+            hq_idx  = int(row['HQ_Index'])     if has_hq  else None
+            # source <-> sink
+            if has_src and has_snk:
+                sync_maps["source_to_sink"][src_idx] = snk_idx
+                sync_maps["sink_to_source"][snk_idx] = src_idx
+            # source <-> hq
+            if has_src and has_hq:
+                sync_maps["source_to_hq"][src_idx] = hq_idx
+                sync_maps["hq_to_source"][hq_idx]  = src_idx
+            # sink <-> hq
+            if has_snk and has_hq:
+                sync_maps["sink_to_hq"][snk_idx] = hq_idx
+                sync_maps["hq_to_sink"][hq_idx]  = snk_idx
             count += 1
+    for cam, n in missing.items():
+        if n:
+            print(f"  [WARNING] {n}/{count + n} sync rows missing {cam.upper()} index — {cam} sync incomplete.")
     return count
+
 
 def sync_csv_poller():
     """
@@ -573,10 +594,9 @@ def flight_shots_poller():
             added, rows = _ingest_flight_shots(text)
             if rows:
                 _flight_shots_rows_loaded += rows
-            if added:
-                with _events_lock:
-                    total = len(_events_by_id)
-                print(f"[flight shots poller] +{added} new bounces (csv rows={_flight_shots_rows_loaded}, events={total})")
+            with _events_lock:
+                total = len(_events_by_id)
+            print(f"[flight shots poller] polled — csv_rows={_flight_shots_rows_loaded}, new_bounces={added}, total_events={total}")
         except Exception as e:
             print(f"[flight shots poller] error: {e}")
         time.sleep(FLIGHT_SHOTS_POLL_INTERVAL)
