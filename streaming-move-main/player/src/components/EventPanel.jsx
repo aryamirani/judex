@@ -17,6 +17,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   const [analyzed, setAnalyzed] = useState(false)
   const [landingByCam, setLandingByCam] = useState({ source: null, sink: null, hq: null })
   const [analyzeError, setAnalyzeError] = useState(null)
+  const [retryCounts, setRetryCounts] = useState({ source: 0, sink: 0, hq: 0 })
 
   const cameras = [
     { id: 'source', label: 'Cam 1 - SOURCE', ref: v1 },
@@ -91,6 +92,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
     setAnalyzed(false)
     setLandingByCam({ source: null, sink: null, hq: null })
     setAnalyzeError(null)
+    setRetryCounts({ source: 0, sink: 0, hq: 0 })
   }, [event])
 
   if (!event) return null
@@ -147,13 +149,34 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flex: 1, minHeight: 0 }}>
         {cameras.map(cam => {
-          const clipUrl = `${backendUrl}/clips/${cam.id}/bounce_${bounceFrame}_${flightIdStr}.mp4`
+          const retryCount = retryCounts[cam.id] || 0
+          const clipUrl = `${backendUrl}/clips/${cam.id}/bounce_${bounceFrame}_${flightIdStr}.mp4${retryCount > 0 ? `?retry=${retryCount}` : ''}`
           const landing = landingByCam[cam.id]
+
+          const handleError = () => {
+            if (retryCount < 5) {
+              setTimeout(() => {
+                setRetryCounts(prev => ({ ...prev, [cam.id]: (prev[cam.id] || 0) + 1 }))
+              }, 1000)
+            } else {
+              console.warn(`[EventPanel] Failed to load ${cam.id} video after 5 retries.`)
+            }
+          }
 
           return (
             <div key={cam.id} style={{ flex: 1, background: '#000', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
               <div style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(0,0,0,0.6)', padding: '4px 8px', fontSize: '12px', color: '#fff', borderRadius: '4px', zIndex: 2 }}>
                 {cam.label}
+                {retryCount > 0 && retryCount < 5 && (
+                  <span style={{ marginLeft: 8, color: '#f39c12' }}>
+                    (retrying... {retryCount}/5)
+                  </span>
+                )}
+                {retryCount >= 5 && (
+                  <span style={{ marginLeft: 8, color: '#e74c3c' }}>
+                    (failed to load)
+                  </span>
+                )}
                 {landing && (
                   <span style={{ marginLeft: 8, color: '#ff8888' }}>
                     bounce f{landing.frameIndex}
@@ -166,6 +189,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
                 muted={cam.id !== 'hq'}
                 playsInline
                 crossOrigin="anonymous"
+                onError={handleError}
                 onTimeUpdate={(e) => {
                   if (cam.id === 'hq') {
                     setProgress(e.target.currentTime)

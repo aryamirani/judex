@@ -1450,6 +1450,10 @@ export default function App() {
         activeCamRef.current = targetCam
         setActiveCam(targetCam)
 
+        if (dvrActiveRef.current) {
+          dvrTimeRef.current = targetVideo.currentTime
+        }
+
         if (shouldPlay) {
           let played = await safePlay(targetVideo)
           if (!played) {
@@ -1507,6 +1511,11 @@ export default function App() {
         bumpTimeline()
         activeCamRef.current = targetCam
         setActiveCam(targetCam)
+
+        if (dvrActiveRef.current) {
+          dvrTimeRef.current = targetVideo.currentTime
+        }
+
         if (shouldPlay) await safePlay(targetVideo)
       }
     } finally {
