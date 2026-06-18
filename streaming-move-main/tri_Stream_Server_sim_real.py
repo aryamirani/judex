@@ -10,6 +10,7 @@ import argparse
 import urllib.request
 import json
 import pandas as pd
+import re
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -130,6 +131,9 @@ SERVE_DIRS = {
 _events_by_id = {}
 _events_lock = threading.Lock()
 
+_pending_events = {}
+_pending_events_lock = threading.Lock()
+
 _admitted_segments = {"source": [], "sink": [], "hq": []}
 _evicted_count = {"source": 0, "sink": 0, "hq": 0}
 
@@ -139,6 +143,7 @@ FPS = 30.0
 REMOTE_FLIGHT_SHOTS_PATH = "/home/jetson/Desktop/cv_output/correlation/flight_shots.csv"
 
 _flight_shots_rows_loaded = 0
+_flight_shots_header = ""
   # number of data rows already ingested (excludes header)
 _sync_lock = threading.Lock()
 
@@ -176,14 +181,8 @@ def _ssh_fetch_with_cmd(remote_cmd, allow_empty=True):
             return ""
         raise e
 
-def _fetch_flight_shots_csv(skip_data_rows=0):
-    if skip_data_rows == 0:
-        return _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=0)
-    remote_cmd = (
-        f"(head -1 {REMOTE_FLIGHT_SHOTS_PATH}; "
-        f"tail -n +{skip_data_rows + 2} {REMOTE_FLIGHT_SHOTS_PATH})"
-    )
-    return _ssh_fetch_with_cmd(remote_cmd)
+def _fetch_flight_shots_csv(skip_lines=0):
+    return _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines, allow_empty=True)
 
 
 def _fetch_csv_lines(skip_lines=0):
@@ -363,26 +362,10 @@ def _refresh_event_positions(event):
     return refreshed
 
 
-def _ingest_flight_shots(csv_text, has_header=True):
+def _ingest_flight_shots(csv_text):
     if not csv_text.strip():
         return 0
-    df = pd.read_csv(io.StringIO(csv_text)) if has_header else pd.read_csv(io.StringIO(csv_text), header=None)
-    # If header=None, we'd need to assign column names, but for simplicity we assume the header is fetched once 
-    # or we always fetch with headers if using pandas or just parse manually.
-    # Actually, pd.read_csv is tricky with skip_lines. Let's just use the same manual parsing or ensure it handles it.
-    # If has_header is False, we need to supply names. Let's assume the CSV always has the same columns.
-    # To keep it simple, let's just parse the whole file every time or just read the new lines.
-    # If reading new lines, we must supply the names:
-    col_names = ["flight_id","start_frame","end_frame","origin_track_ids","primary_origin_track_id",
-                 "crossed_sides","crossed_sides_confidence","likely_net_hit","ended_near_net",
-                 "counts_as_shot","counts_in_shot_stats","shot_id","dedupe_reason","reason_codes",
-                 "net_crossing_frame","landing_x","landing_y","landing_confidence","bounce_frame",
-                 "bounce_x","bounce_y","bounce_z","bounce_score","bounce_mode","bbox_source_x",
-                 "bbox_source_y","bbox_source_w","bbox_source_h","bbox_sink_x","bbox_sink_y",
-                 "bbox_sink_w","bbox_sink_h","bounce_hq_frame","window_frames"]
-    
-    if not has_header:
-        df = pd.read_csv(io.StringIO(csv_text), header=None, names=col_names)
+    df = pd.read_csv(io.StringIO(csv_text))
 
     count = 0
     for _, row in df.iterrows():
@@ -421,11 +404,19 @@ def _ingest_flight_shots(csv_text, has_header=True):
             "bounce_frame": bounce_frame,
             "metadata": metadata
         }
+
         with _events_lock:
-            is_new = event["id"] not in _events_by_id
-            _events_by_id[event["id"]] = event
-        if is_new:
-            count += 1
+            if event["id"] in _events_by_id:
+                _events_by_id[event["id"]] = event
+                continue
+
+        with _pending_events_lock:
+            if event["id"] not in _pending_events:
+                _pending_events[event["id"]] = {"event": event, "added_at": time.time()}
+                count += 1
+            else:
+                _pending_events[event["id"]]["event"] = event
+
     return count
 
 def frame_idx_poller():
@@ -443,17 +434,73 @@ def frame_idx_poller():
             except Exception as e:
                 print(f"[frame idx poller] {cam} error: {e}")
 
+def verify_clips_poller():
+    """Background thread: fetches clip list from Jetson, verifies pending events with 5s grace period."""
+    global _pending_events, _events_by_id
+    
+    ls_cmd = _ssh_argv(JETSON_HOST, "ls -1 /home/jetson/Desktop/cv_output/bounce_clips/hq/ 2>/dev/null")
+    
+    while True:
+        time.sleep(2)
+        
+        with _pending_events_lock:
+            if not _pending_events:
+                continue
+            
+        try:
+            result = subprocess.run(ls_cmd, capture_output=True, text=True, check=False)
+            output = result.stdout
+        except Exception as e:
+            print(f"[verify_clips_poller] SSH error: {e}")
+            continue
+            
+        now = time.time()
+        with _pending_events_lock:
+            keys_to_remove = []
+            for ev_id, pending_data in _pending_events.items():
+                event = pending_data["event"]
+                added_at = pending_data["added_at"]
+                bounce_frame = event.get("bounce_frame")
+                
+                # Regex search for bounce_XXXX_*.mp4
+                found = False
+                if bounce_frame is not None:
+                    pattern = f"bounce_{int(bounce_frame)}_.*\\.mp4"
+                    found = bool(re.search(pattern, output))
+                    
+                if found:
+                    with _events_lock:
+                        _events_by_id[ev_id] = event
+                    keys_to_remove.append(ev_id)
+                else:
+                    # Give it up to 5 seconds grace period
+                    if now - added_at > 5.0:
+                        print(f"{ev_id} found in flight shot but not in the camera")
+                        keys_to_remove.append(ev_id)
+                        
+            for k in keys_to_remove:
+                del _pending_events[k]
+
 def flight_shots_poller():
     """Background thread: polls flight shots CSV every 2 s for new events."""
-    global _flight_shots_rows_loaded
+    global _flight_shots_rows_loaded, _flight_shots_header
     while True:
         time.sleep(2)
         try:
-            text = _fetch_flight_shots_csv(skip_data_rows=_flight_shots_rows_loaded)
-            added = _ingest_flight_shots(text, has_header=(_flight_shots_rows_loaded == 0))
-            if added:
-                _flight_shots_rows_loaded += added
-                print(f"[flight shots poller] +{added} events (total {_flight_shots_rows_loaded})")
+            text = _fetch_flight_shots_csv(skip_lines=_flight_shots_rows_loaded)
+            if not text.strip():
+                continue
+            
+            if _flight_shots_rows_loaded == 0:
+                _flight_shots_header = text.splitlines()[0]
+                _ingest_flight_shots(text)
+            else:
+                full_text = _flight_shots_header + "\n" + text
+                _ingest_flight_shots(full_text)
+                
+            added_lines = len(text.strip().splitlines())
+            _flight_shots_rows_loaded += added_lines
+            print(f"[flight shots poller] +{added_lines} events (total {_flight_shots_rows_loaded})")
         except Exception as e:
             # print(f"[flight shots poller] error: {e}")
             pass
@@ -476,12 +523,15 @@ def load_data():
         print(f"  [{cam}] {_frame_idx_rows[cam]} segments, {len(frame_to_seg[cam])} frames indexed.")
                 
     # 3. Load events
-    global _flight_shots_rows_loaded
+    global _flight_shots_rows_loaded, _flight_shots_header
     print(f"  Fetching remote flight shots CSV: {REMOTE_FLIGHT_SHOTS_PATH}")
     try:
-        csv_text = _fetch_flight_shots_csv(skip_data_rows=0)
-        _flight_shots_rows_loaded = _ingest_flight_shots(csv_text, has_header=True)
-        print(f"  Loaded {_flight_shots_rows_loaded} events from remote.")
+        csv_text = _fetch_flight_shots_csv(skip_lines=0)
+        if csv_text.strip():
+            _flight_shots_header = csv_text.splitlines()[0]
+            _ingest_flight_shots(csv_text)
+            _flight_shots_rows_loaded = len(csv_text.strip().splitlines())
+            print(f"  Loaded {_flight_shots_rows_loaded} events from remote.")
     except Exception as e:
         print(f"  Could not load remote flight shots (will poll later). Error: {e}")
         
@@ -1008,6 +1058,7 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=sync_csv_poller, daemon=True).start()
     threading.Thread(target=frame_idx_poller, daemon=True).start()
     threading.Thread(target=flight_shots_poller, daemon=True).start()
+    threading.Thread(target=verify_clips_poller, daemon=True).start()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -1175,8 +1226,31 @@ def serve_segment(cam: str, segment: str):
 
 # For the bounce clips
 BOUNCE_CLIPS_DIR = os.path.join(BASE_DIR, "clips", "cv_output", "bounce_clips")
-if os.path.exists(BOUNCE_CLIPS_DIR):
-    app.mount("/clips", StaticFiles(directory=BOUNCE_CLIPS_DIR), name="clips")
+
+@app.get("/clips/{cam}/{clip_name}")
+def serve_bounce_clip(cam: str, clip_name: str):
+    from fastapi.responses import FileResponse
+    from fastapi import HTTPException
+    
+    local_path = os.path.join(BOUNCE_CLIPS_DIR, cam, clip_name)
+    if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+        return FileResponse(local_path, media_type="video/mp4")
+        
+    remote_path = f"/home/jetson/Desktop/cv_output/bounce_clips/{cam}/{clip_name}"
+    cmd = ["ssh", "-i", "/Users/aryamirani/Desktop/intern/id_rsa", "-o", "StrictHostKeyChecking=accept-new", "jetson@192.168.0.148", f"cat {remote_path}"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=30)
+        if proc.returncode != 0:
+            raise HTTPException(status_code=404, detail="Clip not found on Jetson")
+            
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(proc.stdout)
+            
+        return FileResponse(local_path, media_type="video/mp4")
+    except Exception as e:
+        print(f"[serve_bounce_clip] Error proxying {clip_name}: {e}")
+        raise HTTPException(status_code=502, detail="Error fetching clip from Jetson")
 
 @app.get("/cameras")
 def get_cameras():
