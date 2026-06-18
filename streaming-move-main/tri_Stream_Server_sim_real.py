@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
+#version1 is ready - review mode shifting happens, other than that no other problem.
 import os
 import io
-import json
 import time
 import shutil
 import subprocess
 import threading
 import argparse
 import urllib.request
+import json
 import pandas as pd
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 from contextlib import asynccontextmanager
 
@@ -23,7 +25,6 @@ _parser.add_argument(
 )
 _parser.add_argument("--port", type=int, default=8000)
 _parser.add_argument("--speed", type=float, default=1.0)
-_parser.add_argument("--backup", action="store_true", help="Use local fallback folders if live ports fail")
 _parser.add_argument("--cam-port", type=int, default=8083, help="Port of the live camera HLS streams")
 _parser.add_argument(
     "--source-pi-host",
@@ -34,10 +35,11 @@ _parser.add_argument(
 _args = _parser.parse_args()
 
 SPEED = _args.speed
-USE_BACKUP = _args.backup
 CAM_PORT = _args.cam_port
 
-IS_LIVE = not USE_BACKUP
+IS_LIVE = True
+START_TIME = time.time()
+PRE_BUFFER = 12.0  # Matches sim_real.py fetching the last 3 segments on startup
 
 JETSON_HOST = "jetson@192.168.0.148"
 SOURCE_PI_HOST = _args.source_pi_host
@@ -47,6 +49,39 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSIGNMENT_DIR = os.path.dirname(BASE_DIR)
 INTERN_DIR = os.path.dirname(ASSIGNMENT_DIR)
 SSH_KEY_PATH = os.path.join(INTERN_DIR, "id_rsa")
+
+def _ssh_argv(host, remote_cmd):
+    return [
+        "ssh",
+        "-i", SSH_KEY_PATH,
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=2",
+        "-o", "StrictHostKeyChecking=accept-new",
+        host,
+        remote_cmd,
+    ]
+
+def _fetch_session_from_source_pi():
+    result = subprocess.run(
+        _ssh_argv(SOURCE_PI_HOST, f"cat {TRACK_VIDEO_INDEX_PATH}"),
+        capture_output=True, text=True, timeout=5,
+    )
+    result.check_returncode()
+    data = json.loads(result.stdout.strip())
+    return str(data["counter"])
+
+def resolve_session_id():
+    if _args.session:
+        return str(_args.session)
+    return _fetch_session_from_source_pi()
+
+SESSION_ID = resolve_session_id()
+
+REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
+FRAME_IDX_PATHS = {
+    cam: f"/home/jetson/Desktop/cv_output/reader/{cam}/hls_segment_frame_index.csv"
+    for cam in ["source", "sink", "hq"]
+}
 DATA_DIR = os.path.join(ASSIGNMENT_DIR, "sync_reports")
 if not os.path.exists(DATA_DIR):
     DATA_DIR = os.path.join(ASSIGNMENT_DIR, "apr17", "sync_reports")
@@ -61,6 +96,12 @@ server_state = {
     "hq":     {"media_sequence": 0, "window": [], "done": False, "current_index": 0, "is_gap": False},
 }
 
+_logged_segments = {
+    "source": {"loaded": set(), "removed": set()},
+    "sink": {"loaded": set(), "removed": set()},
+    "hq": {"loaded": set(), "removed": set()}
+}
+
 # Pre-computed lookup tables
 sync_maps = {
     "source_to_sink": {}, "source_to_hq": {},
@@ -73,88 +114,36 @@ frame_to_seg = { "source": {}, "sink": {}, "hq": {} }
 seg_to_frame = { "source": {}, "sink": {}, "hq": {} } # seg_index -> cumulative_start_frame
 seg_frame_count = { "source": {}, "sink": {}, "hq": {} } # seg_index -> frame_count
 
+# Paths
+CAM_PATHS = {
+    "source": f"http://192.168.0.111:{CAM_PORT}/live.m3u8",
+    "hq":     f"http://192.168.0.112:{CAM_PORT}/live.m3u8",
+    "sink":   f"http://192.168.0.113:{CAM_PORT}/live.m3u8"
+}
+
 SERVE_DIRS = {
     "source": os.path.join(BASE_DIR, "serve", "source"),
     "sink": os.path.join(BASE_DIR, "serve", "sink"),
     "hq": os.path.join(BASE_DIR, "serve", "hq")
 }
 
-FPS = 30.0
-
-# Jetson paths (adjust on deployment if layout differs)
-REMOTE_FLIGHT_SHOTS_PATH = "/home/jetson/Desktop/cv_output/correlation/flight_shots.csv"
-REMOTE_BOUNCE_CLIPS_DIR = "/home/jetson/Desktop/cv_output/bounce_clips"
-FLIGHT_SHOTS_POLL_INTERVAL = 2.0
-# Match the player's live DVR scrub window (SeekBar liveEdge - 180s)
-BOUNCE_EVENT_WINDOW_SEC = 180
-
-_flight_shots_rows_loaded = 0
 _events_by_id = {}
 _events_lock = threading.Lock()
-_sync_rows_loaded = 0
+
+FPS = 30.0
+
+# Placeholder for the remote flight shots path on the Jetson
+REMOTE_FLIGHT_SHOTS_PATH = "/home/jetson/Desktop/cv_output/correlation/flight_shots.csv"
+
+_flight_shots_rows_loaded = 0
+  # number of data rows already ingested (excludes header)
 _sync_lock = threading.Lock()
 
 _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
 _frame_idx_lock = threading.Lock()
 
 
-def _ssh_argv(host, remote_cmd):
-    return [
-        "ssh",
-        "-i", SSH_KEY_PATH,
-        "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=2",
-        "-o", "StrictHostKeyChecking=accept-new",
-        host,
-        remote_cmd,
-    ]
-
-
-def _fetch_session_from_source_pi():
-    """Read session counter from source Pi track_video_index.json over SSH."""
-    result = subprocess.run(
-        _ssh_argv(SOURCE_PI_HOST, f"cat {TRACK_VIDEO_INDEX_PATH}"),
-        capture_output=True, text=True, timeout=5,
-    )
-    result.check_returncode()
-    data = json.loads(result.stdout.strip())
-    if "counter" not in data:
-        raise ValueError(f"Missing 'counter' in {TRACK_VIDEO_INDEX_PATH}: {data!r}")
-    return str(data["counter"])
-
-
-def resolve_session_id():
-    if _args.session:
-        print(f"  Session ID (override): {_args.session}")
-        return str(_args.session)
-    session = _fetch_session_from_source_pi()
-    print(f"  Session ID from {SOURCE_PI_HOST}:{TRACK_VIDEO_INDEX_PATH} → counter={session}")
-    return session
-
-
-SESSION_ID = resolve_session_id()
-REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
-FRAME_IDX_PATHS = {
-    cam: f"/home/jetson/Desktop/cv_output/reader/{cam}/hls_segment_frame_index.csv"
-    for cam in ["source", "sink", "hq"]
-}
-
-if not USE_BACKUP:
-    CAM_PATHS = {
-        "source": f"http://192.168.0.111:{CAM_PORT}/live.m3u8",
-        "hq":     f"http://192.168.0.112:{CAM_PORT}/live.m3u8",
-        "sink":   f"http://192.168.0.113:{CAM_PORT}/live.m3u8"
-    }
-else:
-    CAM_PATHS = {
-        "source": os.path.join(DATA_DIR, "ts_segments_source", SESSION_ID),
-        "sink": os.path.join(DATA_DIR, "ts_segments_sink", SESSION_ID),
-        "hq": os.path.join(DATA_DIR, "ts_segments_hq", SESSION_ID)
-    }
-
-
 def _ssh_fetch(remote_path, skip_lines=0, allow_empty=False):
-    """Fetch text from the Jetson over SSH."""
     try:
         remote_cmd = (f"cat {remote_path}" if skip_lines == 0
                       else f"tail -n +{skip_lines + 2} {remote_path} 2>/dev/null || true")
@@ -168,30 +157,37 @@ def _ssh_fetch(remote_path, skip_lines=0, allow_empty=False):
     except Exception as e:
         if allow_empty:
             return ""
-        print(f"  [X] SSH fetch failed: {e}. (No --backup flag provided, so failing explicitly)")
         raise e
 
-
-def _ssh_file_exists(remote_path):
+def _ssh_fetch_with_cmd(remote_cmd, allow_empty=False):
     try:
-        remote_cmd = f"test -f {remote_path}"
         result = subprocess.run(
             _ssh_argv(JETSON_HOST, remote_cmd),
-            capture_output=True, text=True, timeout=4
+            capture_output=True, text=True, timeout=4,
         )
-        return result.returncode == 0
-    except Exception:
-        return False
+        if result.returncode != 0 and not allow_empty:
+            result.check_returncode()
+        return result.stdout
+    except Exception as e:
+        if allow_empty:
+            return ""
+        raise e
 
-def _fetch_csv_lines(skip_lines=0, allow_empty=False):
-    return _ssh_fetch(REMOTE_CSV_PATH, skip_lines, allow_empty=allow_empty)
+def _fetch_flight_shots_csv(skip_data_rows=0):
+    if skip_data_rows == 0:
+        return _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=0)
+    remote_cmd = (
+        f"(head -1 {REMOTE_FLIGHT_SHOTS_PATH}; "
+        f"tail -n +{skip_data_rows + 2} {REMOTE_FLIGHT_SHOTS_PATH})"
+    )
+    return _ssh_fetch_with_cmd(remote_cmd)
+
+
+def _fetch_csv_lines(skip_lines=0):
+    return _ssh_fetch(REMOTE_CSV_PATH, skip_lines)
 
 def _ingest_sync_rows(csv_text, has_header=True):
-    """Parse csv_text and update sync_maps. Returns number of rows ingested.
-    Any combination of missing cameras is tolerated — mappings are loaded for
-    whichever pair(s) of cameras have valid indices in each row. A warning is
-    printed once per ingest call for each camera that has missing data.
-    """
+    """Parse csv_text and update sync_maps. Returns number of rows ingested."""
     if not csv_text.strip():
         return 0
     if has_header:
@@ -201,38 +197,21 @@ def _ingest_sync_rows(csv_text, has_header=True):
         df = pd.read_csv(io.StringIO(csv_text), header=None, usecols=[0, 1, 2],
                          names=["Source_Index", "Sink_Index", "HQ_Index"])
     count = 0
-    missing = {"source": 0, "sink": 0, "hq": 0}
     with _sync_lock:
         for _, row in df.iterrows():
-            has_src = not pd.isna(row['Source_Index'])
-            has_snk = not pd.isna(row['Sink_Index'])
-            has_hq  = not pd.isna(row['HQ_Index'])
-            if not has_src: missing["source"] += 1
-            if not has_snk: missing["sink"]   += 1
-            if not has_hq:  missing["hq"]     += 1
-            if not has_src and not has_snk and not has_hq:
-                continue  # nothing to load for this row
-            src_idx = int(row['Source_Index']) if has_src else None
-            snk_idx = int(row['Sink_Index'])   if has_snk else None
-            hq_idx  = int(row['HQ_Index'])     if has_hq  else None
-            # source <-> sink
-            if has_src and has_snk:
-                sync_maps["source_to_sink"][src_idx] = snk_idx
-                sync_maps["sink_to_source"][snk_idx] = src_idx
-            # source <-> hq
-            if has_src and has_hq:
-                sync_maps["source_to_hq"][src_idx] = hq_idx
-                sync_maps["hq_to_source"][hq_idx]  = src_idx
-            # sink <-> hq
-            if has_snk and has_hq:
-                sync_maps["sink_to_hq"][snk_idx] = hq_idx
-                sync_maps["hq_to_sink"][hq_idx]  = snk_idx
+            if pd.isna(row['Source_Index']) or pd.isna(row['Sink_Index']) or pd.isna(row['HQ_Index']):
+                continue
+            src_idx = int(row['Source_Index'])
+            snk_idx = int(row['Sink_Index'])
+            hq_idx  = int(row['HQ_Index'])
+            sync_maps["source_to_sink"][src_idx] = snk_idx
+            sync_maps["source_to_hq"][src_idx]   = hq_idx
+            sync_maps["sink_to_source"][snk_idx]  = src_idx
+            sync_maps["sink_to_hq"][snk_idx]      = hq_idx
+            sync_maps["hq_to_source"][hq_idx]     = src_idx
+            sync_maps["hq_to_sink"][hq_idx]       = snk_idx
             count += 1
-    for cam, n in missing.items():
-        if n:
-            print(f"  [WARNING] {n}/{count + n} sync rows missing {cam.upper()} index — {cam} sync incomplete.")
     return count
-
 
 def sync_csv_poller():
     """
@@ -242,7 +221,7 @@ def sync_csv_poller():
     while True:
         time.sleep(4)
         try:
-            new_text = _fetch_csv_lines(skip_lines=_sync_rows_loaded, allow_empty=True)
+            new_text = _ssh_fetch(REMOTE_CSV_PATH, skip_lines=_sync_rows_loaded, allow_empty=True)
             added = _ingest_sync_rows(new_text, has_header=(_sync_rows_loaded == 0))
             if added:
                 _sync_rows_loaded += added
@@ -275,7 +254,7 @@ def _ingest_frame_idx_rows(cam, csv_text, has_header=True):
     return count
 
 def _safe_frame_int(val):
-    """Parse a frame index; return None if missing or non-numeric (e.g. misaligned '73,72')."""
+    """Parse a frame index; return None if missing or non-numeric."""
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return None
     if isinstance(val, str):
@@ -288,156 +267,20 @@ def _safe_frame_int(val):
         return None
 
 
-def _fetch_flight_shots_csv(skip_data_rows=0):
-    """Fetch flight_shots.csv; incremental polls prepend the header so pandas always parses correctly."""
-    if skip_data_rows == 0:
-        return _ssh_fetch(REMOTE_FLIGHT_SHOTS_PATH, skip_lines=0)
-    remote_cmd = (
-        f"(head -1 {REMOTE_FLIGHT_SHOTS_PATH}; "
-        f"tail -n +{skip_data_rows + 2} {REMOTE_FLIGHT_SHOTS_PATH})"
-    )
-    return _ssh_fetch_with_cmd(remote_cmd)
-
-
-def _ssh_fetch_with_cmd(remote_cmd, allow_empty=False):
-    try:
-        result = subprocess.run(
-            _ssh_argv(JETSON_HOST, remote_cmd),
-            capture_output=True, text=True, timeout=4,
-        )
-        if result.returncode != 0 and not allow_empty:
-            result.check_returncode()
-        return result.stdout
-    except Exception as e:
-        if allow_empty:
-            return ""
-        raise e
-
-
-def _current_hq_frame_unlocked():
-    """Read live HQ frame without acquiring locks (caller must hold locks if needed)."""
-    if frame_to_seg["hq"]:
-        return max(frame_to_seg["hq"].keys())
-    if seg_to_frame["hq"]:
-        latest_seg = max(seg_to_frame["hq"].keys())
-        start = seg_to_frame["hq"][latest_seg]
-        fc = seg_frame_count["hq"].get(latest_seg, 120)
-        return start + max(fc - 1, 0)
-    if sync_maps["hq_to_source"]:
-        return max(sync_maps["hq_to_source"].keys())
-    return None
-
-
-def _current_hq_frame():
-    """Best estimate of the live HQ frame (end of indexed stream)."""
-    with _frame_idx_lock:
-        if frame_to_seg["hq"]:
-            return max(frame_to_seg["hq"].keys())
-        if seg_to_frame["hq"]:
-            latest_seg = max(seg_to_frame["hq"].keys())
-            start = seg_to_frame["hq"][latest_seg]
-            fc = seg_frame_count["hq"].get(latest_seg, 120)
-            return start + max(fc - 1, 0)
-    with _sync_lock:
-        if sync_maps["hq_to_source"]:
-            return max(sync_maps["hq_to_source"].keys())
-    return None
-
-
-def _bounce_window_min_hq_frame_unlocked():
-    live = _current_hq_frame_unlocked()
-    if live is None:
-        return None
-    return live - int(BOUNCE_EVENT_WINDOW_SEC * FPS)
-
-
-def _bounce_window_min_hq_frame():
-    live = _current_hq_frame()
-    if live is None:
-        return None
-    return live - int(BOUNCE_EVENT_WINDOW_SEC * FPS)
-
-
-def _hq_frame_in_bounce_window_unlocked(hq_frame):
-    """Window check without re-acquiring locks (for /events while locks are held)."""
-    hq_frame = _safe_frame_int(hq_frame)
-    if hq_frame is None:
-        return False
-    min_frame = _bounce_window_min_hq_frame_unlocked()
-    if min_frame is None:
-        return True
-    return hq_frame >= min_frame
-
-
-def _hq_frame_in_bounce_window(hq_frame):
-    """True if this bounce is within the live DVR window."""
-    hq_frame = _safe_frame_int(hq_frame)
-    if hq_frame is None:
-        return False
-    min_frame = _bounce_window_min_hq_frame()
-    if min_frame is None:
-        return True
-    return hq_frame >= min_frame
-
-
-def _prune_stale_events_unlocked():
-    """Prune stale events; caller already holds _events_lock (+ sync/frame locks)."""
-    min_frame = _bounce_window_min_hq_frame_unlocked()
-    if min_frame is None:
-        return 0
-    stale = [eid for eid, ev in _events_by_id.items() if (ev.get("hq_frame") or 0) < min_frame]
-    for eid in stale:
-        del _events_by_id[eid]
-    return len(stale)
-
-
-def _prune_stale_events():
-    """Drop in-memory events that have fallen outside the DVR window."""
-    with _events_lock:
-        return _prune_stale_events_unlocked()
-
-
-def _map_frame_through_sync_unlocked(sync_key, frame):
-    """Map a frame through a sync table without acquiring _sync_lock."""
-    frame = _safe_frame_int(frame)
-    if frame is None:
-        return None
-    mapping = sync_maps.get(sync_key) or {}
-    if not mapping:
-        return None
-    if frame in mapping:
-        return int(mapping[frame])
-    closest = min(mapping.keys(), key=lambda x: abs(x - frame))
-    return int(mapping[closest] + (frame - closest))
-
-
-def _map_frame_through_sync(sync_key, frame):
-    """Map a frame through a sync table, linearly extrapolating from the nearest key."""
-    with _sync_lock:
-        return _map_frame_through_sync_unlocked(sync_key, frame)
-
-
 def _resolve_bounce_hq_frame_unlocked(bounce_frame, bounce_hq_frame):
-    """
-    HQ frame for timeline dot position (no lock).
-    bounce_hq_frame when set; otherwise map source bounce_frame via source_to_hq.
-    """
     hq = _safe_frame_int(bounce_hq_frame)
     if hq is not None:
         return hq
-    return _map_frame_through_sync_unlocked("source_to_hq", bounce_frame)
-
-
-def _resolve_bounce_hq_frame(bounce_frame, bounce_hq_frame):
-    """
-    HQ frame for timeline dot position.
-    Never treat bounce_frame as an HQ frame directly (different coordinate systems).
-    """
-    hq = _safe_frame_int(bounce_hq_frame)
-    if hq is not None:
-        return hq
-    with _sync_lock:
-        return _map_frame_through_sync_unlocked("source_to_hq", bounce_frame)
+    bf = _safe_frame_int(bounce_frame)
+    if bf is None:
+        return None
+    mapped = sync_maps["source_to_hq"].get(bf)
+    if mapped is not None:
+        return mapped
+    if sync_maps["source_to_hq"]:
+        closest = min(sync_maps["source_to_hq"].keys(), key=lambda x: abs(x - bf))
+        return sync_maps["source_to_hq"][closest] + (bf - closest)
+    return bf
 
 
 def _position_from_hq_frame(f_hq):
@@ -445,6 +288,7 @@ def _position_from_hq_frame(f_hq):
     f_hq = _safe_frame_int(f_hq)
     if f_hq is None:
         return None, None, None
+
     src_frame = sync_maps["hq_to_source"].get(f_hq)
     if src_frame is None:
         if sync_maps["hq_to_source"]:
@@ -485,14 +329,13 @@ def _position_from_hq_frame(f_hq):
     return segs, offs, frames
 
 
-def _refresh_event_positions(event, unlocked=False):
-    """Recompute segment positions from hq_frame (frame index may have grown since ingest)."""
+def _refresh_event_positions(event):
+    """Recompute segment positions — frame index may have grown since first ingest."""
     meta = event.get("metadata") or {}
     bounce_frame = event.get("bounce_frame") or _safe_frame_int(meta.get("bounce_frame"))
-    if unlocked:
-        hq_frame = _resolve_bounce_hq_frame_unlocked(bounce_frame, meta.get("bounce_hq_frame"))
-    else:
-        hq_frame = _resolve_bounce_hq_frame(bounce_frame, meta.get("bounce_hq_frame"))
+    hq_frame = _resolve_bounce_hq_frame_unlocked(bounce_frame, meta.get("bounce_hq_frame"))
+    if hq_frame is None:
+        hq_frame = _safe_frame_int(event.get("hq_frame")) or _safe_frame_int(meta.get("bounce_hq_frame"))
     if hq_frame is None:
         return event
 
@@ -517,31 +360,43 @@ def _refresh_event_positions(event, unlocked=False):
     return refreshed
 
 
-def _ingest_flight_shots(csv_text):
-    """Returns (new_events_count, csv_data_rows_parsed)."""
+def _ingest_flight_shots(csv_text, has_header=True):
     if not csv_text.strip():
-        return 0, 0
-    df = pd.read_csv(io.StringIO(csv_text))
-    rows_parsed = len(df)
+        return 0
+    df = pd.read_csv(io.StringIO(csv_text)) if has_header else pd.read_csv(io.StringIO(csv_text), header=None)
+    # If header=None, we'd need to assign column names, but for simplicity we assume the header is fetched once 
+    # or we always fetch with headers if using pandas or just parse manually.
+    # Actually, pd.read_csv is tricky with skip_lines. Let's just use the same manual parsing or ensure it handles it.
+    # If has_header is False, we need to supply names. Let's assume the CSV always has the same columns.
+    # To keep it simple, let's just parse the whole file every time or just read the new lines.
+    # If reading new lines, we must supply the names:
+    col_names = ["flight_id","start_frame","end_frame","origin_track_ids","primary_origin_track_id",
+                 "crossed_sides","crossed_sides_confidence","likely_net_hit","ended_near_net",
+                 "counts_as_shot","counts_in_shot_stats","shot_id","dedupe_reason","reason_codes",
+                 "net_crossing_frame","landing_x","landing_y","landing_confidence","bounce_frame",
+                 "bounce_x","bounce_y","bounce_z","bounce_score","bounce_mode","bbox_source_x",
+                 "bbox_source_y","bbox_source_w","bbox_source_h","bbox_sink_x","bbox_sink_y",
+                 "bbox_sink_w","bbox_sink_h","bounce_hq_frame","window_frames"]
+    
+    if not has_header:
+        df = pd.read_csv(io.StringIO(csv_text), header=None, names=col_names)
 
     count = 0
     for _, row in df.iterrows():
-        # bounce_frame is ground truth: clip is bounce_{bounce_frame}_{flight_id}.mp4
-        # Only show when this column has a value (e.g. 48331, 48338 — not empty like row 16)
         bounce_frame = _safe_frame_int(row.get('bounce_frame'))
-        if bounce_frame is None:
+        if bounce_frame is None and pd.isna(row.get('bounce_hq_frame')):
             continue
 
-        hq_frame = _resolve_bounce_hq_frame(bounce_frame, row.get('bounce_hq_frame'))
-        if hq_frame is None:
-            continue
-        if not _hq_frame_in_bounce_window(hq_frame):
-            continue
-        segs, offs, frames = _position_from_hq_frame(hq_frame)
-        if segs is None:
-            continue
-        start_segs, start_offs, _ = _position_from_hq_frame(row.get('start_frame'))
-        end_segs, end_offs, _ = _position_from_hq_frame(row.get('end_frame'))
+        with _sync_lock, _frame_idx_lock:
+            hq_frame = _resolve_bounce_hq_frame_unlocked(bounce_frame, row.get('bounce_hq_frame'))
+            if hq_frame is None:
+                continue
+
+            segs, offs, frames = _position_from_hq_frame(hq_frame)
+            if segs is None:
+                continue
+            start_segs, start_offs, _ = _position_from_hq_frame(row.get('start_frame'))
+            end_segs, end_offs, _ = _position_from_hq_frame(row.get('end_frame'))
 
         metadata = {}
         for k, v in row.items():
@@ -568,7 +423,7 @@ def _ingest_flight_shots(csv_text):
             _events_by_id[event["id"]] = event
         if is_new:
             count += 1
-    return count, rows_parsed
+    return count
 
 def frame_idx_poller():
     """Background thread: polls each camera's frame index CSV every 2 s for new segments."""
@@ -586,20 +441,19 @@ def frame_idx_poller():
                 print(f"[frame idx poller] {cam} error: {e}")
 
 def flight_shots_poller():
-    """Poll growing flight_shots.csv on Jetson every FLIGHT_SHOTS_POLL_INTERVAL seconds."""
+    """Background thread: polls flight shots CSV every 2 s for new events."""
     global _flight_shots_rows_loaded
     while True:
+        time.sleep(2)
         try:
             text = _fetch_flight_shots_csv(skip_data_rows=_flight_shots_rows_loaded)
-            added, rows = _ingest_flight_shots(text)
-            if rows:
-                _flight_shots_rows_loaded += rows
-            with _events_lock:
-                total = len(_events_by_id)
-            print(f"[flight shots poller] polled — csv_rows={_flight_shots_rows_loaded}, new_bounces={added}, total_events={total}")
+            added = _ingest_flight_shots(text, has_header=(_flight_shots_rows_loaded == 0))
+            if added:
+                _flight_shots_rows_loaded += added
+                print(f"[flight shots poller] +{added} events (total {_flight_shots_rows_loaded})")
         except Exception as e:
-            print(f"[flight shots poller] error: {e}")
-        time.sleep(FLIGHT_SHOTS_POLL_INTERVAL)
+            # print(f"[flight shots poller] error: {e}")
+            pass
 
 def load_data():
     global _events_by_id, _sync_rows_loaded
@@ -623,11 +477,8 @@ def load_data():
     print(f"  Fetching remote flight shots CSV: {REMOTE_FLIGHT_SHOTS_PATH}")
     try:
         csv_text = _fetch_flight_shots_csv(skip_data_rows=0)
-        events_added, _flight_shots_rows_loaded = _ingest_flight_shots(csv_text)
-        print(
-            f"  Parsed {_flight_shots_rows_loaded} flight_shots rows; "
-            f"ingested {events_added} bounces within last {BOUNCE_EVENT_WINDOW_SEC}s DVR window."
-        )
+        _flight_shots_rows_loaded = _ingest_flight_shots(csv_text, has_header=True)
+        print(f"  Loaded {_flight_shots_rows_loaded} events from remote.")
     except Exception as e:
         print(f"  Could not load remote flight shots (will poll later). Error: {e}")
         
@@ -1151,13 +1002,13 @@ def master_stream_worker():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_data()
-    threading.Thread(target=master_stream_worker, daemon=True).start()
     threading.Thread(target=sync_csv_poller, daemon=True).start()
     threading.Thread(target=frame_idx_poller, daemon=True).start()
     threading.Thread(target=flight_shots_poller, daemon=True).start()
     yield
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/clips_serve", StaticFiles(directory="clips/sync_reports"), name="clips_serve")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Mount static files for the streams (Port 8000 will serve them all, much cleaner than 3 separate ports!)
@@ -1170,138 +1021,103 @@ from fastapi.responses import PlainTextResponse
 import math
 
 @app.get("/stream/{cam}/live.m3u8")
+@app.get("/stream/{cam}/live.m3u8")
 def get_live_m3u8(cam: str):
-    if cam not in server_state:
-        return PlainTextResponse("Camera not found", status_code=404)
-        
-    window = server_state[cam].get("window", [])
-    media_sequence = server_state[cam].get("media_sequence", 0)
-    done = server_state[cam].get("done", False)
+    from fastapi.responses import PlainTextResponse
+    import os
+    import urllib.request
     
-    target_dur = 6
-    for item in window:
-        if isinstance(item, dict):
-            target_dur = max(target_dur, math.ceil(item.get("dur_global", 0)))
-            
-    lines = [
-        "#EXTM3U",
-        "#EXT-X-VERSION:4",
-        f"#EXT-X-TARGETDURATION:{target_dur}",
-        f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
-        "#EXT-X-ALLOW-CACHE:NO",
-        "#EXT-X-START:TIME-OFFSET=-4.0"
-    ]
-    for item in window:
-        if isinstance(item, str) and item == "#EXT-X-DISCONTINUITY":
-            lines.append(item)
-        elif isinstance(item, dict):
-            dur = item["dur_global"]
-            orig_dur = item.get("orig_durs", {}).get(cam, dur) if "orig_durs" in item else item.get("orig_dur", dur)
-            name = item["name"]
-            
-            if name:
-                cam_path = CAM_PATHS[cam]
-                if cam_path.startswith("http://") or cam_path.startswith("https://"):
-                    # Use a relative name so the browser requests /stream/{cam}/{seg}.ts
-                    # from localhost:8000, which has CORS enabled. Embedding the absolute
-                    # Pi IP causes the browser to fetch cross-origin from 192.168.x.x:8083
-                    # which has no CORS headers → NetworkError + black screen.
-                    name = os.path.basename(name)
-                else:
-                    dst = os.path.join(SERVE_DIRS[cam], name)
-            
-            if name and orig_dur > 0 and (dur - orig_dur) > 0.5:
-                # Add original duration and segment
-                lines.append(f"#EXTINF:{orig_dur:.6f},")
-                lines.append(name)
-                # Explicit gap to cover the rest of the time
-                lines.append("#EXT-X-DISCONTINUITY")
-                lines.append(f"#EXTINF:{(dur - orig_dur):.6f},")
-                lines.append("#EXT-X-GAP")
-                lines.append("gap.ts")
-            elif name is not None:
-                lines.append(f"#EXTINF:{dur:.6f},")
-                lines.append(name)
-            else:
-                # Name is None (segment is missing/camera offline)
-                lines.append("#EXT-X-DISCONTINUITY")
-                lines.append(f"#EXTINF:{dur:.6f},")
-                lines.append("#EXT-X-GAP")
-                lines.append("gap.ts")
-                
-    if done:
-        lines.append("#EXT-X-ENDLIST")
-        
-    return PlainTextResponse("\n".join(lines) + "\n")
+    cam_path = CAM_PATHS.get(cam)
+    if not cam_path:
+        return PlainTextResponse("Camera not found", status_code=404)
 
-from fastapi.responses import FileResponse
+    try:
+        req = urllib.request.Request(cam_path, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            content = resp.read().decode("utf-8")
+    except Exception as e:
+        print(f"[get_live_m3u8] Error fetching {cam_path}: {e}")
+        return PlainTextResponse("Failed to fetch live stream", status_code=502)
+
+    lines = content.splitlines()
+    header_lines = []
+    segments = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("#EXTINF"):
+            if i + 1 < len(lines):
+                seg_line = lines[i+1]
+                duration = float(line.split(":")[1].rstrip(","))
+                segments.append((line, seg_line, duration))
+                i += 2
+                continue
+        elif line.startswith("#EXT-X-ENDLIST"):
+            i += 1
+            continue
+        else:
+            header_lines.append(line)
+        i += 1
+
+    # In real scenario, the Pi's live.m3u8 is already a sliding window.
+    # We proxy it but track eviction for logging parity.
+    exposed_segments = [(inf, seg) for inf, seg, dur in segments]
+    window_seg_names = {seg for inf, seg in exposed_segments}
+
+    for inf, seg in exposed_segments:
+        if seg in window_seg_names:
+            if seg not in _logged_segments[cam]["loaded"]:
+                print(f"[EVICTION LOGIC] Segment {seg} of {cam} loaded in server m3u8 playlist")
+                _logged_segments[cam]["loaded"].add(seg)
+    
+    for loaded_seg in list(_logged_segments[cam]["loaded"]):
+        if loaded_seg not in window_seg_names:
+            if loaded_seg not in _logged_segments[cam]["removed"]:
+                print(f"[EVICTION LOGIC] Segment {loaded_seg} of {cam} removed from server m3u8 playlist")
+                _logged_segments[cam]["removed"].add(loaded_seg)
+
+    out_lines = header_lines[:]
+    for inf, seg in exposed_segments:
+        out_lines.append(inf)
+        out_lines.append(seg)
+    return PlainTextResponse("\\n".join(out_lines), media_type="application/vnd.apple.mpegurl")
+
+from fastapi.responses import FileResponse, StreamingResponse
 
 @app.get("/stream/{cam}/{segment}.ts")
 def serve_segment(cam: str, segment: str):
-    dst = os.path.join(SERVE_DIRS[cam], f"{segment}.ts")
-    if os.path.exists(dst):
-        return FileResponse(dst)
+    from fastapi.responses import StreamingResponse, PlainTextResponse
+    import urllib.request
+    cam_path = CAM_PATHS.get(cam, "")
+    if cam_path.startswith("http://") or cam_path.startswith("https://"):
+        base_url = cam_path.rsplit('/', 1)[0]
+        pi_url = f"{base_url}/{SESSION_ID}/{segment}.ts"
+        try:
+            req = urllib.request.Request(pi_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = resp.read()
+            return StreamingResponse(
+                iter([data]),
+                media_type="video/mp2t",
+                headers={"Cache-Control": "no-cache"}
+            )
+        except Exception as e:
+            print(f"[serve_segment] Pi proxy fetch failed for {cam}/{segment}.ts: {e}")
+            return PlainTextResponse(f"Segment not available on Pi: {e}", status_code=502)
+    return PlainTextResponse("Camera path not found", status_code=404)
 
-    if IS_LIVE:
-        # Proxy-fetch directly from the Pi camera server on demand.
-        # This is a transparent one-hop pass-through — no disk write, no extra latency
-        # beyond the Pi fetch itself. Required because the Pi HTTP server has no CORS
-        # headers so the browser cannot fetch from 192.168.x.x:8083 cross-origin.
-        cam_path = CAM_PATHS.get(cam, "")
-        if cam_path.startswith("http://") or cam_path.startswith("https://"):
-            base_url = cam_path.rsplit('/', 1)[0]
-            pi_url = f"{base_url}/{SESSION_ID}/{segment}.ts"
-            try:
-                req = urllib.request.Request(pi_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = resp.read()
-                return StreamingResponse(
-                    iter([data]),
-                    media_type="video/mp2t",
-                    headers={"Cache-Control": "no-cache"}
-                )
-            except Exception as e:
-                print(f"[serve_segment] Pi proxy fetch failed for {cam}/{segment}.ts: {e}")
-                return PlainTextResponse(f"Segment not available on Pi: {e}", status_code=502)
-
-    print(f"[serve_segment] {cam}/{segment}.ts not found locally.")
-    return PlainTextResponse("Segment not found", status_code=404)
-
-@app.get("/clips/{cam}/{clip_file}")
-def serve_bounce_clip(cam: str, clip_file: str):
-    """Stream bounce clip MP4 from Jetson over SSH (no local copy)."""
-    import re
-    if cam not in ("source", "sink", "hq"):
-        return PlainTextResponse("Unknown camera", status_code=404)
-    if not re.fullmatch(r"bounce_\d+_\d+\.mp4", clip_file):
-        return PlainTextResponse("Invalid clip name", status_code=404)
-
-    remote_path = f"{REMOTE_BOUNCE_CLIPS_DIR}/{cam}/{clip_file}"
-    if not _ssh_file_exists(remote_path):
-        print(f"[bounce clip] not on Jetson yet: {remote_path}")
-        return PlainTextResponse("Bounce clip not ready on Jetson", status_code=404)
-
-    try:
-        proc = subprocess.Popen(
-            _ssh_argv(JETSON_HOST, f"cat {remote_path}"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except Exception as e:
-        print(f"[bounce clip] SSH stream failed for {remote_path}: {e}")
-        return PlainTextResponse("Failed to fetch clip from Jetson", status_code=502)
-
-    return StreamingResponse(proc.stdout, media_type="video/mp4")
+# For the bounce clips
+BOUNCE_CLIPS_DIR = os.path.join(BASE_DIR, "clips", "cv_output", "bounce_clips")
+if os.path.exists(BOUNCE_CLIPS_DIR):
+    app.mount("/clips", StaticFiles(directory=BOUNCE_CLIPS_DIR), name="clips")
 
 @app.get("/cameras")
 def get_cameras():
-    port = _args.port
     return {
-        "source": f"http://localhost:{port}/stream/source/live.m3u8",
-        "sink": f"http://localhost:{port}/stream/sink/live.m3u8",
-        "hq": f"http://localhost:{port}/stream/hq/live.m3u8",
-        "bounce_clips_base": f"http://localhost:{port}/clips",
-        "session_id": SESSION_ID,
+        "source": "http://localhost:8000/stream/source/live.m3u8",
+        "sink": "http://localhost:8000/stream/sink/live.m3u8",
+        "hq": "http://localhost:8000/stream/hq/live.m3u8"
     }
 
 @app.get("/sync")
@@ -1486,16 +1302,8 @@ def check_sync(
 
 @app.get("/events")
 def get_events():
-    # Hold all three locks once; use *_unlocked helpers to avoid re-entrant deadlock.
     with _events_lock, _sync_lock, _frame_idx_lock:
-        pruned = _prune_stale_events_unlocked()
-        if pruned:
-            print(f"[events] pruned {pruned} bounces outside {BOUNCE_EVENT_WINDOW_SEC}s window")
-        refreshed = [
-            _refresh_event_positions(ev, unlocked=True)
-            for ev in _events_by_id.values()
-            if _hq_frame_in_bounce_window_unlocked(ev.get("hq_frame"))
-        ]
+        refreshed = [_refresh_event_positions(ev) for ev in _events_by_id.values()]
         # One event per bounce_frame — CSV can contain duplicate shot rows for the same clip
         by_bounce = {}
         for ev in refreshed:
