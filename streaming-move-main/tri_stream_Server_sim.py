@@ -794,7 +794,7 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
     res = {}
     for target_cam in ["source", "sink", "hq"]:
         if target_cam == from_camera:
-            res[target_cam] = {"segment": from_seg, "offset": from_offset}
+            res[target_cam] = {"segment": from_seg, "offset": from_offset, "frame": current_frame, "searched_frame": current_frame}
             continue
             
         map_key = f"{from_camera}_to_{target_cam}"
@@ -826,7 +826,9 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
             
         res[target_cam] = {
             "segment": t_seg,
-            "offset": t_frame_offset / FPS
+            "offset": t_frame_offset / FPS,
+            "frame": target_frame,
+            "searched_frame": current_frame
         }
         
     return res
@@ -856,7 +858,7 @@ def get_sync_map(from_camera: str, sns: str):
             seg_res = {}
             for target_cam in ["source", "sink", "hq"]:
                 if target_cam == from_camera:
-                    seg_res[target_cam] = {"segment": sn, "offset": 0.0}
+                    seg_res[target_cam] = {"segment": sn, "offset": 0.0, "frame": start_frame, "searched_frame": start_frame}
                     continue
                     
                 map_key = f"{from_camera}_to_{target_cam}"
@@ -887,7 +889,9 @@ def get_sync_map(from_camera: str, sns: str):
                     
                 seg_res[target_cam] = {
                     "segment": t_seg,
-                    "offset": t_frame_offset / FPS
+                    "offset": t_frame_offset / FPS,
+                    "frame": target_frame,
+                    "searched_frame": start_frame
                 }
             res[sn] = seg_res
     return res
