@@ -87,7 +87,7 @@ if not os.path.exists(DATA_DIR):
     DATA_DIR = os.path.join(ASSIGNMENT_DIR, "apr17", "sync_reports")
 TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "test_work")
 
-WINDOW_SIZE = 30
+WINDOW_SIZE = 35
 
 # Global state for sliding windows
 server_state = {

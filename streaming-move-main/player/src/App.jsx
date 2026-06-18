@@ -566,19 +566,16 @@ export default function App() {
 
       let globalTime = video.currentTime;
       if (modeRef.current === 'review') {
-        const hqVideo = videoRefs[REVIEW_MASTER_CAM].current
         const entryHold = reviewEntryHoldRef.current
         if (entryHold != null) {
           globalTime = entryHold
-          if (hqVideo && !hqVideo.seeking && Math.abs(hqVideo.currentTime - entryHold) < 0.25) {
+          if (video && !video.seeking && Math.abs(video.currentTime - entryHold) < 0.25) {
             reviewEntryHoldRef.current = null
           }
-        } else if (hqVideo) {
-          globalTime = hqVideo.currentTime
         }
-        if (hqVideo && hqVideo.buffered.length > 0) {
+        if (video && video.buffered.length > 0) {
           setBufferStart(0)
-          setBufferedEnd(hqVideo.buffered.end(hqVideo.buffered.length - 1))
+          setBufferedEnd(video.buffered.end(video.buffered.length - 1))
         }
       } else if (dvrActiveRef.current && video.paused && dvrTimeRef.current != null) {
         // While paused in DVR, keep UI playhead where the user scrubbed — don't follow HLS snap-to-live.
@@ -626,8 +623,10 @@ export default function App() {
       }
       if (!video.seeking && !ignoreSyncRef.current) {
         if (modeRef.current === 'review') {
-          // Disabled background scrubbing to prevent MediaSource crashes on paused elements
-          // syncReviewVideos(video.currentTime)
+          // Sync actively playing videos to prevent drift over time
+          if (!video.paused) {
+            syncReviewVideos(globalTime)
+          }
         } else if (modeRef.current === 'live') {
           const livePos = hls?.liveSyncPosition
           const isCurrentlyLive = livePos !== null && livePos !== undefined && video.currentTime >= livePos - 3.0
@@ -704,7 +703,7 @@ export default function App() {
               console.log(`[HLS] Fatal network error for ${cam}, trying to recover...`);
               if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
                 const livePos = hls.liveSyncPosition;
-                if (livePos != null && !dvrActiveRef.current) {
+                if (livePos != null && !dvrActiveRef.current && !video.paused) {
                   const behind = livePos - video.currentTime;
                   if (behind <= 12) {
                     // At/near live: a fragment briefly 404'd (slow Pi) → recover to live edge.
@@ -827,8 +826,8 @@ export default function App() {
     setMode('live')
   }, [bumpTimeline])
 
-  const seekReviewToTime = useCallback((time, segsByCam, map) => {
-    const master = REVIEW_MASTER_CAM
+  const seekReviewToTime = useCallback((time, segsByCam, map, overrideMaster) => {
+    const master = overrideMaster || activeCamRef.current
     const activeSegs = segsByCam[master]
     if (!activeSegs?.length) return
 
@@ -880,9 +879,7 @@ export default function App() {
       })
     })
 
-    const mapped = buildReviewMappedEvents(events, newReviewSegs[REVIEW_MASTER_CAM])
-    const latestBounce = mapped.length > 0 ? mapped[mapped.length - 1] : null
-    const pendingSeekTime = latestBounce?.time ?? 0
+    const pendingSeekTime = 0
 
     let fullMap = {}
     try {
@@ -900,7 +897,7 @@ export default function App() {
 
     let manifestsReady = 0
     const finishReviewEntrySeek = async () => {
-      seekReviewToTime(pendingSeekTime, newReviewSegs, fullMap)
+      seekReviewToTime(pendingSeekTime, newReviewSegs, fullMap, activeCam)
       await Promise.all(CAMERAS.map(cam => waitForSeek(videoRefs[cam].current)))
       // Start buffering from the seek point (latest bounce), NOT from position 0.
       // startLoad(-1) would make HLS.js fetch segments from 0 forward, so when the
@@ -937,7 +934,7 @@ export default function App() {
     setReviewSegs(newReviewSegs)
     setSyncMap(fullMap)
     setIsPlaying(false)
-    setSelectedEvent(latestBounce)
+    setSelectedEvent(null)
     reviewEntryHoldRef.current = pendingSeekTime
     setCurrentTime(pendingSeekTime)
     setLiveEdge(null)
@@ -1431,7 +1428,7 @@ export default function App() {
         const hlsTarget = hlsRefs[targetCam].current
         const hlsCurrent = hlsRefs[fromCam].current
         if (hlsTarget) {
-          hlsTarget.config.liveMaxLatencyDurationCount = isLive ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
+          hlsTarget.config.liveMaxLatencyDurationCount = (isLive && shouldPlay) ? LIVE_CONFIG.liveMaxLatencyDurationCount : 9999
         }
         if (hlsCurrent) {
           hlsCurrent.config.liveMaxLatencyDurationCount = 9999
@@ -1531,7 +1528,7 @@ export default function App() {
       if (mode === 'review') {
         reviewEntryHoldRef.current = null
         setCurrentTime(time)
-        seekReviewToTime(time, reviewSegs, syncMap)
+        seekReviewToTime(time, reviewSegs, syncMap, activeCam)
         setIsPlaying(false)
       } else {
         // GO LIVE button seeks to liveEdge — jump to real HLS live position and resume

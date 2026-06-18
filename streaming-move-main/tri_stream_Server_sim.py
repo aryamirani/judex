@@ -47,7 +47,7 @@ if not os.path.exists(DATA_DIR):
     DATA_DIR = os.path.join(ASSIGNMENT_DIR, "apr17", "sync_reports")
 TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "test_work")
 
-WINDOW_SIZE = 30
+WINDOW_SIZE = 35
 
 # Global state for sliding windows
 server_state = {
@@ -641,362 +641,9 @@ def download_segment_file(src_url, dst, cam, name):
         with _downloads_lock:
             _active_downloads.discard(dst)
 
-def master_stream_worker():
-    # Clean serve dirs recursively
-    for cam in ["source", "sink", "hq"]:
-        serve_dir = SERVE_DIRS[cam]
-        if os.path.exists(serve_dir):
-            try: shutil.rmtree(serve_dir)
-            except: pass
-        os.makedirs(serve_dir, exist_ok=True)
-                
-    # Parse all playlists
-    all_segs = {}
-    playlists_ended = {}
-    for cam in ["source", "sink", "hq"]:
-        cam_path = CAM_PATHS[cam]
-        segs, ended = [], False
-        if cam_path.startswith("http://") or cam_path.startswith("https://"):
-            playlist_path = cam_path
-            try:
-                segs, ended = parse_playlist(playlist_path)
-            except Exception as e:
-                print(f"[master worker] Initial playlist fetch error for {cam}: {e}")
-        else:
-            playlist_path = os.path.join(cam_path, "playlist.m3u8")
-            if os.path.exists(playlist_path):
-                try:
-                    segs, ended = parse_playlist(playlist_path)
-                except Exception as e:
-                    print(f"[master worker] Initial local playlist parse error for {cam}: {e}")
-        all_segs[cam] = segs
-        playlists_ended[cam] = ended
-        
-    seen_segs = {"source": set(), "sink": set(), "hq": set()}
-    for cam in ["source", "sink", "hq"]:
-        for item in all_segs[cam]:
-            seen_segs[cam].add(item[1])
-        
-    released = {"source": [], "sink": [], "hq": []}
-    media_sequence = {"source": 0, "sink": 0, "hq": 0}
-    
-    # Unified Timeline state
-    unified_steps = []
-    next_step_idx = 0
-    
-    def update_unified_timeline():
-        nonlocal unified_steps
-        unified_steps = unified_steps[:next_step_idx]
-        
-        # Iterate over source segments
-        max_segs = max(len(all_segs[cam]) for cam in ["source", "sink", "hq"])
-        while len(unified_steps) < max_segs:
-            src_seg_idx = len(unified_steps)
-            if src_seg_idx < len(all_segs["source"]):
-                src_dur, src_name = all_segs["source"][src_seg_idx]
-                src_abs_idx = parse_abs_seg_idx(src_name)
-                src_start_frame = None
-                if src_abs_idx is not None:
-                    src_start_frame = seg_to_frame["source"].get(src_abs_idx)
-            else:
-                src_dur, src_name = 0.0, None
-                src_abs_idx = None
-                src_start_frame = None
-            seg_indices = {}
-            durs = {}
-            names = {}
-            
-            for cam in ["source", "sink", "hq"]:
-                if cam == "source":
-                    seg_idx_cam = src_seg_idx
-                else:
-                    map_key = f"source_to_{cam}"
-                    target_f = None
-                    if src_start_frame is not None:
-                        if src_start_frame in sync_maps[map_key]:
-                            target_f = sync_maps[map_key][src_start_frame]
-                        elif sync_maps[map_key]:
-                            closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - src_start_frame))
-                            target_f = sync_maps[map_key][closest]
-                    
-                    if target_f is not None and target_f in frame_to_seg[cam]:
-                        mapped_abs_idx = frame_to_seg[cam][target_f][0]
-                        mapped_list_idx = None
-                        for i, item in enumerate(all_segs[cam]):
-                            if parse_abs_seg_idx(item[1]) == mapped_abs_idx:
-                                mapped_list_idx = i
-                                break
-                        if mapped_list_idx is not None:
-                            prev = -1 if not unified_steps else unified_steps[-1]["seg_indices"][cam]
-                            seg_idx_cam = max(mapped_list_idx, prev + 1 if prev != -1 else mapped_list_idx)
-                        else:
-                            prev = -1 if not unified_steps else unified_steps[-1]["seg_indices"][cam]
-                            seg_idx_cam = prev + 1 if prev != -1 else src_seg_idx
-                    else:
-                        prev = -1 if not unified_steps else unified_steps[-1]["seg_indices"][cam]
-                        seg_idx_cam = prev + 1 if prev != -1 else src_seg_idx
-                        
-                seg_indices[cam] = seg_idx_cam
-                if seg_idx_cam < len(all_segs[cam]):
-                    durs[cam] = all_segs[cam][seg_idx_cam][0]
-                    names[cam] = all_segs[cam][seg_idx_cam][1]
-                else:
-                    durs[cam] = 0.0
-                    names[cam] = None
-                    
-            t_start = 0.0
-            if src_start_frame is not None:
-                t_start = src_start_frame / 30.0
-            elif unified_steps:
-                t_start = unified_steps[-1]["t_start"] + unified_steps[-1]["dur_global"]
-                
-            if all(name is None for name in names.values()):
-                break
-
-                
-            unified_steps.append({
-                "seg_indices": seg_indices,
-                "names": names,
-                "orig_durs": durs,
-                "t_start": t_start,
-                "dur_global": 4.0
-            })
-            
-        for i in range(len(unified_steps) - 1):
-            unified_steps[i]["dur_global"] = unified_steps[i+1]["t_start"] - unified_steps[i]["t_start"]
-            
-        if unified_steps:
-            last_step = unified_steps[-1]
-            max_fc = 0
-            for cam, n in last_step["names"].items():
-                if n is not None:
-                    abs_idx_cam = parse_abs_seg_idx(n)
-                    fc = seg_frame_count[cam].get(abs_idx_cam) if abs_idx_cam is not None else None
-                    if fc and fc > max_fc:
-                        max_fc = fc
-            if max_fc > 0:
-                last_step["dur_global"] = max_fc / 30.0
-            else:
-                last_step["dur_global"] = max(last_step["orig_durs"].values()) if any(last_step["orig_durs"].values()) else 4.0
-
-    update_unified_timeline()
-    
-    def get_total_duration():
-        if unified_steps:
-            last = unified_steps[-1]
-            return last["t_start"] + last["dur_global"]
-        return 0.0
-        
-    total_duration = get_total_duration()
-    
-    start_time = time.time()
-    last_time = start_time
-    target_sim_time = max(0.0, total_duration - 6.0) if IS_LIVE else 0.0
-    
-    if IS_LIVE and unified_steps:
-        # Fast-forward to only fetch the last 3 segments on startup to avoid massive backlog fetching
-        next_step_idx = max(0, len(unified_steps) - 3)
-    stream_done = False
-    last_playlist_poll = 0.0
-    
-    while True:
-        now = time.time()
-        dt = (now - last_time) * SPEED
-        last_time = now
-        
-        # 1. Periodically check playlists
-        if now - last_playlist_poll >= 2.0:
-            last_playlist_poll = now
-            
-            updated_segs = {}
-            updated_ended = {}
-            grew = False
-            for cam in ["source", "sink", "hq"]:
-                cam_path = CAM_PATHS[cam]
-                segs, ended = [], False
-                success = False
-                
-                if cam_path.startswith("http://") or cam_path.startswith("https://"):
-                    playlist_path = cam_path
-                    try:
-                        segs, ended = parse_playlist(playlist_path)
-                        if segs:
-                            success = True
-                    except Exception as e:
-                        print(f"[master worker] Error polling live playlist for {cam}: {e}")
-                    
-                    if not success:
-                        pass
-
-                else:
-                    playlist_path = os.path.join(cam_path, "playlist.m3u8")
-                    
-
-                    if os.path.exists(playlist_path):
-                        try:
-                            segs, ended = parse_playlist(playlist_path)
-                            success = True
-                        except Exception as e:
-                            print(f"[master worker] Error polling local playlist for {cam}: {e}")
-                
-                if success:
-                    updated_segs[cam] = segs
-                    updated_ended[cam] = ended
-                else:
-                    updated_segs[cam] = all_segs[cam]
-                    updated_ended[cam] = playlists_ended.get(cam, False)
-            
-            for cam in ["source", "sink", "hq"]:
-                playlists_ended[cam] = updated_ended[cam]
-                new_items = [item for item in updated_segs[cam] if item[1] not in seen_segs[cam]]
-                if new_items:
-                    for item in new_items:
-                        seen_segs[cam].add(item[1])
-                    all_segs[cam].extend(new_items)
-                    print(f"[master worker] Camera {cam} playlist grew by {len(new_items)} segments. Total: {len(all_segs[cam])}")
-                    grew = True
-                    
-            if grew:
-                update_unified_timeline()
-                total_duration = get_total_duration()
-        
-        # Update current target simulation time
-        if not stream_done:
-            has_endlist = playlists_ended.get("hq", False)
-            if target_sim_time < total_duration:
-                target_sim_time += dt
-                if target_sim_time > total_duration:
-                    target_sim_time = total_duration
-            
-            # Catch up check
-            if IS_LIVE and (total_duration - target_sim_time > 15.0):
-                print(f"[master worker] Live stream lag detected ({total_duration - target_sim_time:.1f}s). Jumping to live edge.")
-                target_sim_time = max(0.0, total_duration - 6.0)
-            
-            if target_sim_time >= total_duration and has_endlist:
-                stream_done = True
-                print("[master worker] Stream complete. Stopping at the end.")
-        
-        # Release unified segments based on target_sim_time
-        while next_step_idx < len(unified_steps) and unified_steps[next_step_idx]["t_start"] <= target_sim_time:
-            step = unified_steps[next_step_idx]
-            
-            for cam in ["source", "sink", "hq"]:
-                name = step["names"][cam]
-                if name is not None:
-                    # Release actual segment
-                    seg = {
-                        "name": name,
-                        "dur_global": step["dur_global"],
-                        "orig_dur": step["orig_durs"][cam],
-                        "abs_idx": parse_abs_seg_idx(name)
-                    }
-                    released[cam].append(seg)
-                    
-                    cam_path = CAM_PATHS[cam]
-                    dst = os.path.join(SERVE_DIRS[cam], name)
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    if not os.path.exists(dst):
-                        if cam_path.startswith("http://") or cam_path.startswith("https://"):
-                            pass # Real world: React fetches directly from Pi, no middleman download
-                        else:
-                            src = os.path.join(cam_path, name)
-                            if os.path.exists(src):
-                                def simulate_download(source, dest, camera, segment_name):
-                                    import random
-                                    latency = random.uniform(3.0, 6.5)
-                                    time.sleep(latency)
-                                    try:
-                                        os.link(source, dest)
-                                    except:
-                                        temp_dst = dest + ".tmp"
-                                        shutil.copy2(source, temp_dst)
-                                        os.rename(temp_dst, dest)
-                                    print(f"[SIMULATOR] {camera}/{segment_name} simulated Wi-Fi fetch complete in {latency:.2f}s")
-                                    with _downloads_lock:
-                                        _active_downloads.discard(dest)
-
-                                with _downloads_lock:
-                                    is_downloading = dst in _active_downloads
-                                if not is_downloading:
-                                    with _downloads_lock:
-                                        _active_downloads.add(dst)
-                                    threading.Thread(
-                                        target=simulate_download,
-                                        args=(src, dst, cam, name),
-                                        daemon=True
-                                    ).start()
-                else:
-                    # Release missing segment as a gap so the playlist stays synchronized
-                    seg = {
-                        "name": None,
-                        "dur_global": step["dur_global"],
-                        "orig_dur": 0.0,
-                        "abs_idx": None
-                    }
-                    released[cam].append(seg)
-            
-            next_step_idx += 1
-                
-        # Update server state for status endpoint
-        for cam in ["source", "sink", "hq"]:
-            idx = next_step_idx - 1
-            if idx >= 0 and idx < len(unified_steps):
-                step = unified_steps[idx]
-                name = step["names"][cam]
-                abs_idx = parse_abs_seg_idx(name) if name else None
-                server_state[cam]["current_index"] = abs_idx
-                is_gap_now = (target_sim_time >= step["t_start"] + step["orig_durs"][cam])
-                server_state[cam]["is_gap"] = is_gap_now
-            else:
-                server_state[cam]["is_gap"] = False
-            
-        # Write playlists and update sliding window for all cameras
-        for cam in ["source", "sink", "hq"]:
-            media_items_count = sum(1 for x in released[cam] if isinstance(x, dict))
-            while media_items_count > WINDOW_SIZE:
-                popped = released[cam].pop(0)
-                if isinstance(popped, dict):
-                    media_items_count -= 1
-                    media_sequence[cam] += 1
-                    
-                    if popped["name"]:
-                        old_file = os.path.join(SERVE_DIRS[cam], popped["name"])
-                        if os.path.exists(old_file):
-                            try:
-                                os.remove(old_file)
-                            except Exception:
-                                pass
-            
-            filtered_released = []
-            for item in released[cam]:
-                if isinstance(item, dict):
-                    name = item["name"]
-                    if name:
-                        dst = os.path.join(SERVE_DIRS[cam], name)
-                        with _downloads_lock:
-                            is_downloading = dst in _active_downloads
-                        if is_downloading:
-                            break
-                filtered_released.append(item)
-                
-            if not filtered_released:
-                continue
-            
-            server_state[cam]["media_sequence"] = media_sequence[cam]
-            server_state[cam]["window"] = [x for x in filtered_released if isinstance(x, dict)]
-            server_state[cam]["done"] = stream_done
-            
-            playlist_done = stream_done and (len(filtered_released) == len(released[cam]))
-            write_playlist(cam, filtered_released, media_sequence[cam], playlist_done)
-            
-        # Sleep for a small, responsive interval to poll clock progression
-        time.sleep(0.05)
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_data()
-    threading.Thread(target=master_stream_worker, daemon=True).start()
     threading.Thread(target=sync_csv_poller, daemon=True).start()
     threading.Thread(target=frame_idx_poller, daemon=True).start()
     threading.Thread(target=flight_shots_poller, daemon=True).start()
@@ -1065,7 +712,7 @@ def get_live_m3u8(cam: str):
         exposed_segments = [(segments[0][0], segments[0][1])]
     
     # 30 segment sliding window
-    window_segments = exposed_segments[-30:]
+    window_segments = exposed_segments[-WINDOW_SIZE:]
     window_seg_names = {seg for inf, seg in window_segments}
     
     for inf, seg in exposed_segments:
@@ -1075,7 +722,7 @@ def get_live_m3u8(cam: str):
                 _logged_segments[cam]["loaded"].add(seg)
         else:
             if seg not in _logged_segments[cam]["removed"]:
-                print(f"[EVICTION LOGIC] Segment {seg} of {cam} removed from server m3u8 playlist (max 30 segments)")
+                print(f"[EVICTION LOGIC] Segment {seg} of {cam} removed from server m3u8 playlist (max {WINDOW_SIZE} segments)")
                 _logged_segments[cam]["removed"].add(seg)
     
     # Rebuild m3u8
@@ -1088,7 +735,7 @@ def get_live_m3u8(cam: str):
             seq_idx = idx
             break
             
-    seq_num = max(0, len(exposed_segments) - 30)
+    seq_num = max(0, len(exposed_segments) - WINDOW_SIZE)
     if seq_idx != -1:
         out_lines[seq_idx] = f"#EXT-X-MEDIA-SEQUENCE:{seq_num}"
     else:
