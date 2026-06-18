@@ -711,7 +711,7 @@ def get_live_m3u8(cam: str):
     if not exposed_segments and segments:
         exposed_segments = [(segments[0][0], segments[0][1])]
     
-    # 30 segment sliding window
+    # 35 segment sliding window
     window_segments = exposed_segments[-WINDOW_SIZE:]
     window_seg_names = {seg for inf, seg in window_segments}
     

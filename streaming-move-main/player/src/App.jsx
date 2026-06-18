@@ -5,7 +5,7 @@ import LiveBadge from './components/LiveBadge.jsx'
 import CameraSelector from './components/CameraSelector.jsx'
 import EventPanel from './components/EventPanel.jsx'
 
-const REVIEW_BUFFER_SIZE = 30
+const REVIEW_BUFFER_SIZE = 35
 const REVIEW_MASTER_CAM = 'hq'
 const LIVE_THRESHOLD = 2
 const EVENTS_POLL_INTERVAL = 2000
@@ -13,7 +13,7 @@ const EVENTS_POLL_INTERVAL = 2000
 const LIVE_CONFIG = {
   enableWorker: true,
   lowLatencyMode: true,
-  backBufferLength: 250, // Safely accommodates 30 segments of variable lengths (e.g. 5-6s each)
+  backBufferLength: 300, // Safely accommodates 30 segments of variable lengths (e.g. 5-6s each)
   liveSyncDurationCount: 1,
   liveMaxLatencyDurationCount: 1.5,
   liveDurationRatio: 1,
@@ -208,6 +208,7 @@ export default function App() {
 
   const activeCamRef = useRef(activeCam)
   const cutoffAbsSegIdxRef = useRef({ source: -1, sink: -1, hq: -1 })
+  const isFirstPollRef = useRef({ source: true, sink: true, hq: true })
   const ignoreSyncRef = useRef(false)
   const [gapState, setGapState] = useState({ source: false, sink: false, hq: false })
 
@@ -984,6 +985,7 @@ export default function App() {
       segmentStartTimesRef.current[cam] = {}
       hlsAnchoredSegsRef.current[cam].clear()
       downloadingSegmentsRef.current[cam].clear()
+      isFirstPollRef.current[cam] = true
     })
     setLiveSegments([])
     setLiveSyncMap({})
@@ -1047,6 +1049,13 @@ export default function App() {
           }
 
           if (!active) return;
+
+          if (playlistSegs.length > 0 && isFirstPollRef.current[cam]) {
+            isFirstPollRef.current[cam] = false;
+            // Ignore any segment that was strictly BEFORE the last 2 segments in the playlist
+            // so we don't fetch the massive 35-segment history when we just joined.
+            cutoffAbsSegIdxRef.current[cam] = playlistSegs[playlistSegs.length - 1].absSegIdx - 2;
+          }
 
           // Compute start times — chain through playlist durations; never overwrite HLS anchors
           if (!segmentStartTimesRef.current[cam]) {
@@ -1393,7 +1402,8 @@ export default function App() {
         if (!res.ok) return
         const v = await res.json()
         if (v?.checks) {
-          console.log(`[SYNC LOG] ACTIVE (${activeCam}): seg ${pos[activeCam].seg}, frame ${v.frames[activeCam]}`)
+          const currentActive = activeCamRef.current;
+          console.log(`[SYNC LOG] ACTIVE (${currentActive}): seg ${pos[currentActive].seg}, frame ${v.frames[currentActive]}`)
         }
       } catch (_) { }
     }

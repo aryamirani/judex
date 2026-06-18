@@ -55,7 +55,7 @@ def _ssh_argv(host, remote_cmd):
         "ssh",
         "-i", SSH_KEY_PATH,
         "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=2",
+        "-o", "ConnectTimeout=5",
         "-o", "StrictHostKeyChecking=accept-new",
         host,
         remote_cmd,
@@ -79,7 +79,7 @@ SESSION_ID = resolve_session_id()
 
 REMOTE_CSV_PATH = f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/sync/hls_sync_{SESSION_ID}_triple.csv"
 FRAME_IDX_PATHS = {
-    cam: f"/home/jetson/Desktop/cv_output/reader/{cam}/hls_segment_frame_index.csv"
+    cam: f"/home/jetson/Desktop/apr17/sync_reports/segments_{SESSION_ID}/manifests/{cam}/hls_segment_frame_index.csv"
     for cam in ["source", "sink", "hq"]
 }
 DATA_DIR = os.path.join(ASSIGNMENT_DIR, "sync_reports")
@@ -130,6 +130,9 @@ SERVE_DIRS = {
 _events_by_id = {}
 _events_lock = threading.Lock()
 
+_admitted_segments = {"source": [], "sink": [], "hq": []}
+_evicted_count = {"source": 0, "sink": 0, "hq": 0}
+
 FPS = 30.0
 
 # Placeholder for the remote flight shots path on the Jetson
@@ -143,13 +146,13 @@ _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
 _frame_idx_lock = threading.Lock()
 
 
-def _ssh_fetch(remote_path, skip_lines=0, allow_empty=False):
+def _ssh_fetch(remote_path, skip_lines=0, allow_empty=True):
     try:
         remote_cmd = (f"cat {remote_path}" if skip_lines == 0
                       else f"tail -n +{skip_lines + 2} {remote_path} 2>/dev/null || true")
         result = subprocess.run(
             _ssh_argv(JETSON_HOST, remote_cmd),
-            capture_output=True, text=True, timeout=4
+            capture_output=True, text=True, timeout=60
         )
         if result.returncode != 0 and not allow_empty:
             result.check_returncode()
@@ -159,11 +162,11 @@ def _ssh_fetch(remote_path, skip_lines=0, allow_empty=False):
             return ""
         raise e
 
-def _ssh_fetch_with_cmd(remote_cmd, allow_empty=False):
+def _ssh_fetch_with_cmd(remote_cmd, allow_empty=True):
     try:
         result = subprocess.run(
             _ssh_argv(JETSON_HOST, remote_cmd),
-            capture_output=True, text=True, timeout=4,
+            capture_output=True, text=True, timeout=60,
         )
         if result.returncode != 0 and not allow_empty:
             result.check_returncode()
@@ -1060,28 +1063,70 @@ def get_live_m3u8(cam: str):
             header_lines.append(line)
         i += 1
 
-    # In real scenario, the Pi's live.m3u8 is already a sliding window.
-    # We proxy it but track eviction for logging parity.
-    exposed_segments = [(inf, seg) for inf, seg, dur in segments]
-    window_seg_names = {seg for inf, seg in exposed_segments}
+    global _admitted_segments, _evicted_count
 
-    for inf, seg in exposed_segments:
-        if seg in window_seg_names:
-            if seg not in _logged_segments[cam]["loaded"]:
-                print(f"[EVICTION LOGIC] Segment {seg} of {cam} loaded in server m3u8 playlist")
-                _logged_segments[cam]["loaded"].add(seg)
+    # Maintain our own sliding window state starting from the last 3 segments
+    if not _admitted_segments[cam]:
+        # First poll: start with only 3 segments
+        _admitted_segments[cam] = segments[-3:] if len(segments) >= 3 else segments
+    else:
+        # Subsequent polls: only append segments that are newer than our last admitted segment
+        last_admitted_seg = _admitted_segments[cam][-1][1]
+        last_idx = -1
+        for j, item in enumerate(segments):
+            if item[1] == last_admitted_seg:
+                last_idx = j
+                break
+                
+        if last_idx != -1 and last_idx + 1 < len(segments):
+            for item in segments[last_idx + 1:]:
+                _admitted_segments[cam].append(item)
+        elif last_idx == -1:
+            # If we fell so far behind that our last segment fell off the Pi's playlist entirely
+            admitted_names = {seg for inf, seg, dur in _admitted_segments[cam]}
+            for item in segments:
+                if item[1] not in admitted_names:
+                    _admitted_segments[cam].append(item)
+    
+    # Enforce WINDOW_SIZE limit and track evictions for the sequence number
+    if len(_admitted_segments[cam]) > WINDOW_SIZE:
+        evict_count = len(_admitted_segments[cam]) - WINDOW_SIZE
+        _evicted_count[cam] += evict_count
+        _admitted_segments[cam] = _admitted_segments[cam][-WINDOW_SIZE:]
+
+    window_segments = _admitted_segments[cam]
+    window_seg_names = {seg for inf, seg, dur in window_segments}
+
+    for inf, seg, dur in window_segments:
+        if seg not in _logged_segments[cam]["loaded"]:
+            print(f"[EVICTION LOGIC] Segment {seg} of {cam} loaded in server m3u8 playlist")
+            _logged_segments[cam]["loaded"].add(seg)
     
     for loaded_seg in list(_logged_segments[cam]["loaded"]):
         if loaded_seg not in window_seg_names:
             if loaded_seg not in _logged_segments[cam]["removed"]:
-                print(f"[EVICTION LOGIC] Segment {loaded_seg} of {cam} removed from server m3u8 playlist")
+                print(f"[EVICTION LOGIC] Segment {loaded_seg} of {cam} removed from server m3u8 playlist (max {WINDOW_SIZE} segments)")
                 _logged_segments[cam]["removed"].add(loaded_seg)
 
     out_lines = header_lines[:]
-    for inf, seg in exposed_segments:
+    
+    # Update sequence number
+    seq_idx = -1
+    for idx, line in enumerate(out_lines):
+        if line.startswith("#EXT-X-MEDIA-SEQUENCE"):
+            seq_idx = idx
+            break
+            
+    seq_num = _evicted_count[cam]
+    if seq_idx != -1:
+        out_lines[seq_idx] = f"#EXT-X-MEDIA-SEQUENCE:{seq_num}"
+    else:
+        out_lines.append(f"#EXT-X-MEDIA-SEQUENCE:{seq_num}")
+
+    for inf, seg, dur in window_segments:
         out_lines.append(inf)
-        out_lines.append(seg)
-    return PlainTextResponse("\\n".join(out_lines), media_type="application/vnd.apple.mpegurl")
+        out_lines.append(seg.split("/")[-1])
+    return PlainTextResponse("\n".join(out_lines), media_type="application/vnd.apple.mpegurl")
 
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -1089,22 +1134,43 @@ from fastapi.responses import FileResponse, StreamingResponse
 def serve_segment(cam: str, segment: str):
     from fastapi.responses import StreamingResponse, PlainTextResponse
     import urllib.request
+    import time
     cam_path = CAM_PATHS.get(cam, "")
     if cam_path.startswith("http://") or cam_path.startswith("https://"):
         base_url = cam_path.rsplit('/', 1)[0]
         pi_url = f"{base_url}/{SESSION_ID}/{segment}.ts"
-        try:
-            req = urllib.request.Request(pi_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = resp.read()
-            return StreamingResponse(
-                iter([data]),
-                media_type="video/mp2t",
-                headers={"Cache-Control": "no-cache"}
-            )
-        except Exception as e:
-            print(f"[serve_segment] Pi proxy fetch failed for {cam}/{segment}.ts: {e}")
-            return PlainTextResponse(f"Segment not available on Pi: {e}", status_code=502)
+        
+        max_retries = 6
+        for attempt in range(max_retries):
+            try:
+                req = urllib.request.Request(pi_url, headers={'User-Agent': 'Mozilla/5.0'})
+                resp = urllib.request.urlopen(req, timeout=10)
+                
+                def iterfile(r):
+                    with r:
+                        while True:
+                            chunk = r.read(65536)
+                            if not chunk:
+                                break
+                            yield chunk
+                            
+                return StreamingResponse(
+                    iterfile(resp),
+                    media_type="video/mp2t",
+                    headers={"Cache-Control": "no-cache"}
+                )
+            except urllib.error.HTTPError as e:
+                if e.code == 404 and attempt < max_retries - 1:
+                    print(f"[serve_segment] 404 for {cam}/{segment}.ts. Retrying ({attempt+1}/{max_retries})...")
+                    time.sleep(0.5)
+                    continue
+                else:
+                    print(f"[serve_segment] Pi proxy HTTP error for {cam}/{segment}.ts: {e}")
+                    return PlainTextResponse(f"Segment not available on Pi: {e}", status_code=502)
+            except Exception as e:
+                print(f"[serve_segment] Pi proxy fetch failed for {cam}/{segment}.ts: {e}")
+                return PlainTextResponse(f"Segment not available on Pi: {e}", status_code=502)
+                
     return PlainTextResponse("Camera path not found", status_code=404)
 
 # For the bounce clips
