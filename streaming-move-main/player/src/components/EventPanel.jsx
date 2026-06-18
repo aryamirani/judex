@@ -150,7 +150,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flex: 1, minHeight: 0 }}>
         {cameras.map(cam => {
           const retryCount = retryCounts[cam.id] || 0
-          const camBounceFrame = event.frames?.[cam.id] ?? bounceFrame
+          const camBounceFrame = bounceFrame
           const clipUrl = `${backendUrl}/clips/${cam.id}/bounce_${camBounceFrame}_${flightIdStr}.mp4${retryCount > 0 ? `?retry=${retryCount}` : ''}`
           const landing = landingByCam[cam.id]
 
