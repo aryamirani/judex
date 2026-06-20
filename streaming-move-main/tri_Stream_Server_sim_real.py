@@ -16,6 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+import pydantic
+from typing import List
 from contextlib import asynccontextmanager
 
 # Parse args at module level so SESSION_ID is available before lifespan runs
@@ -110,6 +112,8 @@ sync_maps = {
     "hq_to_source": {}, "hq_to_sink": {}
 }
 
+_missing_hq_frames = set()
+
 # frame -> (seg_index, frame_offset)
 frame_to_seg = { "source": {}, "sink": {}, "hq": {} }
 seg_to_frame = { "source": {}, "sink": {}, "hq": {} } # seg_index -> cumulative_start_frame
@@ -130,9 +134,6 @@ SERVE_DIRS = {
 
 _events_by_id = {}
 _events_lock = threading.Lock()
-
-_pending_events = {}
-_pending_events_lock = threading.Lock()
 
 _admitted_segments = {"source": [], "sink": [], "hq": []}
 _evicted_count = {"source": 0, "sink": 0, "hq": 0}
@@ -192,26 +193,39 @@ def _ingest_sync_rows(csv_text, has_header=True):
     """Parse csv_text and update sync_maps. Returns number of rows ingested."""
     if not csv_text.strip():
         return 0
+        
     if has_header:
-        df = pd.read_csv(io.StringIO(csv_text),
-                         usecols=["Source_Index", "Sink_Index", "HQ_Index"])
+        df = pd.read_csv(io.StringIO(csv_text))
     else:
-        df = pd.read_csv(io.StringIO(csv_text), header=None, usecols=[0, 1, 2],
-                         names=["Source_Index", "Sink_Index", "HQ_Index"])
+        df = pd.read_csv(io.StringIO(csv_text), header=None)
+        
     count = 0
     with _sync_lock:
         for _, row in df.iterrows():
-            if pd.isna(row['Source_Index']) or pd.isna(row['Sink_Index']) or pd.isna(row['HQ_Index']):
+            src_col = row.get('Source_Index') if has_header else row.get(0)
+            snk_col = row.get('Sink_Index') if has_header else row.get(1)
+            hq_col = row.get('HQ_Index') if has_header else row.get(2)
+            status_col = row.get('TripleStatus') if has_header else row.get(7)
+            
+            if pd.isna(src_col) or pd.isna(snk_col):
                 continue
-            src_idx = int(row['Source_Index'])
-            snk_idx = int(row['Sink_Index'])
-            hq_idx  = int(row['HQ_Index'])
+                
+            src_idx = int(src_col)
+            snk_idx = int(snk_col)
+            
             sync_maps["source_to_sink"][src_idx] = snk_idx
-            sync_maps["source_to_hq"][src_idx]   = hq_idx
-            sync_maps["sink_to_source"][snk_idx]  = src_idx
-            sync_maps["sink_to_hq"][snk_idx]      = hq_idx
-            sync_maps["hq_to_source"][hq_idx]     = src_idx
-            sync_maps["hq_to_sink"][hq_idx]       = snk_idx
+            sync_maps["sink_to_source"][snk_idx] = src_idx
+            
+            if pd.isna(hq_col) or status_col == "MISSING_HQ":
+                _missing_hq_frames.add(src_idx)
+                _missing_hq_frames.add(snk_idx)
+                continue
+                
+            hq_idx  = int(hq_col)
+            sync_maps["source_to_hq"][src_idx] = hq_idx
+            sync_maps["sink_to_hq"][snk_idx] = hq_idx
+            sync_maps["hq_to_source"][hq_idx] = src_idx
+            sync_maps["hq_to_sink"][hq_idx] = snk_idx
             count += 1
     return count
 
@@ -406,16 +420,8 @@ def _ingest_flight_shots(csv_text):
         }
 
         with _events_lock:
-            if event["id"] in _events_by_id:
-                _events_by_id[event["id"]] = event
-                continue
-
-        with _pending_events_lock:
-            if event["id"] not in _pending_events:
-                _pending_events[event["id"]] = {"event": event, "added_at": time.time()}
-                count += 1
-            else:
-                _pending_events[event["id"]]["event"] = event
+            _events_by_id[event["id"]] = event
+            count += 1
 
     return count
 
@@ -433,53 +439,6 @@ def frame_idx_poller():
                     print(f"[frame idx poller] {cam} +{added} segs (total {_frame_idx_rows[cam]})")
             except Exception as e:
                 print(f"[frame idx poller] {cam} error: {e}")
-
-def verify_clips_poller():
-    """Background thread: fetches clip list from Jetson, verifies pending events with 5s grace period."""
-    global _pending_events, _events_by_id
-    
-    ls_cmd = _ssh_argv(JETSON_HOST, "ls -1 /home/jetson/Desktop/cv_output/bounce_clips/hq/ 2>/dev/null")
-    
-    while True:
-        time.sleep(2)
-        
-        with _pending_events_lock:
-            if not _pending_events:
-                continue
-            
-        try:
-            result = subprocess.run(ls_cmd, capture_output=True, text=True, check=False)
-            output = result.stdout
-        except Exception as e:
-            print(f"[verify_clips_poller] SSH error: {e}")
-            continue
-            
-        now = time.time()
-        with _pending_events_lock:
-            keys_to_remove = []
-            for ev_id, pending_data in _pending_events.items():
-                event = pending_data["event"]
-                added_at = pending_data["added_at"]
-                bounce_frame = event.get("bounce_frame")
-                
-                # Regex search for bounce_XXXX_*.mp4
-                found = False
-                if bounce_frame is not None:
-                    pattern = f"bounce_{int(bounce_frame)}_.*\\.mp4"
-                    found = bool(re.search(pattern, output))
-                    
-                if found:
-                    with _events_lock:
-                        _events_by_id[ev_id] = event
-                    keys_to_remove.append(ev_id)
-                else:
-                    # Give it up to 5 seconds grace period
-                    if now - added_at > 5.0:
-                        print(f"{ev_id} found in flight shot but not in the camera")
-                        keys_to_remove.append(ev_id)
-                        
-            for k in keys_to_remove:
-                del _pending_events[k]
 
 def flight_shots_poller():
     """Background thread: polls flight shots CSV every 2 s for new events."""
@@ -1058,7 +1017,6 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=sync_csv_poller, daemon=True).start()
     threading.Thread(target=frame_idx_poller, daemon=True).start()
     threading.Thread(target=flight_shots_poller, daemon=True).start()
-    threading.Thread(target=verify_clips_poller, daemon=True).start()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -1287,6 +1245,9 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
             res[target_cam] = {"segment": from_seg, "offset": from_offset, "frame": current_frame, "searched_frame": current_frame}
             continue
             
+        if target_cam == "hq" and current_frame in _missing_hq_frames:
+            print(f"Warning: HQ sync not possible for {from_camera} frame {current_frame} (MISSING_HQ in triple.csv)")
+            
         map_key = f"{from_camera}_to_{target_cam}"
         if current_frame in sync_maps[map_key]:
             target_frame = sync_maps[map_key][current_frame]
@@ -1349,6 +1310,10 @@ def get_sync_map(from_camera: str, sns: str):
             for target_cam in ["source", "sink", "hq"]:
                 if target_cam == from_camera:
                     seg_res[target_cam] = {"segment": sn, "offset": 0.0, "frame": start_frame, "searched_frame": start_frame}
+                    continue
+                    
+                if target_cam == "hq" and start_frame in _missing_hq_frames:
+                    print(f"Warning: HQ sync map not possible for {from_camera} segment {sn} (MISSING_HQ in triple.csv)")
                     continue
                     
                 map_key = f"{from_camera}_to_{target_cam}"
@@ -1473,6 +1438,66 @@ def get_status():
     }
 
 # The obsolete synchronize_streams thread has been removed as timeline alignment is handled contiguously.
+
+class PrefetchRequest(pydantic.BaseModel):
+    bounce_frames: List[int]
+
+@app.post("/prefetch_bounces")
+def prefetch_bounces(req: PrefetchRequest):
+    """Prefetch bounce clips from Jetson for the given HQ frames."""
+    print(f"Prefetching {len(req.bounce_frames)} bounce clips...")
+    if not req.bounce_frames:
+        return {"status": "ok"}
+        
+    def _download_worker():
+        import threading
+        
+        # Build list of patterns
+        patterns = []
+        for bf in req.bounce_frames:
+            patterns.append(f"bounce_{bf}_*.mp4")
+            
+        if not patterns: return
+        
+        # We need to run find/scp for all cameras.
+        for cam in ["source", "sink", "hq"]:
+            try:
+                # Find the files on jetson
+                find_args = " -o ".join([f"-name '{p}'" for p in patterns])
+                remote_dir = f"/home/jetson/Desktop/cv_output/bounce_clips/{cam}"
+                ls_cmd = ["ssh", "-i", SSH_KEY_PATH, "-o", "StrictHostKeyChecking=accept-new", "jetson@192.168.0.148", f"find {remote_dir} -type f \\( {find_args} \\)"]
+                
+                res = subprocess.run(ls_cmd, capture_output=True, text=True)
+                files = [f for f in res.stdout.split('\n') if f.strip()]
+                
+                if files:
+                    # SCP them over
+                    local_dir = os.path.join(BOUNCE_CLIPS_DIR, cam)
+                    os.makedirs(local_dir, exist_ok=True)
+                    
+                    scp_cmd = ["scp", "-i", SSH_KEY_PATH, "-o", "StrictHostKeyChecking=accept-new"]
+                    scp_cmd.extend([f"jetson@192.168.0.148:{f}" for f in files])
+                    scp_cmd.append(local_dir)
+                    
+                    print(f"[{cam}] Downloading {len(files)} bounce clips...")
+                    subprocess.run(scp_cmd, capture_output=True)
+            except Exception as e:
+                print(f"Prefetch error for {cam}: {e}")
+                
+    threading.Thread(target=_download_worker, daemon=True).start()
+    return {"status": "started"}
+
+@app.post("/clear_bounces")
+def clear_bounces():
+    import shutil
+    try:
+        if os.path.exists(BOUNCE_CLIPS_DIR):
+            print("Clearing local bounce clips cache...")
+            shutil.rmtree(BOUNCE_CLIPS_DIR)
+            os.makedirs(BOUNCE_CLIPS_DIR, exist_ok=True)
+    except Exception as e:
+        print(f"Error clearing bounce clips: {e}")
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     print(f"Starting server on port {_args.port} at {SPEED}x speed (session {SESSION_ID}).")

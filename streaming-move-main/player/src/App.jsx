@@ -13,7 +13,7 @@ const EVENTS_POLL_INTERVAL = 2000
 const LIVE_CONFIG = {
   enableWorker: true,
   lowLatencyMode: true,
-  backBufferLength: 300, // Safely accommodates 30 segments of variable lengths (e.g. 5-6s each)
+  backBufferLength: 450, // Safely accommodates 30 segments of variable lengths (e.g. 5-6s each)
   liveSyncDurationCount: 1,
   liveMaxLatencyDurationCount: 1.5,
   liveDurationRatio: 1,
@@ -21,7 +21,7 @@ const LIVE_CONFIG = {
   manifestLoadingRetryDelay: 500,
   maxBufferLength: 250,
   maxMaxBufferLength: 250,
-  maxBufferSize: 500 * 1024 * 1024 // 500 MB limit to prevent bitrate bottlenecks
+  maxBufferSize: 800 * 1024 * 1024 // 500 MB limit to prevent bitrate bottlenecks
 }
 const REVIEW_CONFIG = { enableWorker: true, maxBufferLength: 150, backBufferLength: 150 }
 
@@ -172,8 +172,8 @@ export default function App() {
             if (modeRef.current === 'review') {
               // In review mode (local Blob URLs), play all cameras to keep them perfectly in sync in the background
               safePlay(video)
-            } else if (cam === activeCamRef.current) {
-              // In live mode, only play the active camera to save Wi-Fi bandwidth
+            } else {
+              // In live mode, play all cameras to continually download segments in the background
               if (dvrActiveRef.current && dvrTimeRef.current != null) {
                 video.currentTime = dvrTimeRef.current
               }
@@ -249,10 +249,11 @@ export default function App() {
   }, [bumpTimeline])
 
   useEffect(() => {
+    if (mode === 'live') return
     fetchEvents()
     const interval = setInterval(fetchEvents, EVENTS_POLL_INTERVAL)
     return () => clearInterval(interval)
-  }, [fetchEvents])
+  }, [fetchEvents, mode])
 
   const bufferToSegs = useCallback((cam) => {
     return (rollingBuffers[cam].current || []).map(s => ({
@@ -265,155 +266,13 @@ export default function App() {
   }, [])
 
   const mappedEvents = useMemo(() => {
+    if (mode === 'live') return []
+    
     // Review: VOD-local HQ timeline only — never reuse live HLS absolute times.
-    if (mode === 'review') {
-      const hqSegs = reviewSegs[REVIEW_MASTER_CAM] || []
-      if (hqSegs.length === 0) return []
-      return buildReviewMappedEvents(events, hqSegs)
-    }
-
-    // Dots must live on the SAME clock as the SeekBar range / playhead, which are
-    // built from the *active* camera's own HLS timeline (rollingBuffers[activeCam]
-    // → originalStart). Each camera's media timeline is independent, so pinning dots
-    // to HQ while the range is on source/sink makes them cluster or vanish. Use the
-    // active camera's per-event segment/offset sync mapping instead.
-    const timelineCam = activeCam
-    let currentSegs = bufferToSegs(activeCam)
-
-    if (!currentSegs || currentSegs.length === 0) {
-      const times = segmentStartTimesRef.current[activeCam] || {}
-      const keys = Object.keys(times).map(Number).sort((a, b) => a - b)
-      if (keys.length > 0) {
-        currentSegs = keys.slice(-REVIEW_BUFFER_SIZE).map(k => ({
-          absSegIdx: k,
-          start: times[k],
-          end: times[k] + 4,
-          duration: 4,
-        }))
-      }
-    }
-
-    if (!currentSegs || currentSegs.length === 0) {
-      return []
-    }
-
-    const minAbs = currentSegs[0].absSegIdx
-    const maxAbs = currentSegs[currentSegs.length - 1].absSegIdx
-
-    const segTimeFromAnchor = (segNum, offset) => {
-      const times = segmentStartTimesRef.current?.[timelineCam] || {}
-
-      const exactStart = times[segNum]
-      if (exactStart !== undefined) {
-        return exactStart + offset
-      }
-
-      const matchingSeg = currentSegs.find(s => s.absSegIdx === segNum)
-      if (matchingSeg) {
-        return matchingSeg.start + offset
-      }
-
-      // Extrapolate from closest known segment (not live edge — avoids placing at fetch time)
-      const knownSegs = [...new Set([
-        ...Object.keys(times).map(Number),
-        ...currentSegs.map(s => s.absSegIdx),
-      ])]
-      if (knownSegs.length === 0) return null
-
-      const closest = knownSegs.reduce((p, c) =>
-        Math.abs(c - segNum) < Math.abs(p - segNum) ? c : p
-      )
-      let anchorStart = times[closest]
-      let anchorDur = 4
-      const bufSeg = currentSegs.find(s => s.absSegIdx === closest)
-      if (anchorStart === undefined && bufSeg) {
-        anchorStart = bufSeg.start
-      }
-      if (bufSeg) {
-        anchorDur = bufSeg.duration || 4
-      }
-      if (anchorStart === undefined) return null
-
-      return anchorStart + (segNum - closest) * anchorDur + offset
-    }
-
-    const getPlaybackTime = (segs, offs) => {
-      if (!segs || !offs) return null
-      const segNum = segs[timelineCam]
-      if (segNum == null) return null
-      const offset = offs[timelineCam] ?? 0
-
-      if (mode === 'live') {
-        return segTimeFromAnchor(segNum, offset)
-      }
-      return null
-    }
-
-    const mapped = events.flatMap(ev => {
-      // Only show bounces where bounce_frame is set (clip exists on Jetson)
-      const bounceFrame = ev.bounce_frame ?? ev.metadata?.bounce_frame
-      if (bounceFrame == null || bounceFrame === '') return []
-
-      // Lock/cache are per-camera-clock: the same bounce maps to a different
-      // absolute time on each camera's independent HLS timeline.
-      const bfKey = `${bounceFrame}|${timelineCam}`
-      const segNum = ev.segments?.[timelineCam]
-      const isHlsAnchored = mode === 'live'
-        && segNum != null
-        && hlsAnchoredSegsRef.current[timelineCam]?.has(segNum)
-
-      let time = getPlaybackTime(ev.segments, ev.offsets)
-
-      if (mode === 'live') {
-        const lock = bounceTimeLockRef.current[bfKey]
-        if (lock?.hlsLocked) {
-          // Locked to HLS-anchored time — never drift on later polls
-          time = lock.time
-        } else if (time != null && Number.isFinite(time)) {
-          if (isHlsAnchored) {
-            bounceTimeLockRef.current[bfKey] = { time, hlsLocked: true }
-          } else if (!lock) {
-            bounceTimeLockRef.current[bfKey] = { time, hlsLocked: false }
-          } else {
-            time = lock.time
-          }
-        } else if (lock) {
-          time = lock.time
-        }
-      }
-
-      const cacheKey = timelineCam
-      if (time != null && Number.isFinite(time)) {
-        if (!eventTimeCacheRef.current[ev.id]) eventTimeCacheRef.current[ev.id] = {}
-        eventTimeCacheRef.current[ev.id][cacheKey] = time
-      } else {
-        const cached = eventTimeCacheRef.current[ev.id]?.[cacheKey]
-        if (cached != null) time = cached
-      }
-
-      if (time == null || !Number.isFinite(time)) return []
-
-      const startTime = getPlaybackTime(ev.start_segments, ev.start_offsets)
-      const endTime = getPlaybackTime(ev.end_segments, ev.end_offsets)
-
-      return [{
-        ...ev,
-        time,
-        startTime: startTime ?? time,
-        endTime: endTime ?? time,
-      }]
-    })
-
-    // One dot per physical bounce — server can return multiple shot_ids per bounce_frame
-    const byBounce = new Map()
-    for (const ev of mapped) {
-      const bf = ev.bounce_frame ?? ev.metadata?.bounce_frame
-      const k = bf != null ? String(bf) : ev.id
-      const prev = byBounce.get(k)
-      if (!prev || ev.time >= prev.time) byBounce.set(k, ev)
-    }
-    return [...byBounce.values()]
-  }, [events, activeCam, mode, liveSegments, reviewSegs, timelineRevision, bufferToSegs])
+    const hqSegs = reviewSegs[REVIEW_MASTER_CAM] || []
+    if (hqSegs.length === 0) return []
+    return buildReviewMappedEvents(events, hqSegs)
+  }, [events, mode, reviewSegs])
 
   const syncReviewVideos = useCallback((activeTime) => {
     if (!syncMap) return
@@ -961,11 +820,46 @@ export default function App() {
     modeRef.current = 'review'
     setMode('review')
 
+    try {
+      const res = await fetch(`${backendUrl}/events`)
+      const data = await res.json()
+      setEvents(data)
+      
+      const visibleBounces = new Set()
+      const hqSegs = newReviewSegs[REVIEW_MASTER_CAM] || []
+      const minAbs = hqSegs[0]?.absSegIdx
+      const maxAbs = hqSegs[hqSegs.length - 1]?.absSegIdx
+      if (minAbs != null && maxAbs != null) {
+        data.forEach(ev => {
+          const segNum = ev.segments?.[REVIEW_MASTER_CAM]
+          if (segNum >= minAbs && segNum <= maxAbs) {
+            const bf = ev.bounce_frame ?? ev.metadata?.bounce_frame
+            if (bf != null && bf !== '') visibleBounces.add(Number(bf))
+          }
+        })
+      }
+      
+      const bounceFrames = Array.from(visibleBounces)
+      if (bounceFrames.length > 0) {
+        fetch(`${backendUrl}/prefetch_bounces`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bounce_frames: bounceFrames })
+        }).catch(e => console.warn('Prefetch failed', e))
+      }
+    } catch(e) {
+      console.warn('Failed to fetch events on review entry', e)
+    }
+
     return true
   }, [activeCam, events, seekReviewToTime])
 
   const exitReview = useCallback(() => {
     console.log('[MODE] Exiting Review Mode (returning to Live)')
+    
+    fetch(`${backendUrl}/clear_bounces`, { method: 'POST' })
+      .catch(e => console.warn('Failed to clear bounces', e))
+
     CAMERAS.forEach(cam => {
       hlsRefs[cam].current?.destroy()
       hlsRefs[cam].current = null
@@ -1215,8 +1109,14 @@ export default function App() {
   }, [])
 
   const goLive = useCallback(async () => {
-    if (modeRef.current === 'review') return
-
+    if (modeRef.current === 'review') {
+      exitReview()
+    }
+    
+    fetch(`${backendUrl}/clear_bounces`, { method: 'POST' })
+      .catch(e => console.warn('Failed to clear bounces', e))
+      
+    console.log('[SEEK] Jumping to Live Edge')
     dvrActiveRef.current = false
     dvrTimeRef.current = null
 
@@ -1250,12 +1150,9 @@ export default function App() {
     CAMERAS.forEach(cam => {
       const hls = hlsRefs[cam].current
       if (hls) {
-        hls.config.liveMaxLatencyDurationCount = cam === masterCam
+        hls.config.liveMaxLatencyDurationCount = (cam === masterCam)
           ? LIVE_CONFIG.liveMaxLatencyDurationCount
           : 9999
-      }
-      if (cam !== masterCam) {
-        videoRefs[cam].current?.pause()
       }
     })
 
@@ -1307,7 +1204,10 @@ export default function App() {
     }
 
     if (isPlaying) {
-      safePlay(masterVideo)
+      CAMERAS.forEach(cam => {
+        const v = videoRefs[cam].current
+        if (v) safePlay(v)
+      })
     }
 
     setTimeout(() => {
@@ -1416,9 +1316,6 @@ export default function App() {
 
     try {
       if (mode === 'live') {
-        // Pause outgoing cam first — avoids play() interrupted by pause() race
-        currentVideo.pause()
-
         let isLive = false
         let syncData = null
         const hls = hlsRefs[fromCam].current
@@ -1501,6 +1398,7 @@ export default function App() {
         const currentLocal = currentVideo.currentTime
         const currentSegs = reviewSegs[fromCam]
         
+        let newTargetTime = null
         if (currentSegs?.length > 0) {
           const seg = currentSegs.find(s => currentLocal >= s.localStart && currentLocal <= s.localEnd) || currentSegs[0]
           const mapping = syncMap?.[fromCam]?.[seg.absSegIdx]?.[targetCam]
@@ -1513,7 +1411,18 @@ export default function App() {
               `Current: ${activeFrame} | ` +
               `Target: ${targetFrame}`
             )
+            
+            const targetSeg = reviewSegs[targetCam]?.find(s => s.absSegIdx === mapping.segment)
+            if (targetSeg) {
+              newTargetTime = targetSeg.localStart + mapping.offset + offsetInSeg
+            }
           }
+        }
+
+        if (newTargetTime !== null) {
+          targetVideo.currentTime = Math.max(0, newTargetTime)
+        } else {
+          console.warn(`[SYNC] missing in triple csv - sync_map was not able to create sync for ${fromCam} → ${targetCam}`)
         }
 
         bumpTimeline()
