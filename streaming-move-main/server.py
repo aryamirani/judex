@@ -290,13 +290,7 @@ def _resolve_bounce_hq_frame_unlocked(bounce_frame, bounce_hq_frame):
     bf = _safe_frame_int(bounce_frame)
     if bf is None:
         return None
-    mapped = sync_maps["source_to_hq"].get(bf)
-    if mapped is not None:
-        return mapped
-    if sync_maps["source_to_hq"]:
-        closest = min(sync_maps["source_to_hq"].keys(), key=lambda x: abs(x - bf))
-        return sync_maps["source_to_hq"][closest] + (bf - closest)
-    return bf
+    return sync_maps["source_to_hq"].get(bf)
 
 
 def _position_from_hq_frame(f_hq):
@@ -306,20 +300,10 @@ def _position_from_hq_frame(f_hq):
         return None, None, None
 
     src_frame = sync_maps["hq_to_source"].get(f_hq)
-    if src_frame is None:
-        if sync_maps["hq_to_source"]:
-            closest = min(sync_maps["hq_to_source"].keys(), key=lambda x: abs(x - f_hq))
-            src_frame = sync_maps["hq_to_source"][closest] + (f_hq - closest)
-        else:
-            src_frame = f_hq
-
     sink_frame = sync_maps["hq_to_sink"].get(f_hq)
-    if sink_frame is None:
-        if sync_maps["hq_to_sink"]:
-            closest = min(sync_maps["hq_to_sink"].keys(), key=lambda x: abs(x - f_hq))
-            sink_frame = sync_maps["hq_to_sink"][closest] + (f_hq - closest)
-        else:
-            sink_frame = f_hq
+
+    if src_frame is None or sink_frame is None:
+        return None, None, None
 
     segs = {}
     offs = {}
@@ -331,17 +315,7 @@ def _position_from_hq_frame(f_hq):
             segs[cam] = c_seg
             offs[cam] = c_off / FPS
         else:
-            if seg_to_frame[cam]:
-                closest_seg = min(seg_to_frame[cam].keys(), key=lambda s: abs(seg_to_frame[cam][s] - f_num))
-                closest_start = seg_to_frame[cam][closest_seg]
-                fc = seg_frame_count[cam].get(closest_seg, 120)
-                frame_delta = f_num - closest_start
-                segs[cam] = closest_seg + frame_delta // fc
-                offs[cam] = (frame_delta % fc) / FPS
-            else:
-                avg_fc = 120 if not seg_frame_count[cam] else list(seg_frame_count[cam].values())[-1]
-                segs[cam] = int(f_num / avg_fc)
-                offs[cam] = (f_num % avg_fc) / FPS
+            return None, None, None
     return segs, offs, frames
 
 
@@ -659,7 +633,20 @@ def download_segment_file(src_url, dst, cam, name):
         with _downloads_lock:
             _active_downloads.discard(dst)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  DEAD CODE: master_stream_worker()
+#  ─────────────────────────────────
+#  This function is NOT started by the lifespan() event handler and is never
+#  called.  It was part of the simulation-based architecture where the server
+#  built a "unified timeline" and wrote local m3u8 playlists.  In the current
+#  LIVE architecture, playlists are proxied directly from the Pi cameras via
+#  the get_live_m3u8() endpoint.
+#
+#  Kept here for reference only — the function body is unreachable.
+# ═══════════════════════════════════════════════════════════════════════════════
 def master_stream_worker():
+    return  # ← DEAD CODE: function body is never reached
+
     # Clean serve dirs recursively
     for cam in ["source", "sink", "hq"]:
         serve_dir = SERVE_DIRS[cam]
@@ -1033,7 +1020,6 @@ from fastapi.responses import PlainTextResponse
 import math
 
 @app.get("/stream/{cam}/live.m3u8")
-@app.get("/stream/{cam}/live.m3u8")
 def get_live_m3u8(cam: str):
     from fastapi.responses import PlainTextResponse
     import os
@@ -1242,45 +1228,40 @@ def get_sync(from_camera: str, from_seg: int, from_offset: float):
     res = {}
     for target_cam in ["source", "sink", "hq"]:
         if target_cam == from_camera:
-            res[target_cam] = {"segment": from_seg, "offset": from_offset, "frame": current_frame, "searched_frame": current_frame}
+            res[target_cam] = {"segment": from_seg, "offset": from_offset, "frame": current_frame, "searched_frame": current_frame, "exact": True}
             continue
             
         if target_cam == "hq" and current_frame in _missing_hq_frames:
             print(f"Warning: HQ sync not possible for {from_camera} frame {current_frame} (MISSING_HQ in triple.csv)")
             
         map_key = f"{from_camera}_to_{target_cam}"
-        if current_frame in sync_maps[map_key]:
+        exact = current_frame in sync_maps[map_key]
+        if exact:
             target_frame = sync_maps[map_key][current_frame]
-        else:
-            # Fallback if frame dropped/missing from sync map: just pick the closest and extrapolate
-            if sync_maps[map_key]:
-                closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - current_frame))
-                target_frame = sync_maps[map_key][closest] + (current_frame - closest)
-            else:
-                target_frame = current_frame
             
-        if target_frame not in frame_to_seg[target_cam]:
-            if seg_to_frame[target_cam]:
-                closest_seg = min(seg_to_frame[target_cam].keys(), key=lambda s: abs(seg_to_frame[target_cam][s] - target_frame))
-                closest_start = seg_to_frame[target_cam][closest_seg]
-                frame_delta = target_frame - closest_start
-                fc = seg_frame_count[target_cam].get(closest_seg, 120)
-                seg_delta = frame_delta // fc
-                t_seg = closest_seg + seg_delta
-                t_frame_offset = frame_delta % fc
+            if target_frame not in frame_to_seg[target_cam]:
+                if seg_to_frame[target_cam]:
+                    closest_seg = min(seg_to_frame[target_cam].keys(), key=lambda s: abs(seg_to_frame[target_cam][s] - target_frame))
+                    closest_start = seg_to_frame[target_cam][closest_seg]
+                    frame_delta = target_frame - closest_start
+                    fc = seg_frame_count[target_cam].get(closest_seg, 120)
+                    seg_delta = frame_delta // fc
+                    t_seg = closest_seg + seg_delta
+                    t_frame_offset = frame_delta % fc
+                else:
+                    avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
+                    t_seg = int(target_frame / avg_fc)
+                    t_frame_offset = target_frame % avg_fc
             else:
-                avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
-                t_seg = int(target_frame / avg_fc)
-                t_frame_offset = target_frame % avg_fc
-        else:
-            t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
-            
-        res[target_cam] = {
-            "segment": t_seg,
-            "offset": t_frame_offset / FPS,
-            "frame": target_frame,
-            "searched_frame": current_frame
-        }
+                t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
+                
+            res[target_cam] = {
+                "segment": t_seg,
+                "offset": t_frame_offset / FPS,
+                "frame": target_frame,
+                "searched_frame": current_frame,
+                "exact": True
+            }
         
     return res
 
@@ -1309,7 +1290,7 @@ def get_sync_map(from_camera: str, sns: str):
             seg_res = {}
             for target_cam in ["source", "sink", "hq"]:
                 if target_cam == from_camera:
-                    seg_res[target_cam] = {"segment": sn, "offset": 0.0, "frame": start_frame, "searched_frame": start_frame}
+                    seg_res[target_cam] = {"segment": sn, "offset": 0.0, "frame": start_frame, "searched_frame": start_frame, "exact": True}
                     continue
                     
                 if target_cam == "hq" and start_frame in _missing_hq_frames:
@@ -1317,37 +1298,33 @@ def get_sync_map(from_camera: str, sns: str):
                     continue
                     
                 map_key = f"{from_camera}_to_{target_cam}"
-                if start_frame in sync_maps[map_key]:
+                exact = start_frame in sync_maps[map_key]
+                if exact:
                     target_frame = sync_maps[map_key][start_frame]
-                else:
-                    if sync_maps[map_key]:
-                        closest = min(sync_maps[map_key].keys(), key=lambda x: abs(x - start_frame))
-                        target_frame = sync_maps[map_key][closest] + (start_frame - closest)
-                    else:
-                        target_frame = start_frame
                     
-                if target_frame not in frame_to_seg[target_cam]:
-                    if seg_to_frame[target_cam]:
-                        closest_seg = min(seg_to_frame[target_cam].keys(), key=lambda s: abs(seg_to_frame[target_cam][s] - target_frame))
-                        closest_start = seg_to_frame[target_cam][closest_seg]
-                        frame_delta = target_frame - closest_start
-                        fc = seg_frame_count[target_cam].get(closest_seg, 120)
-                        seg_delta = frame_delta // fc
-                        t_seg = closest_seg + seg_delta
-                        t_frame_offset = frame_delta % fc
+                    if target_frame not in frame_to_seg[target_cam]:
+                        if seg_to_frame[target_cam]:
+                            closest_seg = min(seg_to_frame[target_cam].keys(), key=lambda s: abs(seg_to_frame[target_cam][s] - target_frame))
+                            closest_start = seg_to_frame[target_cam][closest_seg]
+                            frame_delta = target_frame - closest_start
+                            fc = seg_frame_count[target_cam].get(closest_seg, 120)
+                            seg_delta = frame_delta // fc
+                            t_seg = closest_seg + seg_delta
+                            t_frame_offset = frame_delta % fc
+                        else:
+                            avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
+                            t_seg = int(target_frame / avg_fc)
+                            t_frame_offset = target_frame % avg_fc
                     else:
-                        avg_fc = 120 if not seg_frame_count[target_cam] else list(seg_frame_count[target_cam].values())[-1]
-                        t_seg = int(target_frame / avg_fc)
-                        t_frame_offset = target_frame % avg_fc
-                else:
-                    t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
-                    
-                seg_res[target_cam] = {
-                    "segment": t_seg,
-                    "offset": t_frame_offset / FPS,
-                    "frame": target_frame,
-                    "searched_frame": start_frame
-                }
+                        t_seg, t_frame_offset = frame_to_seg[target_cam][target_frame]
+                        
+                    seg_res[target_cam] = {
+                        "segment": t_seg,
+                        "offset": t_frame_offset / FPS,
+                        "frame": target_frame,
+                        "searched_frame": start_frame,
+                        "exact": True
+                    }
             res[sn] = seg_res
     return res
 
@@ -1387,24 +1364,26 @@ def check_sync(
             if anchor_frame in sync_maps[key]:
                 raw_expected = sync_maps[key][anchor_frame]
                 exact = True
-            elif sync_maps[key]:
-                closest = min(sync_maps[key].keys(), key=lambda x: abs(x - anchor_frame))
-                raw_expected = sync_maps[key][closest]
-                exact = False
+                expected = raw_expected
+                diff = abs(frames[target] - expected)
+                checks[key] = {
+                    "anchor_frame": anchor_frame,
+                    "expected_target_frame": expected,
+                    "actual_target_frame": frames[target],
+                    "diff_frames": diff,
+                    "exact_hit": True,
+                    "match": diff <= tolerance,
+                }
             else:
-                raw_expected = anchor_frame
-                exact = False
-            # Step 2: clamp raw_expected to nearest valid frame in target's frame index
-            expected = raw_expected
-            diff = abs(frames[target] - expected)
-            checks[key] = {
-                "anchor_frame": anchor_frame,
-                "expected_target_frame": expected,
-                "actual_target_frame": frames[target],
-                "diff_frames": diff,
-                "exact_hit": exact,
-                "match": diff <= tolerance,
-            }
+                checks[key] = {
+                    "anchor_frame": anchor_frame,
+                    "expected_target_frame": None,
+                    "actual_target_frame": frames[target],
+                    "diff_frames": None,
+                    "exact_hit": False,
+                    "match": False,
+                    "error": "not in triple.csv"
+                }
 
     overall = all(c.get("match", False) for c in checks.values())
     return {"frames": frames, "checks": checks, "overall_match": overall, "tolerance": tolerance}

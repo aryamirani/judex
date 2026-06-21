@@ -276,17 +276,19 @@ export default function App() {
 
   const syncReviewVideos = useCallback((activeTime) => {
     if (!syncMap) return
-    const activeList = reviewSegs[activeCam]
-    if (!activeList || activeList.length === 0) return
+    // Always sync relative to HQ master — globalTime in tick() is HQ's time
+    const masterList = reviewSegs[REVIEW_MASTER_CAM]
+    if (!masterList || masterList.length === 0) return
 
-    const activeSeg = activeList.find(s => activeTime >= s.localStart && activeTime <= s.localEnd)
-    if (!activeSeg) return
+    const masterSeg = masterList.find(s => activeTime >= s.localStart && activeTime <= s.localEnd)
+    if (!masterSeg) return
 
-    const offsetInSeg = activeTime - activeSeg.localStart
+    const offsetInSeg = activeTime - masterSeg.localStart
 
     CAMERAS.forEach(cam => {
-      if (cam === activeCam) return
-      const mapping = syncMap[activeCam]?.[activeSeg.absSegIdx]?.[cam]
+      // Skip HQ (it's the master clock) and the active camera (user is watching it)
+      if (cam === REVIEW_MASTER_CAM || cam === activeCamRef.current) return
+      const mapping = syncMap[REVIEW_MASTER_CAM]?.[masterSeg.absSegIdx]?.[cam]
       if (!mapping) return
 
       const targetList = reviewSegs[cam]
@@ -303,7 +305,7 @@ export default function App() {
         }
       }
     })
-  }, [syncMap, reviewSegs, activeCam])
+  }, [syncMap, reviewSegs])
 
   const seekCamToSyncPosition = useCallback((cam, syncInfo) => {
     const video = videoRefs[cam].current
@@ -648,9 +650,7 @@ export default function App() {
 
         if (existingSeg) {
           if (Math.abs(existingSeg.originalStart - hlsStart) > 0.01) {
-            rollingBuffers[cam].current = existing.map(s =>
-              s.absSegIdx === absSegIdx ? { ...s, originalStart: hlsStart } : s
-            )
+            existingSeg.originalStart = hlsStart
             if (cam === activeCamRef.current && modeRef.current === 'live') {
               setLiveSegments(rollingBuffers[cam].current.map(s => ({
                 sn: s.sn,
@@ -669,13 +669,17 @@ export default function App() {
             duration: data.frag.duration,
             bytes: data.payload.slice(0)
           }
-          const updated = [...rollingBuffers[cam].current, entry]
-            .sort((a, b) => a.absSegIdx - b.absSegIdx)
-            .slice(-REVIEW_BUFFER_SIZE)
-          rollingBuffers[cam].current = updated
+          // In-place sorted insert to avoid spread-copy GC pressure
+          const buf = rollingBuffers[cam].current
+          let insertIdx = buf.length
+          for (let i = 0; i < buf.length; i++) {
+            if (buf[i].absSegIdx > entry.absSegIdx) { insertIdx = i; break }
+          }
+          buf.splice(insertIdx, 0, entry)
+          while (buf.length > REVIEW_BUFFER_SIZE) buf.shift()
 
           if (cam === activeCamRef.current) {
-            setLiveSegments(updated.map(s => ({
+            setLiveSegments(buf.map(s => ({
               sn: s.sn,
               absSegIdx: s.absSegIdx,
               start: s.originalStart,
@@ -1036,16 +1040,19 @@ export default function App() {
                   bytes: arrayBuffer
                 };
 
-                // Merge, sort, and slice to REVIEW_BUFFER_SIZE
-                const updated = [...rollingBuffers[cam].current, entry]
-                  .filter((v, idx, self) => self.findIndex(t => t.absSegIdx === v.absSegIdx) === idx)
-                  .sort((a, b) => a.absSegIdx - b.absSegIdx)
-                  .slice(-REVIEW_BUFFER_SIZE);
-
-                rollingBuffers[cam].current = updated;
+                // In-place sorted insert to avoid spread-copy GC pressure
+                const buf = rollingBuffers[cam].current
+                if (!buf.some(s => s.absSegIdx === entry.absSegIdx)) {
+                  let insertIdx = buf.length
+                  for (let i = 0; i < buf.length; i++) {
+                    if (buf[i].absSegIdx > entry.absSegIdx) { insertIdx = i; break }
+                  }
+                  buf.splice(insertIdx, 0, entry)
+                  while (buf.length > REVIEW_BUFFER_SIZE) buf.shift()
+                }
 
                 if (cam === activeCamRef.current && modeRef.current === 'live') {
-                  setLiveSegments(updated.map(s => ({
+                  setLiveSegments(buf.map(s => ({
                     sn: s.sn,
                     absSegIdx: s.absSegIdx,
                     start: s.originalStart,
@@ -1217,6 +1224,7 @@ export default function App() {
 
   const doLiveSync = useCallback(async () => {
     if (modeRef.current !== 'live') return
+    if (!isPlayingRef.current) return  // Don't re-sync while paused
     const masterCam = activeCamRef.current
     const hls = hlsRefs[masterCam].current
     const video = videoRefs[masterCam].current
@@ -1258,6 +1266,14 @@ export default function App() {
       }
     } catch (e) { console.warn('doLiveSync failed', e) }
   }, [])
+
+  // Re-sync all cameras when resuming from pause in live mode
+  useEffect(() => {
+    if (isPlaying && modeRef.current === 'live') {
+      const id = setTimeout(doLiveSync, 200)
+      return () => clearTimeout(id)
+    }
+  }, [isPlaying, doLiveSync])
 
   // Auto-pause when entering Review mode, and apply playback rate
   useEffect(() => {

@@ -177,8 +177,8 @@ export default function SeekBar({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  // scrub backwards 1 frame (assuming 60fps)
-                  if (onSeek) onSeek(activeTime - (1/60), true);
+                  // scrub backwards 1 frame (30fps)
+                  if (onSeek) onSeek(activeTime - (1/30), true);
                 }}
                 style={{ background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', padding: '4px 10px', fontWeight: 'bold', transition: 'background 0.2s' }}
               >
@@ -209,8 +209,8 @@ export default function SeekBar({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  // scrub forwards 1 frame (assuming 60fps)
-                  if (onSeek) onSeek(activeTime + (1/60), true);
+                  // scrub forwards 1 frame (30fps)
+                  if (onSeek) onSeek(activeTime + (1/30), true);
                 }}
                 style={{ background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', padding: '4px 10px', fontWeight: 'bold', transition: 'background 0.2s' }}
               >
