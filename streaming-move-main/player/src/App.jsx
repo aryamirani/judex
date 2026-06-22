@@ -1214,18 +1214,17 @@ export default function App() {
       })
     }
 
-    // GO LIVE always resumes playback unconditionally — DVR scrubbing sets isPlaying=false,
-    // so guarding on isPlaying would prevent the cameras from ever playing after a scrub.
-    setIsPlaying(true)
-    CAMERAS.forEach(cam => {
-      const v = videoRefs[cam].current
-      if (v) safePlay(v)
-    })
+    if (isPlaying) {
+      CAMERAS.forEach(cam => {
+        const v = videoRefs[cam].current
+        if (v) safePlay(v)
+      })
+    }
 
     setTimeout(() => {
       ignoreSyncRef.current = false
     }, 500)
-  }, [seekCamToSyncPosition])
+  }, [isPlaying, seekCamToSyncPosition])
 
   const doLiveSync = useCallback(async () => {
     if (modeRef.current !== 'live') return
