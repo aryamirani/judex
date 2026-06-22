@@ -286,8 +286,10 @@ export default function App() {
     const offsetInSeg = activeTime - masterSeg.localStart
 
     CAMERAS.forEach(cam => {
-      // Skip HQ (it's the master clock) and the active camera (user is watching it)
-      if (cam === REVIEW_MASTER_CAM || cam === activeCamRef.current) return
+      // Skip HQ (it's the master clock), but DO NOT skip the active camera.
+      // If we are watching 'sink', we MUST sync 'sink' to 'hq' to ensure the video 
+      // perfectly matches the HQ-driven timeline dots if browser playback drifts.
+      if (cam === REVIEW_MASTER_CAM) return
       const mapping = syncMap[REVIEW_MASTER_CAM]?.[masterSeg.absSegIdx]?.[cam]
       if (!mapping) return
 
@@ -299,7 +301,9 @@ export default function App() {
         const targetVideo = videoRefs[cam].current
         if (targetVideo) {
           const cur = targetVideo.currentTime
-          if (Math.abs(cur - targetTime) > 0.05) {
+          // 0.5s threshold prevents micro-stutters during normal 1x playback, 
+          // but strictly enforces sync if the browser allows the video to drift
+          if (Math.abs(cur - targetTime) > 0.5) {
             targetVideo.currentTime = Math.max(0, Math.min(targetVideo.duration || Infinity, targetTime))
           }
         }

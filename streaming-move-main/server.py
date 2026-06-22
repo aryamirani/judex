@@ -65,13 +65,26 @@ def _ssh_argv(host, remote_cmd):
     ]
 
 def _fetch_session_from_source_pi():
-    result = subprocess.run(
-        _ssh_argv(SOURCE_PI_HOST, f"cat {TRACK_VIDEO_INDEX_PATH}"),
-        capture_output=True, text=True, timeout=5,
-    )
-    result.check_returncode()
-    data = json.loads(result.stdout.strip())
-    return str(data["counter"])
+    import sys
+    try:
+        result = subprocess.run(
+            _ssh_argv(SOURCE_PI_HOST, f"cat {TRACK_VIDEO_INDEX_PATH}"),
+            capture_output=True, text=True, timeout=5,
+        )
+        result.check_returncode()
+        data = json.loads(result.stdout.strip())
+        return str(data["counter"])
+    except subprocess.TimeoutExpired:
+        print(f"\n[FATAL] Network Error: Connection to {SOURCE_PI_HOST} timed out.")
+        print("Please ensure you are connected to the correct WiFi network and the Pi is online.")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"\n[FATAL] Error reading {TRACK_VIDEO_INDEX_PATH} from {SOURCE_PI_HOST}.")
+        print(f"SSH Output: {e.stderr.strip() if e.stderr else 'Unknown Error'}\n")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n[FATAL] Unexpected error resolving session ID: {e}\n")
+        sys.exit(1)
 
 def resolve_session_id():
     if _args.session:
@@ -563,48 +576,48 @@ def write_playlist(cam, window, media_sequence, done=False):
 _active_downloads = set()
 _downloads_lock = threading.Lock()
 
-def get_global_time(cam, frame):
-    if cam == "source":
-        return frame / FPS
-    map_key = f"{cam}_to_source"
-    
-    with _sync_lock:
-        if not sync_maps[map_key]:
-            return frame / FPS
-            
-        if frame in sync_maps[map_key]:
-            return sync_maps[map_key][frame] / FPS
-            
-        keys = sorted(sync_maps[map_key].keys())
-        import bisect
-        idx = bisect.bisect_left(keys, frame)
-        if idx == 0:
-            ref_f = keys[0]
-            diff = frame - ref_f
-            return (sync_maps[map_key][ref_f] + diff) / FPS
-        elif idx == len(keys):
-            ref_f = keys[-1]
-            diff = frame - ref_f
-            return (sync_maps[map_key][ref_f] + diff) / FPS
-        else:
-            f1 = keys[idx-1]
-            f2 = keys[idx]
-            s1 = sync_maps[map_key][f1]
-            s2 = sync_maps[map_key][f2]
-            ratio = (frame - f1) / (f2 - f1)
-            mapped_frame = s1 + ratio * (s2 - s1)
-            return mapped_frame / FPS
+# def get_global_time(cam, frame):
+#     if cam == "source":
+#         return frame / FPS
+#     map_key = f"{cam}_to_source"
+#     
+#     with _sync_lock:
+#         if not sync_maps[map_key]:
+#             return frame / FPS
+#             
+#         if frame in sync_maps[map_key]:
+#             return sync_maps[map_key][frame] / FPS
+#             
+#         keys = sorted(sync_maps[map_key].keys())
+#         import bisect
+#         idx = bisect.bisect_left(keys, frame)
+#         if idx == 0:
+#             ref_f = keys[0]
+#             diff = frame - ref_f
+#             return (sync_maps[map_key][ref_f] + diff) / FPS
+#         elif idx == len(keys):
+#             ref_f = keys[-1]
+#             diff = frame - ref_f
+#             return (sync_maps[map_key][ref_f] + diff) / FPS
+#         else:
+#             f1 = keys[idx-1]
+#             f2 = keys[idx]
+#             s1 = sync_maps[map_key][f1]
+#             s2 = sync_maps[map_key][f2]
+#             ratio = (frame - f1) / (f2 - f1)
+#             mapped_frame = s1 + ratio * (s2 - s1)
+#             return mapped_frame / FPS
 
-def get_segment_start_frame(cam, abs_idx):
-    with _frame_idx_lock:
-        if abs_idx in seg_to_frame[cam]:
-            return seg_to_frame[cam][abs_idx]
-        keys = sorted(seg_to_frame[cam].keys())
-        if not keys:
-            return abs_idx * 120
-        closest_seg = min(keys, key=lambda x: abs(x - abs_idx))
-        fc = seg_frame_count[cam].get(closest_seg, 120)
-        return seg_to_frame[cam][closest_seg] + (abs_idx - closest_seg) * fc
+# def get_segment_start_frame(cam, abs_idx):
+#     with _frame_idx_lock:
+#         if abs_idx in seg_to_frame[cam]:
+#             return seg_to_frame[cam][abs_idx]
+#         keys = sorted(seg_to_frame[cam].keys())
+#         if not keys:
+#             return abs_idx * 120
+#         closest_seg = min(keys, key=lambda x: abs(x - abs_idx))
+#         fc = seg_frame_count[cam].get(closest_seg, 120)
+#         return seg_to_frame[cam][closest_seg] + (abs_idx - closest_seg) * fc
 
 def parse_abs_seg_idx(name):
     if not name:
@@ -616,22 +629,22 @@ def parse_abs_seg_idx(name):
         return int(m.group(1))
     return None
 
-def download_segment_file(src_url, dst, cam, name):
-    try:
-        if os.path.exists(dst):
-            return
-        req = urllib.request.Request(src_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
-            temp_dst = dst + ".tmp"
-            with open(temp_dst, "wb") as f_dst:
-                f_dst.write(response.read())
-            os.rename(temp_dst, dst)
-        print(f"[master worker] Downloaded segment {name} from {src_url}")
-    except Exception as e:
-        print(f"[master worker] Error downloading {src_url}: {e}")
-    finally:
-        with _downloads_lock:
-            _active_downloads.discard(dst)
+# def download_segment_file(src_url, dst, cam, name):
+#     try:
+#         if os.path.exists(dst):
+#             return
+#         req = urllib.request.Request(src_url, headers={'User-Agent': 'Mozilla/5.0'})
+#         with urllib.request.urlopen(req, timeout=3) as response:
+#             temp_dst = dst + ".tmp"
+#             with open(temp_dst, "wb") as f_dst:
+#                 f_dst.write(response.read())
+#             os.rename(temp_dst, dst)
+#         print(f"[master worker] Downloaded segment {name} from {src_url}")
+#     except Exception as e:
+#         print(f"[master worker] Error downloading {src_url}: {e}")
+#     finally:
+#         with _downloads_lock:
+#             _active_downloads.discard(dst)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  DEAD CODE: master_stream_worker()
