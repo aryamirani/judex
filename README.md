@@ -1,6 +1,6 @@
 # Triple-Camera Live Review System
 
-A professional, broadcast-grade sports review interface featuring synchronized triple-camera live streams, instant camera switching, interactive event navigation, and an offline, zero-network VOD review mode.
+A professional, broadcast-grade sports review interface featuring synchronized triple-camera live streams, instant camera switching, interactive event navigation, and an offline, zero-network VOD review mode. -donezoooo
 
 ## Setup Instructions
 
