@@ -1214,17 +1214,18 @@ export default function App() {
       })
     }
 
-    if (isPlaying) {
-      CAMERAS.forEach(cam => {
-        const v = videoRefs[cam].current
-        if (v) safePlay(v)
-      })
-    }
+    // GO LIVE always resumes playback unconditionally — DVR scrubbing sets isPlaying=false,
+    // so guarding on isPlaying would prevent the cameras from ever playing after a scrub.
+    setIsPlaying(true)
+    CAMERAS.forEach(cam => {
+      const v = videoRefs[cam].current
+      if (v) safePlay(v)
+    })
 
     setTimeout(() => {
       ignoreSyncRef.current = false
     }, 500)
-  }, [isPlaying, seekCamToSyncPosition])
+  }, [seekCamToSyncPosition])
 
   const doLiveSync = useCallback(async () => {
     if (modeRef.current !== 'live') return
@@ -1399,6 +1400,19 @@ export default function App() {
 
         activeCamRef.current = targetCam
         setActiveCam(targetCam)
+
+        // Re-anchor liveEdge and currentTime to the target camera's HLS coordinate system
+        // BEFORE tick() fires. Without this, tick() sees a massive drift between the stale
+        // liveEdge (old camera's scale) and the new camera's liveSyncPosition, immediately
+        // snapping liveEdge to a completely different number while currentTime is still in
+        // the old scale — making the seekbar playhead jump to the live edge.
+        const targetHlsLivePos = hlsRefs[targetCam].current?.liveSyncPosition
+        if (targetHlsLivePos != null && Number.isFinite(targetHlsLivePos)) {
+          liveEdgeRef.current = targetHlsLivePos
+          setLiveEdge(targetHlsLivePos)
+        }
+        // Snap currentTime to the target video's position (already seeked by seekCamToSyncPosition)
+        setCurrentTime(targetVideo.currentTime)
 
         if (dvrActiveRef.current) {
           dvrTimeRef.current = targetVideo.currentTime
