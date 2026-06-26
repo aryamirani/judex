@@ -1188,26 +1188,173 @@ BOUNCE_CLIPS_DIR = os.path.join(BASE_DIR, "clips", "cv_output", "bounce_clips")
 def serve_bounce_clip(cam: str, clip_name: str):
     from fastapi.responses import FileResponse
     from fastapi import HTTPException
-    
+    import re
+
+    if cam not in ("source", "sink", "hq"):
+        raise HTTPException(status_code=400, detail="Invalid camera")
+    if not re.fullmatch(r"bounce_\d+_\d+\.mp4", clip_name):
+        raise HTTPException(status_code=400, detail="Invalid clip name")
+
     local_path = os.path.join(BOUNCE_CLIPS_DIR, cam, clip_name)
     if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
         return FileResponse(local_path, media_type="video/mp4")
-        
+
     remote_path = f"/home/jetson/Desktop/cv_output/bounce_clips/{cam}/{clip_name}"
-    cmd = ["ssh", "-i", "/Users/aryamirani/Desktop/intern/id_rsa", "-o", "StrictHostKeyChecking=accept-new", "jetson@192.168.0.148", f"cat {remote_path}"]
+    print(f"[serve_bounce_clip] Fetching {remote_path} from Jetson…")
+    cmd = _ssh_argv(JETSON_HOST, f"cat {remote_path}")
     try:
-        proc = subprocess.run(cmd, capture_output=True, timeout=30)
+        proc = subprocess.run(cmd, capture_output=True, timeout=60)
         if proc.returncode != 0:
-            raise HTTPException(status_code=404, detail="Clip not found on Jetson")
-            
+            err = proc.stderr.decode(errors="replace").strip()
+            print(f"[serve_bounce_clip] Not found: {remote_path} ({err})")
+            raise HTTPException(status_code=404, detail=f"Clip not found on Jetson: {clip_name}")
+
+        if not proc.stdout or len(proc.stdout) < 1024:
+            print(f"[serve_bounce_clip] Empty/tiny file: {remote_path} ({len(proc.stdout)} bytes)")
+            raise HTTPException(status_code=502, detail="Clip file empty on Jetson")
+
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         with open(local_path, "wb") as f:
             f.write(proc.stdout)
-            
+
+        print(f"[serve_bounce_clip] Cached {clip_name} ({len(proc.stdout)} bytes)")
         return FileResponse(local_path, media_type="video/mp4")
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[serve_bounce_clip] Error proxying {clip_name}: {e}")
         raise HTTPException(status_code=502, detail="Error fetching clip from Jetson")
+
+# Local cache dir for trajectory clips
+TRAJECTORY_CLIPS_DIR = os.path.join(BASE_DIR, "clips", "cv_output", "trajectory")
+
+class AnalyzeBounceRequest(pydantic.BaseModel):
+    bounce_number: int
+    bounce_frame: int  # The HQ bounce frame number (used to find the output file)
+
+@app.post("/analyze_bounce")
+def analyze_bounce(req: AnalyzeBounceRequest):
+    """
+    Runs the TrackNet analysis pipeline on the Jetson for a given bounce.
+    1. Frees resources: tracknet_control.py set source_sink_tracknet_forceful off
+    2. Enqueues the clip: bounce_tracknet_clip.py --enqueue ... --track-id <SESSION_ID>
+    3. Waits for results.jsonl to confirm completion
+    4. Re-enables: tracknet_control.py set source_sink_tracknet_forceful auto
+    5. SCPs the trajectory mp4 to local and returns its filename.
+    """
+    from fastapi import HTTPException
+    import json as _json
+
+    bounce_num_str = str(req.bounce_number).zfill(5)
+    ssh_base = ["ssh", "-i", SSH_KEY_PATH, "-o", "StrictHostKeyChecking=accept-new",
+                "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", JETSON_HOST]
+    jetson_cv_dir = "/home/jetson/Desktop/judex-cv"
+    results_path = "/home/jetson/Desktop/cv_output/bounce_clips/tracknet/results.jsonl"
+
+    try:
+        # Step 1: Free resources
+        print(f"[analyze_bounce] Step 1: Freeing TrackNet resources...")
+        proc1 = subprocess.run(
+            ssh_base + [f"cd {jetson_cv_dir} && python3 tracknet_control.py set source_sink_tracknet_forceful off"],
+            capture_output=True, text=True, timeout=30
+        )
+        if proc1.returncode != 0:
+            print(f"[analyze_bounce] Step 1 stderr: {proc1.stderr}")
+            # Non-fatal — continue anyway
+
+        # Count current lines in results.jsonl so we can detect a NEW result
+        line_count_proc = subprocess.run(
+            ssh_base + [f"wc -l < {results_path} 2>/dev/null || echo 0"],
+            capture_output=True, text=True, timeout=10
+        )
+        prior_lines = int(line_count_proc.stdout.strip() or "0")
+        print(f"[analyze_bounce] Results file currently has {prior_lines} lines.")
+
+        # Step 2: Enqueue the bounce
+        enqueue_payload = _json.dumps({"bounce_number": req.bounce_number, "camera": "hq", "viz": True})
+        print(f"[analyze_bounce] Step 2: Enqueuing bounce {req.bounce_number} with track-id {SESSION_ID}...")
+        proc2 = subprocess.run(
+            ssh_base + [f"cd {jetson_cv_dir} && python3 bounce_tracknet_clip.py --enqueue '{enqueue_payload}' --track-id {SESSION_ID}"],
+            capture_output=True, text=True, timeout=30
+        )
+        if proc2.returncode != 0:
+            raise HTTPException(status_code=502, detail=f"Failed to enqueue bounce: {proc2.stderr}")
+
+        # Step 3: Poll results.jsonl for a new result (up to 120s)
+        print(f"[analyze_bounce] Step 3: Waiting for TrackNet to process...")
+        result_entry = None
+        for _ in range(60):  # poll every 2s for up to 120s
+            time.sleep(2)
+            poll_proc = subprocess.run(
+                ssh_base + [f"tail -n +{prior_lines + 1} {results_path} 2>/dev/null"],
+                capture_output=True, text=True, timeout=10
+            )
+            new_lines = [l.strip() for l in poll_proc.stdout.strip().splitlines() if l.strip()]
+            for line in new_lines:
+                try:
+                    entry = _json.loads(line)
+                    if entry.get("camera") == "hq" and entry.get("bounce_number") == req.bounce_number:
+                        result_entry = entry
+                        break
+                except Exception:
+                    continue
+            if result_entry:
+                break
+
+        # Step 4: Re-enable TrackNet regardless of success/failure
+        print(f"[analyze_bounce] Step 4: Re-enabling TrackNet...")
+        subprocess.run(
+            ssh_base + [f"cd {jetson_cv_dir} && python3 tracknet_control.py set source_sink_tracknet_forceful auto"],
+            capture_output=True, text=True, timeout=30
+        )
+
+        if not result_entry:
+            raise HTTPException(status_code=504, detail="TrackNet analysis timed out (>120s). Try again.")
+
+        if result_entry.get("status") != "ok":
+            raise HTTPException(status_code=500, detail=f"TrackNet error: {result_entry.get('error', 'Unknown')}")
+
+        # Step 5: SCP the trajectory mp4
+        remote_mp4 = result_entry.get("trajectory_motion_mp4_path") or result_entry.get("trajectory_fit_motion_mp4_path")
+        if not remote_mp4:
+            raise HTTPException(status_code=500, detail="No trajectory video path in result")
+
+        clip_name = os.path.basename(remote_mp4)
+        os.makedirs(TRAJECTORY_CLIPS_DIR, exist_ok=True)
+        local_path = os.path.join(TRAJECTORY_CLIPS_DIR, clip_name)
+
+        print(f"[analyze_bounce] Fetching trajectory video: {remote_mp4}")
+        scp_proc = subprocess.run(
+            ["ssh", "-i", SSH_KEY_PATH, "-o", "StrictHostKeyChecking=accept-new",
+             "-o", "BatchMode=yes", JETSON_HOST, f"cat {remote_mp4}"],
+            capture_output=True, timeout=60
+        )
+        if scp_proc.returncode != 0:
+            raise HTTPException(status_code=502, detail="Failed to fetch trajectory video from Jetson")
+
+        with open(local_path, "wb") as f:
+            f.write(scp_proc.stdout)
+
+        print(f"[analyze_bounce] Done. Saved trajectory video: {local_path}")
+        return {"status": "ok", "clip_name": clip_name}
+
+    except HTTPException:
+        raise
+    except subprocess.TimeoutExpired as e:
+        raise HTTPException(status_code=504, detail=f"SSH command timed out: {e}")
+    except Exception as e:
+        print(f"[analyze_bounce] Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/trajectory_clip/{clip_name}")
+def serve_trajectory_clip(clip_name: str):
+    from fastapi.responses import FileResponse
+    from fastapi import HTTPException
+    local_path = os.path.join(TRAJECTORY_CLIPS_DIR, clip_name)
+    if not os.path.exists(local_path):
+        raise HTTPException(status_code=404, detail="Trajectory clip not found")
+    return FileResponse(local_path, media_type="video/mp4")
+
 
 @app.get("/cameras")
 def get_cameras():
