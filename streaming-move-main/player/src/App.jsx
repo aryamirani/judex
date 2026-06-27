@@ -141,6 +141,9 @@ export default function App() {
   const [status, setStatus] = useState('connecting')
   const [events, setEvents] = useState([])
 
+  const [tracknetForceful, setTracknetForceful] = useState('unknown')
+  const [tracknetLoading, setTracknetLoading] = useState(false)
+
   // UI State for Active Camera
   const [currentTime, setCurrentTime] = useState(0)
   const [playbackRate, setPlaybackRate] = useState(1.0)
@@ -254,6 +257,32 @@ export default function App() {
     const interval = setInterval(fetchEvents, EVENTS_POLL_INTERVAL)
     return () => clearInterval(interval)
   }, [fetchEvents, mode])
+
+  // Fetch TrackNet status once on mount
+  useEffect(() => {
+    fetch(`${backendUrl}/tracknet_status`)
+      .then(r => r.json())
+      .then(d => setTracknetForceful(d.forceful))
+      .catch(() => setTracknetForceful('unknown'))
+  }, [])
+
+  const handleTracknetToggle = async () => {
+    const newMode = tracknetForceful === 'off' ? 'auto' : 'off'
+    setTracknetLoading(true)
+    try {
+      const res = await fetch(`${backendUrl}/tracknet_set`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode }),
+      })
+      const data = await res.json()
+      setTracknetForceful(data.forceful)
+    } catch (e) {
+      console.error('[tracknet toggle]', e)
+    } finally {
+      setTracknetLoading(false)
+    }
+  }
 
   const bufferToSegs = useCallback((cam) => {
     return (rollingBuffers[cam].current || []).map(s => ({
@@ -1585,8 +1614,51 @@ export default function App() {
             {inReview ? 'Review' : 'Live'}
           </span>
         </div>
-        {/* Right: mode toggle button */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        {/* Right: TrackNet toggle + mode toggle button */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '16px' }}>
+
+          {/* TrackNet forceful toggle */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+            <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              TrackNet Status
+            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{
+              fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold',
+              color: tracknetForceful === 'off' ? '#fff' : 'rgba(255,255,255,0.3)',
+              transition: 'color 0.25s',
+            }}>OFF</span>
+            <button
+              onClick={handleTracknetToggle}
+              disabled={tracknetLoading}
+              title={`TrackNet forceful: "${tracknetForceful}". Click to toggle.`}
+              style={{
+                position: 'relative', width: '44px', height: '22px',
+                borderRadius: '11px', border: 'none', cursor: tracknetLoading ? 'wait' : 'pointer',
+                background: tracknetLoading
+                  ? '#555'
+                  : tracknetForceful === 'auto' ? '#2ecc71' : '#555',
+                transition: 'background 0.25s',
+                padding: 0,
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: '3px',
+                left: tracknetForceful === 'auto' ? '25px' : '3px',
+                width: '16px', height: '16px', borderRadius: '50%',
+                background: '#fff',
+                transition: 'left 0.25s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+              }} />
+            </button>
+            <span style={{
+              fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold',
+              color: tracknetForceful === 'auto' ? '#2ecc71' : 'rgba(255,255,255,0.3)',
+              transition: 'color 0.25s',
+            }}>AUTO</span>
+          </div>
+          </div>
+
           <button
             onClick={inReview ? exitReview : enterReview}
             style={{

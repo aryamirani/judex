@@ -62,8 +62,10 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   const [clipStatus, setClipStatus] = useState({ source: 'idle', sink: 'idle', hq: 'idle' })
 
   const [analyzing, setAnalyzing] = useState(false)
+  const [analyzingCams, setAnalyzingCams] = useState({ source: false, sink: false, hq: false })
   const [analyzeError, setAnalyzeError] = useState(null)
-  const [trajectoryClipName, setTrajectoryClipName] = useState(null)
+  const [trajectoryClipNames, setTrajectoryClipNames] = useState({})
+  const [showGraphics, setShowGraphics] = useState(false)
 
   const cameras = useMemo(() => [
     { id: 'source', label: 'Cam 1 - SOURCE', ref: v1 },
@@ -80,7 +82,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   }, [cameras])
 
   const handlePlayPause = async () => {
-    if (!clipBaseName && !trajectoryClipName) return
+    if (!clipBaseName && Object.keys(trajectoryClipNames).length === 0) return
     const gen = ++playGenRef.current
     const wantPlay = !playing
 
@@ -124,17 +126,17 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
   const handleAnalyze = async () => {
     if (!event) return
-    const bounceNumber = event.bounce_frame ?? event.metadata?.bounce_frame
-    const bounceFrame  = event.hq_frame ?? bounceNumber
+    const bounceNumber = event.metadata?.flight_id  // the x in bounce_14279_0000x.mp4
+    const bounceFrame  = event.hq_frame ?? event.bounce_frame ?? event.metadata?.bounce_frame
     if (bounceNumber == null) {
-      setAnalyzeError('No bounce_frame on this event.')
+      setAnalyzeError('No flight_id on this event — cannot determine bounce_number.')
       return
     }
 
     pauseAll()
     setAnalyzing(true)
     setAnalyzeError(null)
-    setTrajectoryClipName(null)
+    setTrajectoryClipNames({})
 
     try {
       const res = await fetch(`${backendUrl}/analyze_bounce`, {
@@ -149,7 +151,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       }
 
       const data = await res.json()
-      setTrajectoryClipName(data.clip_name)
+      setTrajectoryClipNames(data.clip_names || {})
     } catch (e) {
       console.error('[analyze]', e)
       setAnalyzeError(e.message || 'Analysis failed')
@@ -158,19 +160,55 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
     }
   }
 
+  const handleAnalyzeCam = async (camId) => {
+    if (!event) return
+    const bounceNumber = event.metadata?.flight_id
+    const bounceFrame  = event.hq_frame ?? event.bounce_frame ?? event.metadata?.bounce_frame
+    if (bounceNumber == null) {
+      setAnalyzeError('No flight_id on this event — cannot determine bounce_number.')
+      return
+    }
+    pauseAll()
+    setAnalyzingCams(prev => ({ ...prev, [camId]: true }))
+    setAnalyzeError(null)
+    try {
+      const res = await fetch(`${backendUrl}/analyze_bounce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bounce_number: Number(bounceNumber),
+          bounce_frame: Number(bounceFrame ?? bounceNumber),
+          cameras: [camId],
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setTrajectoryClipNames(prev => ({ ...prev, ...(data.clip_names || {}) }))
+    } catch (e) {
+      console.error('[analyze cam]', e)
+      setAnalyzeError(e.message || 'Analysis failed')
+    } finally {
+      setAnalyzingCams(prev => ({ ...prev, [camId]: false }))
+    }
+  }
+
   useEffect(() => {
     pauseAll()
     setProgress(0)
     setDuration(2)
-    setTrajectoryClipName(null)
+    setTrajectoryClipNames({})
     setAnalyzeError(null)
+    setShowGraphics(false)
+    setAnalyzingCams({ source: false, sink: false, hq: false })
     setRetryCounts({ source: 0, sink: 0, hq: 0 })
     setClipStatus({ source: 'idle', sink: 'idle', hq: 'idle' })
   }, [event, pauseAll])
 
   if (!event) return null
 
-  const bounceFrame = event.bounce_frame ?? event.metadata?.bounce_frame
   const missingClipMeta = !clipBaseName
 
   return (
@@ -182,33 +220,46 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <span style={{ color: '#e8e8e8', fontWeight: 'bold', fontSize: '18px' }}>Event {event.id}</span>
-          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', fontFamily: 'monospace' }}>
-            {activeCam.toUpperCase()} Frame: {event.frames ? event.frames[activeCam] : 'N/A'}
-          </span>
-          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '12px', fontFamily: 'monospace' }}>
-            (HQ Frame: {event.hq_frame}) · bounce_frame: {bounceFrame ?? 'N/A'} · flight_id: {event.metadata?.flight_id ?? 'N/A'}
-          </span>
-          {clipBaseName && (
-            <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: '11px', fontFamily: 'monospace' }}>
-              {clipBaseName}
-            </span>
-          )}
-          {trajectoryClipName && (
-            <span style={{ color: '#50e3c2', fontSize: '12px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-              ✓ TRAJECTORY LOADED
-            </span>
-          )}
+          {clipBaseName
+            ? (
+              <span style={{ color: '#e8e8e8', fontWeight: 'bold', fontSize: '15px', fontFamily: 'monospace' }}>
+                {clipBaseName}
+              </span>
+            )
+            : (
+              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', fontFamily: 'monospace' }}>
+                No clip file
+              </span>
+            )
+          }
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Graphic / Bounce toggle — only clickable once at least one trajectory clip exists */}
+          <button
+            onClick={() => setShowGraphics(v => !v)}
+            disabled={Object.keys(trajectoryClipNames).length === 0}
+            title={showGraphics ? 'Switch to Bounce Clip' : 'Switch to Graphic Clip'}
+            style={{
+              background: showGraphics
+                ? 'linear-gradient(135deg, #50e3c2, #2aa98a)'
+                : 'rgba(255,255,255,0.1)',
+              color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px',
+              cursor: Object.keys(trajectoryClipNames).length === 0 ? 'not-allowed' : 'pointer',
+              opacity: Object.keys(trajectoryClipNames).length === 0 ? 0.35 : 1,
+              fontWeight: 'bold', fontSize: '12px', letterSpacing: '0.05em',
+              transition: 'background 0.25s, opacity 0.25s',
+            }}
+          >
+            {showGraphics ? 'GRAPHIC' : 'BOUNCE'}
+          </button>
           <button
             onClick={handleAnalyze}
             disabled={analyzing}
-            title="Run TrackNet trajectory analysis on Jetson (HQ only)"
+            title="Run TrackNet trajectory analysis on Jetson (all cameras)"
             style={{
               background: analyzing
                 ? '#444'
-                : trajectoryClipName
+                : Object.keys(trajectoryClipNames).length > 0
                   ? 'linear-gradient(135deg, #50e3c2, #2aa98a)'
                   : 'linear-gradient(135deg, #e74c3c, #c0392b)',
               color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '6px',
@@ -216,7 +267,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
               letterSpacing: '0.05em', transition: 'background 0.3s',
             }}
           >
-            {analyzing ? 'ANALYSING…' : trajectoryClipName ? 'RE-ANALYSE' : 'ANALYSE'}
+            {analyzing ? 'ANALYSING…' : Object.keys(trajectoryClipNames).length > 0 ? 'RE-ANALYSE ALL' : 'ANALYSE ALL'}
           </button>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '20px' }}>✕</button>
         </div>
@@ -240,13 +291,13 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
         {cameras.map(cam => {
           const retryCount = retryCounts[cam.id] || 0
           const status = clipStatus[cam.id] || 'idle'
-          const isHq = cam.id === 'hq'
-          const showTrajectory = isHq && trajectoryClipName != null
+          const camTrajectoryClip = trajectoryClipNames[cam.id] ?? null
+          const showTrajectory = showGraphics && camTrajectoryClip != null
 
           const clipUrl = missingClipMeta
             ? null
             : showTrajectory
-              ? `${backendUrl}/trajectory_clip/${trajectoryClipName}`
+              ? `${backendUrl}/trajectory_clip/${camTrajectoryClip}`
               : `${backendUrl}/clips/${cam.id}/${clipBaseName}${retryCount > 0 ? `?retry=${retryCount}` : ''}`
 
           const handleError = () => {
@@ -264,7 +315,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
           return (
             <div key={`${cam.id}-${clipUrl ?? 'none'}-${retryCount}`} style={{ flex: 1, background: '#000', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(0,0,0,0.6)', padding: '4px 8px', fontSize: '12px', color: '#fff', borderRadius: '4px', zIndex: 2, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ position: 'absolute', top: 8, left: 8, right: 8, background: 'rgba(0,0,0,0.6)', padding: '4px 8px', fontSize: '12px', color: '#fff', borderRadius: '4px', zIndex: 2, display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {cam.label}
                 {showTrajectory && (
                   <span style={{ color: '#50e3c2', fontWeight: 'bold' }}>· TRAJECTORY</span>
@@ -278,6 +329,27 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
                 {status === 'error' && (
                   <span style={{ color: '#e74c3c' }}>(failed)</span>
                 )}
+                <button
+                  onClick={() => handleAnalyzeCam(cam.id)}
+                  disabled={analyzingCams[cam.id] || analyzing}
+                  title={`Run TrackNet analysis for ${cam.label} only`}
+                  style={{
+                    marginLeft: 'auto',
+                    background: analyzingCams[cam.id]
+                      ? '#555'
+                      : trajectoryClipNames[cam.id]
+                        ? 'rgba(80,227,194,0.25)'
+                        : 'rgba(231,76,60,0.75)',
+                    color: '#fff', border: 'none', padding: '2px 8px', borderRadius: '4px',
+                    cursor: (analyzingCams[cam.id] || analyzing) ? 'wait' : 'pointer',
+                    fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.04em',
+                    opacity: analyzing ? 0.5 : 1,
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                  }}
+                >
+                  {analyzingCams[cam.id] ? '…' : trajectoryClipNames[cam.id] ? 'RE-ANALYSE' : 'ANALYSE'}
+                </button>
               </div>
 
               {(status === 'loading' || status === 'idle') && clipUrl && (
@@ -307,6 +379,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
                   ref={cam.ref}
                   key={clipUrl}
                   src={clipUrl}
+                  crossOrigin="anonymous"
                   muted
                   playsInline
                   preload="auto"
