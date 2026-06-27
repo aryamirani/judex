@@ -1023,94 +1023,6 @@ export default function App() {
             }
           }
           if (timesAdded) bumpTimeline()
-
-          // Now check which segments are missing from rollingBuffers
-          const currentBuffer = rollingBuffers[cam].current;
-          const existingAbsSegs = new Set(currentBuffer.map(s => s.absSegIdx));
-
-          for (const seg of playlistSegs) {
-            // Ignore historical segments that were thrown away by a hard reset
-            if (seg.absSegIdx < cutoffAbsSegIdxRef.current[cam]) continue;
-
-            if (existingAbsSegs.has(seg.absSegIdx)) continue;
-            if (downloadingSegmentsRef.current[cam].has(seg.absSegIdx)) continue;
-
-            // Skip manual fetch for the active camera ONLY IF the video is actively playing
-            // and the segment is recent enough that Hls.js is likely about to fetch it natively.
-            if (cam === activeCamRef.current && modeRef.current === 'live') {
-              const video = videoRefs[cam].current;
-              if (video && !video.paused) {
-                const latestAbsSegIdx = playlistSegs[playlistSegs.length - 1].absSegIdx;
-                const isRecent = (latestAbsSegIdx - seg.absSegIdx) <= 4;
-                if (isRecent) {
-                  // console.log(`[DVR Fetcher] SKIPPING manual fetch for ${cam}/${seg.absSegIdx} (delegating to Hls.js native fetch)`);
-                  continue;
-                }
-              }
-            }
-
-            // console.log(`[DVR Fetcher] Manually fetching BACKGROUND segment ${cam}/${seg.absSegIdx}`);
-
-            // Start downloading!
-            downloadingSegmentsRef.current[cam].add(seg.absSegIdx);
-
-            // Construct absolute URL for segment
-            const baseUrl = playlistUrl.substring(0, playlistUrl.lastIndexOf('/'));
-            const segUrl = seg.name.startsWith('http') ? seg.name : `${baseUrl}/${seg.name}`;
-
-            fetch(segUrl)
-              .then(async (segRes) => {
-                if (!segRes.ok) throw new Error(`HTTP ${segRes.status}`);
-                const arrayBuffer = await segRes.arrayBuffer();
-
-                if (!active) return;
-
-                const entry = {
-                  sn: seg.absSegIdx,
-                  absSegIdx: seg.absSegIdx,
-                  originalStart: segmentStartTimesRef.current[cam][seg.absSegIdx],
-                  duration: seg.duration,
-                  bytes: arrayBuffer
-                };
-
-                // In-place sorted insert to avoid spread-copy GC pressure
-                const buf = rollingBuffers[cam].current
-                if (!buf.some(s => s.absSegIdx === entry.absSegIdx)) {
-                  let insertIdx = buf.length
-                  for (let i = 0; i < buf.length; i++) {
-                    if (buf[i].absSegIdx > entry.absSegIdx) { insertIdx = i; break }
-                  }
-                  buf.splice(insertIdx, 0, entry)
-                  while (buf.length > REVIEW_BUFFER_SIZE) buf.shift()
-                }
-
-                if (cam === activeCamRef.current && modeRef.current === 'live') {
-                  setLiveSegments(buf.map(s => ({
-                    sn: s.sn,
-                    absSegIdx: s.absSegIdx,
-                    start: s.originalStart,
-                    end: s.originalStart + s.duration
-                  })));
-
-                  // Fetch live sync map for this new segment
-                  fetch(`${backendUrl}/sync_map?from_camera=${cam}&sns=${seg.absSegIdx}`)
-                    .then(r => r.json())
-                    .then(syncData => {
-                      if (active && modeRef.current === 'live') {
-                        setLiveSyncMap(prev => ({ ...prev, ...syncData }));
-                      }
-                    })
-                    .catch(e => console.warn('Failed to fetch sync map for downloaded segment', e));
-                }
-                bumpTimeline()
-              })
-              .catch((err) => {
-                console.warn(`Error downloading segment ${seg.name} in background:`, err);
-              })
-              .finally(() => {
-                downloadingSegmentsRef.current[cam].delete(seg.absSegIdx);
-              });
-          }
         } catch (e) {
           console.warn(`Error polling playlist for ${cam} in background:`, e);
         }
@@ -1118,7 +1030,7 @@ export default function App() {
     };
 
     pollPlaylists();
-    const intervalId = setInterval(pollPlaylists, 1000);
+    const intervalId = setInterval(pollPlaylists, 4000);
 
     return () => {
       active = false;

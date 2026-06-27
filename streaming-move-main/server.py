@@ -244,7 +244,7 @@ def _ingest_sync_rows(csv_text, has_header=True):
 
 def sync_csv_poller():
     """
-    Background thread: polls the remote sync CSV every 1 second and ingests new rows.
+    Background thread: polls the remote sync CSV every 4 seconds and ingests new rows.
     """
     global _sync_rows_loaded
     while True:
@@ -427,29 +427,31 @@ def frame_idx_poller():
             except Exception as e:
                 print(f"[frame idx poller] {cam} error: {e}")
 
-def flight_shots_poller():
-    """Background thread: polls flight shots CSV every 2 s for new events."""
+def _refresh_flight_shots():
+    """Fetch any new flight shots rows from the Jetson on-demand.
+
+    Called when the frontend requests /events (i.e. on entering review mode), so we
+    avoid a continuous background poller hammering the Jetson during live playback —
+    the bounce/event data is only needed in review mode.
+    """
     global _flight_shots_rows_loaded, _flight_shots_header
-    while True:
-        time.sleep(2)
-        try:
-            text = _fetch_flight_shots_csv(skip_lines=_flight_shots_rows_loaded)
-            if not text.strip():
-                continue
-            
-            if _flight_shots_rows_loaded == 0:
-                _flight_shots_header = text.splitlines()[0]
-                _ingest_flight_shots(text)
-            else:
-                full_text = _flight_shots_header + "\n" + text
-                _ingest_flight_shots(full_text)
-                
-            added_lines = len(text.strip().splitlines())
-            _flight_shots_rows_loaded += added_lines
-            print(f"[flight shots poller] +{added_lines} events (total {_flight_shots_rows_loaded})")
-        except Exception as e:
-            # print(f"[flight shots poller] error: {e}")
-            pass
+    try:
+        text = _fetch_flight_shots_csv(skip_lines=_flight_shots_rows_loaded)
+        if not text.strip():
+            return
+
+        if _flight_shots_rows_loaded == 0:
+            _flight_shots_header = text.splitlines()[0]
+            _ingest_flight_shots(text)
+        else:
+            full_text = _flight_shots_header + "\n" + text
+            _ingest_flight_shots(full_text)
+
+        added_lines = len(text.strip().splitlines())
+        _flight_shots_rows_loaded += added_lines
+        print(f"[flight shots] +{added_lines} events (total {_flight_shots_rows_loaded})")
+    except Exception:
+        pass
 
 def load_data():
     global _events_by_id, _sync_rows_loaded
@@ -468,19 +470,8 @@ def load_data():
         _frame_idx_rows[cam] = _ingest_frame_idx_rows(cam, text, has_header=True)
         print(f"  [{cam}] {_frame_idx_rows[cam]} segments, {len(frame_to_seg[cam])} frames indexed.")
                 
-    # 3. Load events
-    global _flight_shots_rows_loaded, _flight_shots_header
-    print(f"  Fetching remote flight shots CSV: {REMOTE_FLIGHT_SHOTS_PATH}")
-    try:
-        csv_text = _fetch_flight_shots_csv(skip_lines=0)
-        if csv_text.strip():
-            _flight_shots_header = csv_text.splitlines()[0]
-            _ingest_flight_shots(csv_text)
-            _flight_shots_rows_loaded = len(csv_text.strip().splitlines())
-            print(f"  Loaded {_flight_shots_rows_loaded} events from remote.")
-    except Exception as e:
-        print(f"  Could not load remote flight shots (will poll later). Error: {e}")
-        
+    # 3. Events (flight shots) are loaded lazily on the first /events request
+    #    (i.e. when the user enters review mode) — no need to fetch them at startup.
     print("Data loading complete.")
 
 def fetch_playlist_content(path_or_url):
@@ -1028,7 +1019,6 @@ async def lifespan(app: FastAPI):
     load_data()
     threading.Thread(target=sync_csv_poller, daemon=True).start()
     threading.Thread(target=frame_idx_poller, daemon=True).start()
-    threading.Thread(target=flight_shots_poller, daemon=True).start()
     print("[tracknet status] Initial check...")
     print(f"[tracknet status] {_run_tracknet_status()}")
     yield
@@ -1145,39 +1135,41 @@ def get_live_m3u8(cam: str):
     else:
         out_lines.append(f"#EXT-X-MEDIA-SEQUENCE:{seq_num}")
 
+    # Emit ABSOLUTE Pi segment URLs so HLS.js fetches each .ts directly from the
+    # camera Pi instead of round-tripping through this server (serve_segment).
+    # This removes the double hop (Pi -> server -> browser), halves WiFi bandwidth,
+    # and keeps the FastAPI threadpool free for the lightweight playlist requests.
+    # serve_segment remains as a fallback for relative-name playlists.
+    base_url = cam_path.rsplit('/', 1)[0]
     for inf, seg, dur in window_segments:
         out_lines.append(inf)
-        out_lines.append(seg.split("/")[-1])
+        seg_name = seg.split("/")[-1]
+        if seg.startswith("http://") or seg.startswith("https://"):
+            out_lines.append(seg)
+        else:
+            out_lines.append(f"{base_url}/{SESSION_ID}/{seg_name}")
     return PlainTextResponse("\n".join(out_lines), media_type="application/vnd.apple.mpegurl")
 
 from fastapi.responses import FileResponse, StreamingResponse
 
 @app.get("/stream/{cam}/{segment}.ts")
 def serve_segment(cam: str, segment: str):
-    from fastapi.responses import StreamingResponse, PlainTextResponse
+    from fastapi.responses import Response, PlainTextResponse
     import urllib.request
     import time
     cam_path = CAM_PATHS.get(cam, "")
     if cam_path.startswith("http://") or cam_path.startswith("https://"):
         base_url = cam_path.rsplit('/', 1)[0]
         pi_url = f"{base_url}/{SESSION_ID}/{segment}.ts"
-        
+
         max_retries = 6
         for attempt in range(max_retries):
             try:
                 req = urllib.request.Request(pi_url, headers={'User-Agent': 'Mozilla/5.0'})
-                resp = urllib.request.urlopen(req, timeout=10)
-                
-                def iterfile(r):
-                    with r:
-                        while True:
-                            chunk = r.read(65536)
-                            if not chunk:
-                                break
-                            yield chunk
-                            
-                return StreamingResponse(
-                    iterfile(resp),
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = resp.read()
+                return Response(
+                    content=data,
                     media_type="video/mp2t",
                     headers={"Cache-Control": "no-cache"}
                 )
@@ -1192,7 +1184,7 @@ def serve_segment(cam: str, segment: str):
             except Exception as e:
                 print(f"[serve_segment] Pi proxy fetch failed for {cam}/{segment}.ts: {e}")
                 return PlainTextResponse(f"Segment not available on Pi: {e}", status_code=502)
-                
+
     return PlainTextResponse("Camera path not found", status_code=404)
 
 # For the bounce clips
@@ -1348,12 +1340,17 @@ def analyze_bounce(req: AnalyzeBounceRequest):
         os.makedirs(TRAJECTORY_CLIPS_DIR, exist_ok=True)
         clip_names = {}  # cam -> local clip filename
         for cam, entry in result_entries.items():
+            # DEBUG: dump the full result entry so we can see exactly what the Jetson
+            # returned (status, available keys, any error/reason field) when a camera
+            # produces no downloadable trajectory video.
+            print(f"[analyze_bounce] {cam} raw result entry: {_json.dumps(entry, default=str)}")
             if entry.get("status") != "ok":
                 print(f"[analyze_bounce] Camera {cam} error: {entry.get('error', 'Unknown')}")
                 continue
             remote_mp4 = entry.get("trajectory_motion_mp4_path") or entry.get("trajectory_fit_motion_mp4_path")
             if not remote_mp4:
-                print(f"[analyze_bounce] Camera {cam}: no trajectory video path in result")
+                print(f"[analyze_bounce] Camera {cam}: no trajectory video path in result "
+                      f"(keys present: {list(entry.keys())})")
                 continue
             clip_name = os.path.basename(remote_mp4)
             local_path = os.path.join(TRAJECTORY_CLIPS_DIR, clip_name)
@@ -1633,6 +1630,9 @@ def check_sync(
 
 @app.get("/events")
 def get_events():
+    # Lazily pull any new flight shots from the Jetson — only happens when the
+    # frontend asks for events (review mode), not continuously during live playback.
+    _refresh_flight_shots()
     with _events_lock, _sync_lock, _frame_idx_lock:
         refreshed = [_refresh_event_positions(ev) for ev in _events_by_id.values()]
         # One event per bounce_frame — CSV can contain duplicate shot rows for the same clip
