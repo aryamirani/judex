@@ -50,7 +50,7 @@ function bounceClipName(event) {
   return `bounce_${bounceFrame}_${flightIdStr}.mp4`
 }
 
-export default function EventPanel({ event, events = [], activeCam, onNavigate, onClose }) {
+export default function EventPanel({ event, events = [], activeCam, onNavigate, onClose, onTracknetRefresh }) {
   const v1 = useRef(null)
   const v2 = useRef(null)
   const v3 = useRef(null)
@@ -126,10 +126,10 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
   const handleAnalyze = async () => {
     if (!event) return
-    const bounceNumber = event.metadata?.flight_id  // the x in bounce_14279_0000x.mp4
-    const bounceFrame  = event.hq_frame ?? event.bounce_frame ?? event.metadata?.bounce_frame
-    if (bounceNumber == null) {
-      setAnalyzeError('No flight_id on this event — cannot determine bounce_number.')
+    // run_graphics.sh is keyed on csv_row (0-based flight_shots.csv data row).
+    const csvRow = event.csv_row ?? event.metadata?.csv_row
+    if (csvRow == null) {
+      setAnalyzeError('No csv_row on this event — cannot run graphics.')
       return
     }
 
@@ -138,11 +138,17 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
     setAnalyzeError(null)
     setTrajectoryClipNames({})
 
+    // Keep the header TrackNet pill in sync in real time: it flips to OFF while the
+    // backend frees TrackNet for this analysis, then back to AUTO once the clip returns.
+    onTracknetRefresh?.()
+    const trackPoll = setInterval(() => onTracknetRefresh?.(), 2500)
+
     try {
+      // Main button: no `cameras` -> backend runs run_graphics.sh without --camera (all cams).
       const res = await fetch(`${backendUrl}/analyze_bounce`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bounce_number: Number(bounceNumber), bounce_frame: Number(bounceFrame ?? bounceNumber) }),
+        body: JSON.stringify({ csv_row: Number(csvRow) }),
       })
 
       if (!res.ok) {
@@ -157,27 +163,33 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       setAnalyzeError(e.message || 'Analysis failed')
     } finally {
       setAnalyzing(false)
+      clearInterval(trackPoll)
+      onTracknetRefresh?.()
     }
   }
 
   const handleAnalyzeCam = async (camId) => {
     if (!event) return
-    const bounceNumber = event.metadata?.flight_id
-    const bounceFrame  = event.hq_frame ?? event.bounce_frame ?? event.metadata?.bounce_frame
-    if (bounceNumber == null) {
-      setAnalyzeError('No flight_id on this event — cannot determine bounce_number.')
+    const csvRow = event.csv_row ?? event.metadata?.csv_row
+    if (csvRow == null) {
+      setAnalyzeError('No csv_row on this event — cannot run graphics.')
       return
     }
     pauseAll()
     setAnalyzingCams(prev => ({ ...prev, [camId]: true }))
     setAnalyzeError(null)
+
+    // Mirror the header TrackNet pill state while this per-camera analysis runs.
+    onTracknetRefresh?.()
+    const trackPoll = setInterval(() => onTracknetRefresh?.(), 2500)
+
     try {
+      // Per-camera button: pass `cameras` -> backend adds --camera <cam> to run_graphics.sh.
       const res = await fetch(`${backendUrl}/analyze_bounce`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          bounce_number: Number(bounceNumber),
-          bounce_frame: Number(bounceFrame ?? bounceNumber),
+          csv_row: Number(csvRow),
           cameras: [camId],
         }),
       })
@@ -192,6 +204,8 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       setAnalyzeError(e.message || 'Analysis failed')
     } finally {
       setAnalyzingCams(prev => ({ ...prev, [camId]: false }))
+      clearInterval(trackPoll)
+      onTracknetRefresh?.()
     }
   }
 
@@ -205,6 +219,20 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
     setAnalyzingCams({ source: false, sink: false, hq: false })
     setRetryCounts({ source: 0, sink: 0, hq: 0 })
     setClipStatus({ source: 'idle', sink: 'idle', hq: 'idle' })
+
+    // Restore any previously-analysed graphics clips for this bounce so navigating
+    // back doesn't require a re-analyse. The server keeps the downloaded files around.
+    const bf = event?.bounce_frame ?? event?.metadata?.bounce_frame
+    if (bf == null) return
+    let cancelled = false
+    fetch(`${backendUrl}/trajectory_clips?bounce_frame=${bf}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (cancelled || !d?.clip_names) return
+        if (Object.keys(d.clip_names).length > 0) setTrajectoryClipNames(d.clip_names)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [event, pauseAll])
 
   if (!event) return null
@@ -275,7 +303,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
       {analyzing && (
         <div style={{ color: '#f39c12', fontSize: '12px', marginBottom: '8px', fontFamily: 'monospace' }}>
-          ⏳ Running TrackNet on Jetson… this may take up to ~2 minutes.
+          ⏳ Running graphics on Jetson… this runs end-to-end and can take a while.
         </div>
       )}
       {analyzeError && (

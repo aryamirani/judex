@@ -258,13 +258,20 @@ export default function App() {
     return () => clearInterval(interval)
   }, [fetchEvents, mode])
 
-  // Fetch TrackNet status once on mount
-  useEffect(() => {
-    fetch(`${backendUrl}/tracknet_status`)
+  // Re-fetch the live TrackNet forceful state from the backend. Used on mount and
+  // also called from EventPanel while analysing so the header pill updates in real time
+  // (it flips to OFF while TrackNet is freed, then back to AUTO once the clip returns).
+  const refreshTracknetStatus = useCallback(() => {
+    return fetch(`${backendUrl}/tracknet_status`)
       .then(r => r.json())
       .then(d => setTracknetForceful(d.forceful))
       .catch(() => setTracknetForceful('unknown'))
   }, [])
+
+  // Fetch TrackNet status once on mount
+  useEffect(() => {
+    refreshTracknetStatus()
+  }, [refreshTracknetStatus])
 
   const handleTracknetToggle = async () => {
     const newMode = tracknetForceful === 'off' ? 'auto' : 'off'
@@ -1657,15 +1664,16 @@ export default function App() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          <EventPanel 
-            event={selectedEvent} 
+          <EventPanel
+            event={selectedEvent}
             events={mappedEvents}
-            activeCam={activeCam} 
+            activeCam={activeCam}
+            onTracknetRefresh={refreshTracknetStatus}
             onNavigate={(ev) => {
               setSelectedEvent(ev)
               handleSeek(ev.time, true)
             }}
-            onClose={() => setSelectedEvent(null)} 
+            onClose={() => setSelectedEvent(null)}
           />
         </div>
       </div>

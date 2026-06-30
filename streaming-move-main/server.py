@@ -159,6 +159,10 @@ REMOTE_FLIGHT_SHOTS_PATH = "/home/jetson/Desktop/cv_output/correlation/flight_sh
 _flight_shots_rows_loaded = 0
 _flight_shots_header = ""
   # number of data rows already ingested (excludes header)
+# Running count of every flight_shots.csv data row we have seen, in CSV order
+# (including rows we skip). Used to assign each event its absolute 0-based csv_row,
+# which is the identifier run_graphics.sh expects.
+_flight_shots_data_rows_seen = 0
 _sync_lock = threading.Lock()
 
 _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
@@ -364,12 +368,25 @@ def _refresh_event_positions(event):
 
 
 def _ingest_flight_shots(csv_text):
+    global _flight_shots_data_rows_seen
     if not csv_text.strip():
         return 0
     df = pd.read_csv(io.StringIO(csv_text))
 
     count = 0
     for _, row in df.iterrows():
+        # Absolute 0-based data-row index in flight_shots.csv, matching the Jetson's
+        # csv.DictReader enumeration (counts every data row, including skipped ones).
+        # This is the csv_row identifier that run_graphics.sh expects.
+        csv_row = _flight_shots_data_rows_seen
+        _flight_shots_data_rows_seen += 1
+
+        # New CSV column: skip bounces explicitly flagged invalid (valid_bounce == 0).
+        # Guarded so a missing/NaN value never drops a row.
+        valid_bounce = _safe_frame_int(row.get('valid_bounce'))
+        if valid_bounce == 0:
+            continue
+
         bounce_frame = _safe_frame_int(row.get('bounce_frame'))
         if bounce_frame is None and pd.isna(row.get('bounce_hq_frame')):
             continue
@@ -391,9 +408,11 @@ def _ingest_flight_shots(csv_text):
                 metadata[k] = None
             else:
                 metadata[k] = v
+        metadata["csv_row"] = csv_row
 
         event = {
             "id": str(row['shot_id']),
+            "csv_row": csv_row,
             "segments": segs,
             "offsets": offs,
             "frames": frames,
@@ -1236,107 +1255,101 @@ def serve_bounce_clip(cam: str, clip_name: str):
 # Local cache dir for trajectory clips
 TRAJECTORY_CLIPS_DIR = os.path.join(BASE_DIR, "clips", "cv_output", "trajectory")
 
+# How long run_graphics.sh is allowed to run end-to-end (queue wait + processing).
+# There is intentionally no short ~2-minute cap: we let the script finish fully and
+# only fetch the trajectory video once it has exited successfully.
+RUN_GRAPHICS_SCRIPT_TIMEOUT = 1800   # passed to run_graphics.sh --timeout
+RUN_GRAPHICS_SSH_TIMEOUT = 1900      # client-side ceiling, slightly above the script's
+
 class AnalyzeBounceRequest(pydantic.BaseModel):
-    bounce_number: int
-    bounce_frame: int  # The HQ bounce frame number (used to find the output file)
-    cameras: list = None  # if None, defaults to all three cameras
+    csv_row: int                # 0-based data row in flight_shots.csv (run_graphics.sh arg)
+    cameras: list = None        # if None/empty -> all three cameras (no --camera flag)
+    # Legacy fields kept optional for logging / backward compatibility only.
+    bounce_number: int = None
+    bounce_frame: int = None
 
 @app.post("/analyze_bounce")
 def analyze_bounce(req: AnalyzeBounceRequest):
     """
-    Runs the TrackNet analysis pipeline on the Jetson for a given bounce.
-    1. Frees resources: tracknet_control.py set source_sink_tracknet_forceful off
-    2. Enqueues the clip: bounce_tracknet_clip.py --enqueue ... --track-id <SESSION_ID>
-    3. Waits for results.jsonl to confirm completion
-    4. Re-enables: tracknet_control.py set source_sink_tracknet_forceful auto
-    5. SCPs the trajectory mp4 to local and returns its filename.
+    Runs the Jetson graphics pipeline for one flight_shots.csv row via run_graphics.sh.
+
+    run_graphics.sh handles the entire flow itself: it drains the queue, forces
+    source/sink TrackNet off, enqueues the graphics job(s), blocks until results land,
+    and (with --restore-auto) sets TrackNet back to auto. We simply run it to completion
+    — the individual per-camera buttons pass --camera <cam>; the main button omits
+    --camera so all three cameras are processed — then read the new results.jsonl entries
+    and download each trajectory mp4.
     """
     from fastapi import HTTPException
     import json as _json
 
-    bounce_num_str = str(req.bounce_number).zfill(5)
     ssh_base = ["ssh", "-i", SSH_KEY_PATH, "-o", "StrictHostKeyChecking=accept-new",
                 "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", JETSON_HOST]
     jetson_cv_dir = "/home/jetson/Desktop/judex-cv"
     results_path = "/home/jetson/Desktop/cv_output/bounce_clips/tracknet/results.jsonl"
 
+    valid_cams = ("hq", "sink", "source")
+    requested = [c for c in (req.cameras or []) if c in valid_cams]
+    cameras_to_run = requested if requested else list(valid_cams)
+    # One run_graphics.sh invocation per requested camera (each with --camera), or a
+    # single invocation with no --camera flag when running all cameras.
+    run_targets = requested if requested else [None]
+
     try:
-        # Step 0: Check TrackNet status
-        print(f"[analyze_bounce] Step 0: Checking TrackNet status...")
-        proc0 = subprocess.run(
-            ssh_base + [f"cd {jetson_cv_dir} && python3 tracknet_control.py status"],
-            capture_output=True, text=True, timeout=15
-        )
-        print(f"[analyze_bounce] TrackNet status: {proc0.stdout.strip() or proc0.stderr.strip()}")
-
-        # Step 1: Free resources
-        print(f"[analyze_bounce] Step 1: Freeing TrackNet resources...")
-        proc1 = subprocess.run(
-            ssh_base + [f"cd {jetson_cv_dir} && python3 tracknet_control.py set source_sink_tracknet_forceful off"],
-            capture_output=True, text=True, timeout=30
-        )
-        if proc1.returncode != 0:
-            print(f"[analyze_bounce] Step 1 stderr: {proc1.stderr}")
-            # Non-fatal — continue anyway
-
-        # Count current lines in results.jsonl so we can detect a NEW result
+        # Snapshot results.jsonl length so we can read only the entries this run produces.
         line_count_proc = subprocess.run(
             ssh_base + [f"wc -l < {results_path} 2>/dev/null || echo 0"],
             capture_output=True, text=True, timeout=10
         )
         prior_lines = int(line_count_proc.stdout.strip() or "0")
-        print(f"[analyze_bounce] Results file currently has {prior_lines} lines.")
+        print(f"[analyze_bounce] csv_row={req.csv_row} cameras={cameras_to_run} "
+              f"(results.jsonl has {prior_lines} lines)")
 
-        # Step 2: Enqueue the bounce for requested cameras (default: all three)
-        cameras_to_run = req.cameras if req.cameras else ["hq", "sink", "source"]
-        for cam in cameras_to_run:
-            enqueue_payload = _json.dumps({"bounce_number": req.bounce_number, "camera": cam, "viz": True})
-            print(f"[analyze_bounce] Step 2: Enqueuing bounce {req.bounce_number} camera={cam} track-id={SESSION_ID}...")
-            proc2 = subprocess.run(
-                ssh_base + [f"cd {jetson_cv_dir} && python3 bounce_tracknet_clip.py --enqueue '{enqueue_payload}' --track-id {SESSION_ID}"],
-                capture_output=True, text=True, timeout=30
+        # Run run_graphics.sh to completion (blocking). No 120s cap.
+        run_errors = []
+        for target in run_targets:
+            cmd = (f"cd {jetson_cv_dir} && ./run_graphics.sh {SESSION_ID} {req.csv_row} "
+                   f"--restore-auto --timeout {RUN_GRAPHICS_SCRIPT_TIMEOUT}")
+            if target:
+                cmd += f" --camera {target}"
+            print(f"[analyze_bounce] Running: {cmd}")
+            proc = subprocess.run(
+                ssh_base + [cmd],
+                capture_output=True, text=True, timeout=RUN_GRAPHICS_SSH_TIMEOUT
             )
-            if proc2.returncode != 0:
-                print(f"[analyze_bounce] Warning: failed to enqueue {cam}: {proc2.stderr}")
+            if proc.stdout.strip():
+                print(f"[analyze_bounce] run_graphics stdout ({target or 'all'}):\n{proc.stdout.strip()}")
+            if proc.returncode != 0:
+                err = (proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}")
+                print(f"[analyze_bounce] run_graphics FAILED ({target or 'all'}): {err}")
+                run_errors.append(f"{target or 'all'}: {err}")
 
-        # Step 3: Poll results.jsonl until all cameras respond (up to 120s)
-        print(f"[analyze_bounce] Step 3: Waiting for TrackNet to process all cameras...")
-        result_entries = {}  # cam -> result entry
-        pending = set(cameras_to_run)
-        for _ in range(60):  # poll every 2s for up to 120s
-            time.sleep(2)
-            if not pending:
-                break
-            poll_proc = subprocess.run(
-                ssh_base + [f"tail -n +{prior_lines + 1} {results_path} 2>/dev/null"],
-                capture_output=True, text=True, timeout=10
-            )
-            new_lines = [l.strip() for l in poll_proc.stdout.strip().splitlines() if l.strip()]
-            for line in new_lines:
-                try:
-                    entry = _json.loads(line)
-                    cam = entry.get("camera")
-                    if cam in pending and entry.get("bounce_number") == req.bounce_number:
-                        result_entries[cam] = entry
-                        pending.discard(cam)
-                        print(f"[analyze_bounce] Got result for camera={cam}")
-                except Exception:
-                    continue
-
-        # Step 4: Re-enable TrackNet regardless of success/failure
-        print(f"[analyze_bounce] Step 4: Re-enabling TrackNet...")
-        subprocess.run(
-            ssh_base + [f"cd {jetson_cv_dir} && python3 tracknet_control.py set source_sink_tracknet_forceful auto"],
-            capture_output=True, text=True, timeout=30
+        # Read the new results.jsonl entries this run produced and pick ours.
+        poll_proc = subprocess.run(
+            ssh_base + [f"tail -n +{prior_lines + 1} {results_path} 2>/dev/null"],
+            capture_output=True, text=True, timeout=15
         )
+        result_entries = {}  # cam -> newest matching result entry
+        for line in poll_proc.stdout.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = _json.loads(line)
+            except Exception:
+                continue
+            cam = entry.get("camera")
+            if cam in cameras_to_run and entry.get("csv_row") == req.csv_row:
+                result_entries[cam] = entry  # later lines win (newest)
+                print(f"[analyze_bounce] Got result for camera={cam}")
 
         if not result_entries:
-            raise HTTPException(status_code=504, detail="TrackNet analysis timed out (>120s). Try again.")
+            detail = "Graphics analysis produced no results."
+            if run_errors:
+                detail += " " + " | ".join(run_errors)
+            raise HTTPException(status_code=502, detail=detail)
 
-        if pending:
-            print(f"[analyze_bounce] Warning: timed out waiting for cameras: {pending}")
-
-        # Step 5: Download trajectory MP4 for each camera that succeeded
+        # Download trajectory MP4 for each camera that succeeded
         os.makedirs(TRAJECTORY_CLIPS_DIR, exist_ok=True)
         clip_names = {}  # cam -> local clip filename
         for cam, entry in result_entries.items():
@@ -1391,6 +1404,26 @@ def serve_trajectory_clip(clip_name: str):
         raise HTTPException(status_code=404, detail="Trajectory clip not found")
     return FileResponse(local_path, media_type="video/mp4",
                         headers={"Cross-Origin-Resource-Policy": "cross-origin"})
+
+
+@app.get("/trajectory_clips")
+def list_trajectory_clips(bounce_frame: int):
+    """Return trajectory clips already downloaded locally for a given bounce, keyed by
+    camera. Lets the frontend restore previously-analysed graphics when navigating back
+    to a bounce instead of forcing a re-analyse — the files persist in TRAJECTORY_CLIPS_DIR
+    and are named bounce_<NNNNN>_<cam>_<bounce_frame>_..._motion.mp4.
+    """
+    import glob
+    clip_names = {}
+    if os.path.isdir(TRAJECTORY_CLIPS_DIR):
+        for cam in ("source", "sink", "hq"):
+            # Underscore-delimited bounce_frame avoids matching e.g. 14578 inside 145780.
+            pattern = os.path.join(TRAJECTORY_CLIPS_DIR,
+                                   f"bounce_*_{cam}_{bounce_frame}_*motion*.mp4")
+            matches = sorted(glob.glob(pattern))
+            if matches:
+                clip_names[cam] = os.path.basename(matches[-1])
+    return {"clip_names": clip_names}
 
 
 def _parse_tracknet_forceful(raw: str) -> str:
