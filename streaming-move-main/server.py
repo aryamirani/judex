@@ -391,16 +391,23 @@ def _ingest_flight_shots(csv_text):
         if bounce_frame is None and pd.isna(row.get('bounce_hq_frame')):
             continue
 
+        # IMPORTANT: store the event even if its segment positions can't be computed yet.
+        # A bounce can appear in flight_shots.csv before the sync / frame-index maps have
+        # caught up to that frame. If we dropped it here, the CSV cursor would advance past
+        # the row and it would never be re-read — so its timeline dot would never appear,
+        # even once the maps catch up. Instead we persist it with segments=None and let
+        # _refresh_event_positions() (called on every /events poll) fill them in later.
         with _sync_lock, _frame_idx_lock:
             hq_frame = _resolve_bounce_hq_frame_unlocked(bounce_frame, row.get('bounce_hq_frame'))
-            if hq_frame is None:
-                continue
-
-            segs, offs, frames = _position_from_hq_frame(hq_frame)
-            if segs is None:
-                continue
-            start_segs, start_offs, _ = _position_from_hq_frame(row.get('start_frame'))
-            end_segs, end_offs, _ = _position_from_hq_frame(row.get('end_frame'))
+            if hq_frame is not None:
+                segs, offs, frames = _position_from_hq_frame(hq_frame)
+            else:
+                segs, offs, frames = None, None, None
+            if segs is not None:
+                start_segs, start_offs, _ = _position_from_hq_frame(row.get('start_frame'))
+                end_segs, end_offs, _ = _position_from_hq_frame(row.get('end_frame'))
+            else:
+                start_segs = start_offs = end_segs = end_offs = None
 
         metadata = {}
         for k, v in row.items():
