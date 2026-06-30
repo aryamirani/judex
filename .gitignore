@@ -12,5 +12,6 @@ __pycache__/
 
 # Provided raw data/media assets (not coded by us)
 *.mp4
+*.mov
 *.ts
 .vscode/

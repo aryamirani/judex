@@ -1399,30 +1399,91 @@ def analyze_bounce(req: AnalyzeBounceRequest):
 def serve_trajectory_clip(clip_name: str):
     from fastapi.responses import FileResponse
     from fastapi import HTTPException
+    import re
+
+    # Names look like: bounce_00004_source_6782_trajectory_fit_motion.mp4
+    m = re.fullmatch(r"bounce_\d+_(source|sink|hq)_\d+_[A-Za-z0-9_]+\.mp4", clip_name)
+    if not m:
+        raise HTTPException(status_code=400, detail="Invalid trajectory clip name")
+    cam = m.group(1)
+
     local_path = os.path.join(TRAJECTORY_CLIPS_DIR, clip_name)
-    if not os.path.exists(local_path):
-        raise HTTPException(status_code=404, detail="Trajectory clip not found")
-    return FileResponse(local_path, media_type="video/mp4",
-                        headers={"Cross-Origin-Resource-Policy": "cross-origin"})
+    if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+        return FileResponse(local_path, media_type="video/mp4",
+                            headers={"Cross-Origin-Resource-Policy": "cross-origin"})
+
+    # Not cached locally — pull it from the Jetson on demand (mirrors serve_bounce_clip),
+    # so trajectory clips survive a wiped local cache without needing a re-analyse.
+    remote_path = f"/home/jetson/Desktop/cv_output/bounce_clips/tracknet/{cam}/motion/{clip_name}"
+    print(f"[serve_trajectory_clip] Fetching {remote_path} from Jetson…")
+    try:
+        proc = subprocess.run(_ssh_argv(JETSON_HOST, f"cat {remote_path}"),
+                              capture_output=True, timeout=60)
+        if proc.returncode != 0:
+            err = proc.stderr.decode(errors="replace").strip()
+            print(f"[serve_trajectory_clip] Not found: {remote_path} ({err})")
+            raise HTTPException(status_code=404, detail=f"Trajectory clip not found: {clip_name}")
+        if not proc.stdout or len(proc.stdout) < 1024:
+            print(f"[serve_trajectory_clip] Empty/tiny file: {remote_path} ({len(proc.stdout)} bytes)")
+            raise HTTPException(status_code=502, detail="Trajectory clip empty on Jetson")
+
+        os.makedirs(TRAJECTORY_CLIPS_DIR, exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(proc.stdout)
+        print(f"[serve_trajectory_clip] Cached {clip_name} ({len(proc.stdout)} bytes)")
+        return FileResponse(local_path, media_type="video/mp4",
+                            headers={"Cross-Origin-Resource-Policy": "cross-origin"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[serve_trajectory_clip] Error proxying {clip_name}: {e}")
+        raise HTTPException(status_code=502, detail="Error fetching trajectory clip from Jetson")
 
 
 @app.get("/trajectory_clips")
 def list_trajectory_clips(bounce_frame: int):
-    """Return trajectory clips already downloaded locally for a given bounce, keyed by
-    camera. Lets the frontend restore previously-analysed graphics when navigating back
-    to a bounce instead of forcing a re-analyse — the files persist in TRAJECTORY_CLIPS_DIR
-    and are named bounce_<NNNNN>_<cam>_<bounce_frame>_..._motion.mp4.
+    """Return trajectory clips that exist for a given bounce, keyed by camera. Lets the
+    frontend restore previously-analysed graphics when navigating back to a bounce instead
+    of forcing a re-analyse. Files are named bounce_<NNNNN>_<cam>_<bounce_frame>_..._motion.mp4.
+
+    Checks the local cache first; for any camera not cached locally, falls back to listing
+    the Jetson so a wiped local cache still restores (the serve route pulls on demand).
     """
     import glob
+    import re
+
     clip_names = {}
+    # 1) Local cache (underscore-delimited bounce_frame avoids matching 14578 in 145780).
     if os.path.isdir(TRAJECTORY_CLIPS_DIR):
         for cam in ("source", "sink", "hq"):
-            # Underscore-delimited bounce_frame avoids matching e.g. 14578 inside 145780.
             pattern = os.path.join(TRAJECTORY_CLIPS_DIR,
                                    f"bounce_*_{cam}_{bounce_frame}_*motion*.mp4")
             matches = sorted(glob.glob(pattern))
             if matches:
                 clip_names[cam] = os.path.basename(matches[-1])
+
+    # 2) Jetson fallback for any camera still missing.
+    missing = [c for c in ("source", "sink", "hq") if c not in clip_names]
+    if missing:
+        try:
+            base = "/home/jetson/Desktop/cv_output/bounce_clips/tracknet"
+            remote_cmd = "; ".join(
+                f"ls {base}/{cam}/motion/bounce_*_{cam}_{bounce_frame}_*motion*.mp4 2>/dev/null"
+                for cam in missing
+            )
+            proc = subprocess.run(_ssh_argv(JETSON_HOST, remote_cmd),
+                                  capture_output=True, text=True, timeout=15)
+            found = {}
+            for path in proc.stdout.strip().splitlines():
+                name = os.path.basename(path.strip())
+                m = re.fullmatch(r"bounce_\d+_(source|sink|hq)_\d+_[A-Za-z0-9_]+\.mp4", name)
+                if m:
+                    found[m.group(1)] = name  # later (sorted by ls) wins
+            for cam, name in found.items():
+                clip_names.setdefault(cam, name)
+        except Exception as e:
+            print(f"[list_trajectory_clips] Jetson fallback failed: {e}")
+
     return {"clip_names": clip_names}
 
 
