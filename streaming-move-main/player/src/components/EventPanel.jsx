@@ -50,7 +50,7 @@ function bounceClipName(event) {
   return `bounce_${bounceFrame}_${flightIdStr}.mp4`
 }
 
-export default function EventPanel({ event, events = [], activeCam, onNavigate, onClose, onTracknetRefresh }) {
+export default function EventPanel({ event, events = [], activeCam, onNavigate, onClose, onTracknetRefresh, graphicsReady = false }) {
   const v1 = useRef(null)
   const v2 = useRef(null)
   const v3 = useRef(null)
@@ -125,7 +125,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   }
 
   const handleAnalyze = async () => {
-    if (!event) return
+    if (!event || !graphicsReady) return
     // run_graphics.sh is keyed on csv_row (0-based flight_shots.csv data row).
     const csvRow = event.csv_row ?? event.metadata?.csv_row
     if (csvRow == null) {
@@ -169,7 +169,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   }
 
   const handleAnalyzeCam = async (camId) => {
-    if (!event) return
+    if (!event || !graphicsReady) return
     const csvRow = event.csv_row ?? event.metadata?.csv_row
     if (csvRow == null) {
       setAnalyzeError('No csv_row on this event — cannot run graphics.')
@@ -282,20 +282,22 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
           </button>
           <button
             onClick={handleAnalyze}
-            disabled={analyzing}
-            title="Run TrackNet trajectory analysis on Jetson (all cameras)"
+            disabled={analyzing || !graphicsReady}
+            title={graphicsReady
+              ? 'Run TrackNet trajectory analysis on Jetson (all cameras)'
+              : 'Waiting for TrackNet to turn off after entering review'}
             style={{
-              background: analyzing
+              background: analyzing || !graphicsReady
                 ? '#444'
                 : Object.keys(trajectoryClipNames).length > 0
                   ? 'linear-gradient(135deg, #50e3c2, #2aa98a)'
                   : 'linear-gradient(135deg, #e74c3c, #c0392b)',
               color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '6px',
-              cursor: analyzing ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '12px',
+              cursor: (analyzing || !graphicsReady) ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '12px',
               letterSpacing: '0.05em', transition: 'background 0.3s',
             }}
           >
-            {analyzing ? 'ANALYSING…' : Object.keys(trajectoryClipNames).length > 0 ? 'RE-ANALYSE ALL' : 'ANALYSE ALL'}
+            {analyzing ? 'ANALYSING…' : !graphicsReady ? 'TRACKNET NOT OFF' : Object.keys(trajectoryClipNames).length > 0 ? 'RE-ANALYSE ALL' : 'ANALYSE ALL'}
           </button>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '20px' }}>✕</button>
         </div>
@@ -304,6 +306,11 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       {analyzing && (
         <div style={{ color: '#f39c12', fontSize: '12px', marginBottom: '8px', fontFamily: 'monospace' }}>
           ⏳ Running graphics on Jetson… this runs end-to-end and can take a while.
+        </div>
+      )}
+      {!graphicsReady && !analyzing && (
+        <div style={{ color: '#f39c12', fontSize: '12px', marginBottom: '8px', fontFamily: 'monospace' }}>
+          ⏳ Polling TrackNet — analyse unlocks once source/sink TrackNet is off.
         </div>
       )}
       {analyzeError && (
@@ -359,19 +366,21 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
                 )}
                 <button
                   onClick={() => handleAnalyzeCam(cam.id)}
-                  disabled={analyzingCams[cam.id] || analyzing}
-                  title={`Run TrackNet analysis for ${cam.label} only`}
+                  disabled={analyzingCams[cam.id] || analyzing || !graphicsReady}
+                  title={graphicsReady
+                    ? `Run TrackNet analysis for ${cam.label} only`
+                    : 'Waiting for TrackNet to turn off after entering review'}
                   style={{
                     marginLeft: 'auto',
-                    background: analyzingCams[cam.id]
+                    background: analyzingCams[cam.id] || !graphicsReady
                       ? '#555'
                       : trajectoryClipNames[cam.id]
                         ? 'rgba(80,227,194,0.25)'
                         : 'rgba(231,76,60,0.75)',
                     color: '#fff', border: 'none', padding: '2px 8px', borderRadius: '4px',
-                    cursor: (analyzingCams[cam.id] || analyzing) ? 'wait' : 'pointer',
+                    cursor: (analyzingCams[cam.id] || analyzing || !graphicsReady) ? 'wait' : 'pointer',
                     fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.04em',
-                    opacity: analyzing ? 0.5 : 1,
+                    opacity: (analyzing || !graphicsReady) ? 0.5 : 1,
                     transition: 'background 0.2s',
                     flexShrink: 0,
                   }}

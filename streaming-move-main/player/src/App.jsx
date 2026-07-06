@@ -143,6 +143,9 @@ export default function App() {
 
   const [tracknetForceful, setTracknetForceful] = useState('unknown')
   const [tracknetLoading, setTracknetLoading] = useState(false)
+  const [graphicsReady, setGraphicsReady] = useState(false)
+  const [graphicsLoading, setGraphicsLoading] = useState(false)
+  const [graphicsTracknetForceful, setGraphicsTracknetForceful] = useState('unknown')
 
   // UI State for Active Camera
   const [currentTime, setCurrentTime] = useState(0)
@@ -272,6 +275,34 @@ export default function App() {
   useEffect(() => {
     refreshTracknetStatus()
   }, [refreshTracknetStatus])
+
+  const refreshGraphicsStatus = useCallback(() => {
+    return fetch(`${backendUrl}/graphics/status`)
+      .then(r => r.json())
+      .then(d => {
+        setGraphicsReady(!!d.ready)
+        setGraphicsLoading(!!d.loaded && !d.ready)
+        if (d.tracknet_forceful) {
+          setGraphicsTracknetForceful(d.tracknet_forceful)
+          setTracknetForceful(d.tracknet_forceful)
+        }
+        return d
+      })
+      .catch(() => {
+        setGraphicsReady(false)
+        setGraphicsLoading(false)
+        setGraphicsTracknetForceful('unknown')
+        return null
+      })
+  }, [])
+
+  // Poll TrackNet until off after load_graphics (enables analyse buttons when ready).
+  useEffect(() => {
+    if (mode !== 'review' || graphicsReady) return
+    refreshGraphicsStatus()
+    const interval = setInterval(refreshGraphicsStatus, 1000)
+    return () => clearInterval(interval)
+  }, [mode, graphicsReady, refreshGraphicsStatus])
 
   const handleTracknetToggle = async () => {
     const newMode = tracknetForceful === 'off' ? 'auto' : 'off'
@@ -780,6 +811,12 @@ export default function App() {
     console.log('[MODE] Entering Review Mode')
     if (rollingBuffers[activeCam].current.length === 0) return false
 
+    setGraphicsReady(false)
+    setGraphicsLoading(true)
+    fetch(`${backendUrl}/graphics/load`, { method: 'POST' })
+      .then(() => refreshGraphicsStatus())
+      .catch(e => console.warn('[graphics] load failed', e))
+
     const newReviewSegs = { source: [], sink: [], hq: [] }
     CAMERAS.forEach(cam => {
       const snapshot = rollingBuffers[cam].current.slice()
@@ -896,10 +933,16 @@ export default function App() {
     }
 
     return true
-  }, [activeCam, events, seekReviewToTime])
+  }, [activeCam, events, seekReviewToTime, refreshGraphicsStatus])
 
   const exitReview = useCallback(() => {
     console.log('[MODE] Exiting Review Mode (returning to Live)')
+
+    setGraphicsReady(false)
+    setGraphicsLoading(false)
+    setGraphicsTracknetForceful('unknown')
+    fetch(`${backendUrl}/graphics/stop`, { method: 'POST' })
+      .catch(e => console.warn('[graphics] stop failed', e))
     
     fetch(`${backendUrl}/clear_bounces`, { method: 'POST' })
       .catch(e => console.warn('Failed to clear bounces', e))
@@ -1634,6 +1677,16 @@ export default function App() {
             fontSize: '12px', fontWeight: 'bold', letterSpacing: '2px', pointerEvents: 'none'
           }}>REVIEW MODE ACTIVE</div>
         )}
+        {inReview && graphicsLoading && (
+          <div style={{
+            position: 'absolute', top: 52, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(243,156,18,0.85)', padding: '5px 14px', borderRadius: '16px',
+            fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', pointerEvents: 'none',
+            color: '#000',
+          }}>
+            WAITING FOR TRACKNET OFF… ({graphicsTracknetForceful})
+          </div>
+        )}
 
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '40px 32px 20px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))' }}>
           <SeekBar
@@ -1668,6 +1721,7 @@ export default function App() {
             event={selectedEvent}
             events={mappedEvents}
             activeCam={activeCam}
+            graphicsReady={graphicsReady}
             onTracknetRefresh={refreshTracknetStatus}
             onNavigate={(ev) => {
               setSelectedEvent(ev)

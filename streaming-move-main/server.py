@@ -39,6 +39,7 @@ _args = _parser.parse_args()
 
 SPEED = _args.speed
 CAM_PORT = _args.cam_port
+JETSON_CV_DIR = "/home/jetson/Desktop/judex-cv"
 
 IS_LIVE = True
 START_TIME = time.time()
@@ -1040,6 +1041,14 @@ def _run_tracknet_status():
         return f"ERROR: {e}"
 
 
+def _parse_tracknet_forceful(raw: str) -> str:
+    """Extract source_sink_tracknet_forceful value from tracknet_control.py status output."""
+    for line in raw.splitlines():
+        if "source_sink_tracknet_forceful:" in line:
+            return line.split(":", 1)[1].strip()
+    return "unknown"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_data()
@@ -1262,6 +1271,123 @@ def serve_bounce_clip(cam: str, clip_name: str):
 # Local cache dir for trajectory clips
 TRAJECTORY_CLIPS_DIR = os.path.join(BASE_DIR, "clips", "cv_output", "trajectory")
 
+_graphics_lock = threading.Lock()
+_graphics_state = {
+    "loaded": False,
+    "ready": False,
+    "tracknet_forceful": "unknown",
+}
+
+
+def _graphics_poll_tracknet_off() -> tuple[bool, str]:
+    """Poll TrackNet status; graphics is ready once source_sink_tracknet_forceful is off."""
+    with _graphics_lock:
+        if not _graphics_state["loaded"]:
+            return False, _graphics_state["tracknet_forceful"]
+        if _graphics_state["ready"]:
+            return True, _graphics_state["tracknet_forceful"]
+
+    raw = _run_tracknet_status()
+    forceful = _parse_tracknet_forceful(raw)
+
+    with _graphics_lock:
+        if not _graphics_state["loaded"]:
+            return False, forceful
+        _graphics_state["tracknet_forceful"] = forceful
+        if forceful == "off":
+            _graphics_state["ready"] = True
+            print("[graphics] TrackNet is off — analyse enabled")
+        return _graphics_state["ready"], forceful
+
+
+def _graphics_require_ready():
+    from fastapi import HTTPException
+    ready, forceful = _graphics_poll_tracknet_off()
+    if not ready:
+        raise HTTPException(
+            status_code=409,
+            detail=f"TrackNet not off yet (currently '{forceful}'). Wait for load_graphics to finish.",
+        )
+
+
+def _run_load_graphics_background():
+    def _worker():
+        cmd = f"cd {JETSON_CV_DIR} && ./load_graphics_turnoff_source_sink.sh"
+        print(f"[graphics] Running (background): {cmd}")
+        try:
+            proc = subprocess.run(
+                _ssh_argv(JETSON_HOST, cmd),
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.stdout.strip():
+                print(f"[graphics] load stdout:\n{proc.stdout.strip()}")
+            if proc.returncode != 0:
+                err = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
+                print(f"[graphics] load FAILED: {err}")
+        except Exception as e:
+            print(f"[graphics] load error: {e}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+@app.post("/graphics/load")
+def graphics_load():
+    """Kick off load_graphics_turnoff_source_sink.sh once per review session (background)."""
+    with _graphics_lock:
+        _graphics_state["loaded"] = True
+        _graphics_state["ready"] = False
+        _graphics_state["tracknet_forceful"] = "unknown"
+    print("[graphics] Review session load started — polling TrackNet until off")
+    _run_load_graphics_background()
+    return {"status": "ok", "ready": False}
+
+
+@app.post("/graphics/stop")
+def graphics_stop():
+    """Run stop_graphics.sh when leaving review / returning to live."""
+    with _graphics_lock:
+        was_loaded = _graphics_state["loaded"]
+        _graphics_state["loaded"] = False
+        _graphics_state["ready"] = False
+        _graphics_state["tracknet_forceful"] = "unknown"
+
+    if not was_loaded:
+        print("[graphics] stop skipped — graphics was not loaded for this session")
+        return {"status": "ok", "stopped": False}
+
+    cmd = f"cd {JETSON_CV_DIR} && ./stop_graphics.sh"
+    print(f"[graphics] Running: {cmd}")
+    try:
+        proc = subprocess.run(
+            _ssh_argv(JETSON_HOST, cmd),
+            capture_output=True, text=True, timeout=60,
+        )
+        if proc.stdout.strip():
+            print(f"[graphics] stop stdout:\n{proc.stdout.strip()}")
+        if proc.returncode != 0:
+            err = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
+            print(f"[graphics] stop FAILED: {err}")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=502, detail=f"stop_graphics failed: {err}")
+    except subprocess.TimeoutExpired as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=504, detail=f"stop_graphics timed out: {e}")
+
+    print("[graphics] stop complete")
+    return {"status": "ok", "stopped": True}
+
+
+@app.get("/graphics/status")
+def graphics_status():
+    ready, forceful = _graphics_poll_tracknet_off()
+    with _graphics_lock:
+        loaded = _graphics_state["loaded"]
+    return {
+        "loaded": loaded,
+        "ready": ready,
+        "tracknet_forceful": forceful,
+    }
+
 # How long run_graphics.sh is allowed to run end-to-end (queue wait + processing).
 # There is intentionally no short ~2-minute cap: we let the script finish fully and
 # only fetch the trajectory video once it has exited successfully.
@@ -1278,21 +1404,19 @@ class AnalyzeBounceRequest(pydantic.BaseModel):
 @app.post("/analyze_bounce")
 def analyze_bounce(req: AnalyzeBounceRequest):
     """
-    Runs the Jetson graphics pipeline for one flight_shots.csv row via run_graphics.sh.
+    Runs status + run_graphics.sh for one flight_shots.csv row.
 
-    run_graphics.sh handles the entire flow itself: it drains the queue, forces
-    source/sink TrackNet off, enqueues the graphics job(s), blocks until results land,
-    and (with --restore-auto) sets TrackNet back to auto. We simply run it to completion
-    — the individual per-camera buttons pass --camera <cam>; the main button omits
-    --camera so all three cameras are processed — then read the new results.jsonl entries
-    and download each trajectory mp4.
+    load_graphics_turnoff_source_sink.sh is run once when entering review;
+    stop_graphics.sh runs when returning to live. Per-bounce analysis only
+    checks TrackNet status and invokes run_graphics.sh — nothing else on Jetson.
     """
     from fastapi import HTTPException
     import json as _json
 
+    _graphics_require_ready()
+
     ssh_base = ["ssh", "-i", SSH_KEY_PATH, "-o", "StrictHostKeyChecking=accept-new",
                 "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", JETSON_HOST]
-    jetson_cv_dir = "/home/jetson/Desktop/judex-cv"
     results_path = "/home/jetson/Desktop/cv_output/bounce_clips/tracknet/results.jsonl"
 
     valid_cams = ("hq", "sink", "source")
@@ -1312,11 +1436,14 @@ def analyze_bounce(req: AnalyzeBounceRequest):
         print(f"[analyze_bounce] csv_row={req.csv_row} cameras={cameras_to_run} "
               f"(results.jsonl has {prior_lines} lines)")
 
+        status_raw = _run_tracknet_status()
+        print(f"[analyze_bounce] tracknet status:\n{status_raw}")
+
         # Run run_graphics.sh to completion (blocking). No 120s cap.
         run_errors = []
         for target in run_targets:
-            cmd = (f"cd {jetson_cv_dir} && ./run_graphics.sh {SESSION_ID} {req.csv_row} "
-                   f"--restore-auto --timeout {RUN_GRAPHICS_SCRIPT_TIMEOUT}")
+            cmd = (f"cd {JETSON_CV_DIR} && ./run_graphics.sh {SESSION_ID} {req.csv_row} "
+                   f"--timeout {RUN_GRAPHICS_SCRIPT_TIMEOUT}")
             if target:
                 cmd += f" --camera {target}"
             print(f"[analyze_bounce] Running: {cmd}")
@@ -1492,14 +1619,6 @@ def list_trajectory_clips(bounce_frame: int):
             print(f"[list_trajectory_clips] Jetson fallback failed: {e}")
 
     return {"clip_names": clip_names}
-
-
-def _parse_tracknet_forceful(raw: str) -> str:
-    """Extract source_sink_tracknet_forceful value from tracknet_control.py status output."""
-    for line in raw.splitlines():
-        if "source_sink_tracknet_forceful:" in line:
-            return line.split(":", 1)[1].strip()
-    return "unknown"
 
 
 @app.get("/tracknet_status")
