@@ -173,7 +173,7 @@ _frame_idx_lock = threading.Lock()
 def _ssh_fetch(remote_path, skip_lines=0, allow_empty=True):
     try:
         remote_cmd = (f"cat {remote_path}" if skip_lines == 0
-                      else f"tail -n +{skip_lines + 2} {remote_path} 2>/dev/null || true")
+                      else f"tail -n +{skip_lines + 1} {remote_path} 2>/dev/null || true")
         result = subprocess.run(
             _ssh_argv(JETSON_HOST, remote_cmd),
             capture_output=True, text=True, timeout=60
@@ -1300,14 +1300,49 @@ def _graphics_poll_tracknet_off() -> tuple[bool, str]:
         return _graphics_state["ready"], forceful
 
 
-def _graphics_require_ready():
+LOAD_GRAPHICS_WAIT_TIMEOUT = 120  # matches load_graphics SSH timeout
+
+
+def _ensure_tracknet_off_for_analyse():
+    """If TrackNet is not off, run load_graphics then wait until off before analyse proceeds."""
     from fastapi import HTTPException
-    ready, forceful = _graphics_poll_tracknet_off()
-    if not ready:
-        raise HTTPException(
-            status_code=409,
-            detail=f"TrackNet not off yet (currently '{forceful}'). Wait for load_graphics to finish.",
-        )
+
+    raw = _run_tracknet_status()
+    forceful = _parse_tracknet_forceful(raw)
+    print(f"[analyze_bounce] pre-check tracknet forceful={forceful}")
+
+    if forceful == "off":
+        with _graphics_lock:
+            _graphics_state["loaded"] = True
+            _graphics_state["ready"] = True
+            _graphics_state["tracknet_forceful"] = "off"
+        return
+
+    # TrackNet still on (auto / unknown / anything else) — turn it off via load_graphics.
+    with _graphics_lock:
+        _graphics_state["loaded"] = True
+        _graphics_state["ready"] = False
+        _graphics_state["tracknet_forceful"] = forceful
+
+    print(f"[analyze_bounce] TrackNet is '{forceful}' — running load_graphics_turnoff_source_sink.sh")
+    _run_load_graphics_background()
+
+    deadline = time.time() + LOAD_GRAPHICS_WAIT_TIMEOUT
+    last = forceful
+    while time.time() < deadline:
+        ready, last = _graphics_poll_tracknet_off()
+        if ready or last == "off":
+            print("[analyze_bounce] TrackNet is off — continuing analyse")
+            return
+        time.sleep(1.0)
+
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"TrackNet still '{last}' after load_graphics "
+            f"({LOAD_GRAPHICS_WAIT_TIMEOUT}s). Analyse aborted."
+        ),
+    )
 
 
 def _run_load_graphics_background():
@@ -1338,7 +1373,7 @@ def graphics_load():
         _graphics_state["ready"] = False
         _graphics_state["tracknet_forceful"] = "unknown"
     print("[graphics] Review session load started — polling TrackNet until off")
-    _run_load_graphics_background()
+    # _run_load_graphics_background()
     return {"status": "ok", "ready": False}
 
 
@@ -1406,14 +1441,14 @@ def analyze_bounce(req: AnalyzeBounceRequest):
     """
     Runs status + run_graphics.sh for one flight_shots.csv row.
 
-    load_graphics_turnoff_source_sink.sh is run once when entering review;
-    stop_graphics.sh runs when returning to live. Per-bounce analysis only
-    checks TrackNet status and invokes run_graphics.sh — nothing else on Jetson.
+    If TrackNet is still on, runs load_graphics_turnoff_source_sink.sh first and
+    waits until off, then continues with run_graphics.sh.
+    stop_graphics.sh runs when returning to live.
     """
     from fastapi import HTTPException
     import json as _json
 
-    _graphics_require_ready()
+    _ensure_tracknet_off_for_analyse()
 
     ssh_base = ["ssh", "-i", SSH_KEY_PATH, "-o", "StrictHostKeyChecking=accept-new",
                 "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", JETSON_HOST]

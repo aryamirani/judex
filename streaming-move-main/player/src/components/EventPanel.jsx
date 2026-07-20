@@ -39,15 +39,15 @@ function pauseAndReset(video) {
   } catch (_) { /* ignore */ }
 }
 
-/** bounce_{bounce_frame}_{flight_id}.mp4 — flight_id is zero-padded to 5 digits. */
+/** bounce_{bounce_frame}_{csv_row}.mp4 — csv_row is zero-padded to 5 digits. */
 function bounceClipName(event) {
   if (!event) return null
   const bounceFrame = event.bounce_frame ?? event.metadata?.bounce_frame
   if (bounceFrame == null || bounceFrame === '') return null
-  const flightId = event.metadata?.flight_id
-  if (flightId == null || flightId === '') return null
-  const flightIdStr = String(flightId).padStart(5, '0')
-  return `bounce_${bounceFrame}_${flightIdStr}.mp4`
+  const csvRow = event.csv_row ?? event.metadata?.csv_row
+  if (csvRow == null || csvRow === '') return null
+  const rowStr = String(csvRow).padStart(5, '0')
+  return `bounce_${bounceFrame}_${rowStr}.mp4`
 }
 
 export default function EventPanel({ event, events = [], activeCam, onNavigate, onClose, onTracknetRefresh, graphicsReady = false }) {
@@ -125,7 +125,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   }
 
   const handleAnalyze = async () => {
-    if (!event || !graphicsReady) return
+    if (!event) return
     // run_graphics.sh is keyed on csv_row (0-based flight_shots.csv data row).
     const csvRow = event.csv_row ?? event.metadata?.csv_row
     if (csvRow == null) {
@@ -145,6 +145,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
     try {
       // Main button: no `cameras` -> backend runs run_graphics.sh without --camera (all cams).
+      // If TrackNet is still on, the server runs load_graphics first then continues.
       const res = await fetch(`${backendUrl}/analyze_bounce`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -169,7 +170,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   }
 
   const handleAnalyzeCam = async (camId) => {
-    if (!event || !graphicsReady) return
+    if (!event) return
     const csvRow = event.csv_row ?? event.metadata?.csv_row
     if (csvRow == null) {
       setAnalyzeError('No csv_row on this event — cannot run graphics.')
@@ -185,6 +186,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
     try {
       // Per-camera button: pass `cameras` -> backend adds --camera <cam> to run_graphics.sh.
+      // If TrackNet is still on, the server runs load_graphics first then continues.
       const res = await fetch(`${backendUrl}/analyze_bounce`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -282,22 +284,22 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
           </button>
           <button
             onClick={handleAnalyze}
-            disabled={analyzing || !graphicsReady}
+            disabled={analyzing}
             title={graphicsReady
               ? 'Run TrackNet trajectory analysis on Jetson (all cameras)'
-              : 'Waiting for TrackNet to turn off after entering review'}
+              : 'TrackNet still on — analyse will run load_graphics first, then continue'}
             style={{
-              background: analyzing || !graphicsReady
+              background: analyzing
                 ? '#444'
                 : Object.keys(trajectoryClipNames).length > 0
                   ? 'linear-gradient(135deg, #50e3c2, #2aa98a)'
                   : 'linear-gradient(135deg, #e74c3c, #c0392b)',
               color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '6px',
-              cursor: (analyzing || !graphicsReady) ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '12px',
+              cursor: analyzing ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '12px',
               letterSpacing: '0.05em', transition: 'background 0.3s',
             }}
           >
-            {analyzing ? 'ANALYSING…' : !graphicsReady ? 'TRACKNET NOT OFF' : Object.keys(trajectoryClipNames).length > 0 ? 'RE-ANALYSE ALL' : 'ANALYSE ALL'}
+            {analyzing ? 'ANALYSING…' : Object.keys(trajectoryClipNames).length > 0 ? 'RE-ANALYSE ALL' : 'ANALYSE ALL'}
           </button>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '20px' }}>✕</button>
         </div>
@@ -305,12 +307,12 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
       {analyzing && (
         <div style={{ color: '#f39c12', fontSize: '12px', marginBottom: '8px', fontFamily: 'monospace' }}>
-          ⏳ Running graphics on Jetson… this runs end-to-end and can take a while.
+          ⏳ Running graphics on Jetson… if TrackNet is on, load_graphics runs first.
         </div>
       )}
       {!graphicsReady && !analyzing && (
         <div style={{ color: '#f39c12', fontSize: '12px', marginBottom: '8px', fontFamily: 'monospace' }}>
-          ⏳ Polling TrackNet — analyse unlocks once source/sink TrackNet is off.
+          ⏳ TrackNet not off yet — Analyse will turn it off via load_graphics, then run.
         </div>
       )}
       {analyzeError && (
@@ -318,7 +320,7 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       )}
       {missingClipMeta && (
         <div style={{ color: '#ff6b6b', fontSize: '12px', marginBottom: '8px' }}>
-          Missing bounce_frame or flight_id — cannot build clip URL.
+          Missing bounce_frame or csv_row — cannot build clip URL.
         </div>
       )}
 
@@ -366,21 +368,21 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
                 )}
                 <button
                   onClick={() => handleAnalyzeCam(cam.id)}
-                  disabled={analyzingCams[cam.id] || analyzing || !graphicsReady}
+                  disabled={analyzingCams[cam.id] || analyzing}
                   title={graphicsReady
                     ? `Run TrackNet analysis for ${cam.label} only`
-                    : 'Waiting for TrackNet to turn off after entering review'}
+                    : 'TrackNet still on — analyse will run load_graphics first, then continue'}
                   style={{
                     marginLeft: 'auto',
-                    background: analyzingCams[cam.id] || !graphicsReady
+                    background: analyzingCams[cam.id]
                       ? '#555'
                       : trajectoryClipNames[cam.id]
                         ? 'rgba(80,227,194,0.25)'
                         : 'rgba(231,76,60,0.75)',
                     color: '#fff', border: 'none', padding: '2px 8px', borderRadius: '4px',
-                    cursor: (analyzingCams[cam.id] || analyzing || !graphicsReady) ? 'wait' : 'pointer',
+                    cursor: (analyzingCams[cam.id] || analyzing) ? 'wait' : 'pointer',
                     fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.04em',
-                    opacity: (analyzing || !graphicsReady) ? 0.5 : 1,
+                    opacity: analyzing ? 0.5 : 1,
                     transition: 'background 0.2s',
                     flexShrink: 0,
                   }}
