@@ -155,9 +155,35 @@ export default function App() {
   const [bufferedEnd, setBufferedEnd] = useState(null)
   const [liveSegments, setLiveSegments] = useState([])
   const [timelineRevision, setTimelineRevision] = useState(0)
+  const [panelHeightPercent, setPanelHeightPercent] = useState(44)
+  const [isResizingPanel, setIsResizingPanel] = useState(false)
   const eventTimeCacheRef = useRef({})
   const bounceTimeLockRef = useRef({}) // bounce_frame -> { time, hlsLocked }
   const bumpTimeline = useCallback(() => setTimelineRevision(v => v + 1), [])
+
+  const handlePanelResizeStart = useCallback((e) => {
+    e.preventDefault()
+    setIsResizingPanel(true)
+    const startY = e.clientY
+    const startHeight = panelHeightPercent
+    const totalH = window.innerHeight
+
+    const onMouseMove = (moveEv) => {
+      const deltaY = startY - moveEv.clientY
+      const deltaPercent = (deltaY / totalH) * 100
+      const newPercent = Math.max(15, Math.min(80, startHeight + deltaPercent))
+      setPanelHeightPercent(newPercent)
+    }
+
+    const onMouseUp = () => {
+      setIsResizingPanel(false)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }, [panelHeightPercent])
   const [reviewSegs, setReviewSegs] = useState({ source: [], sink: [], hq: [] })
   const [syncMap, setSyncMap] = useState(null)
   const [liveSyncMap, setLiveSyncMap] = useState({})
@@ -1678,40 +1704,10 @@ export default function App() {
             </div>
           ))}
 
-          {/* Review Mode: Floating Transparent Overlay Over Video */}
-          {inReview && (
-            <div style={{
-              position: 'absolute', bottom: '16px', left: '24px', right: '24px', zIndex: 50,
-              pointerEvents: 'auto'
-            }}>
-              <SeekBar
-                currentTime={currentTime}
-                liveEdge={displayLiveEdge}
-                bufferStart={displayBufferStart}
-                bufferedEnd={displayBufferedEnd}
-                segments={displaySegments}
-                events={mappedEvents}
-                onSeek={handleSeek}
-                playbackRate={playbackRate}
-                onPlaybackRateChange={setPlaybackRate}
-                onEventSelect={setSelectedEvent}
-                mode={mode}
-                isPlaying={isPlaying}
-                onTogglePlay={handleTogglePlay}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Live Mode: Full-Width Screen-Wide Minimal Frosted Glass Bar Below Video */}
-        {!inReview && (
+          {/* Floating Transparent SeekBar Overlay Over Video (Live & Review Mode) */}
           <div style={{
-            padding: '4px 20px 4px',
-            background: 'rgba(18, 18, 26, 0.88)',
-            backdropFilter: 'blur(24px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-            borderTop: '1px solid rgba(255, 255, 255, 0.12)',
-            zIndex: 10
+            position: 'absolute', bottom: '16px', left: '24px', right: '24px', zIndex: 50,
+            pointerEvents: 'auto'
           }}>
             <SeekBar
               currentTime={currentTime}
@@ -1729,20 +1725,37 @@ export default function App() {
               onTogglePlay={handleTogglePlay}
             />
           </div>
-        )}
+        </div>
 
         {/* Bottom Review Clips Event Panel */}
         <div style={{ 
-          height: selectedEvent ? '44%' : '0px', 
-          transition: 'height 0.35s cubic-bezier(0.4, 0, 0.2, 1)', 
+          height: selectedEvent ? `${panelHeightPercent}%` : '0px', 
+          transition: isResizingPanel ? 'none' : 'height 0.35s cubic-bezier(0.4, 0, 0.2, 1)', 
           overflow: 'hidden',
           background: 'rgba(10, 10, 14, 0.96)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          borderTop: selectedEvent ? '1px solid rgba(255, 255, 255, 0.1)' : 'none',
+          borderTop: selectedEvent ? '1px solid rgba(255, 255, 255, 0.15)' : 'none',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          position: 'relative'
         }}>
+          {selectedEvent && (
+            <div
+              onMouseDown={handlePanelResizeStart}
+              title="Drag up/down to resize review panel height"
+              style={{
+                height: '8px', cursor: 'row-resize', width: '100%',
+                background: isResizingPanel ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.05)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 30, flexShrink: 0, userSelect: 'none',
+                transition: 'background 0.2s'
+              }}
+            >
+              <div style={{ width: '42px', height: '3px', background: isResizingPanel ? '#60a5fa' : 'rgba(255, 255, 255, 0.35)', borderRadius: '2px' }} />
+            </div>
+          )}
           <EventPanel
             event={selectedEvent}
             events={mappedEvents}

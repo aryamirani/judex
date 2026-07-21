@@ -211,6 +211,58 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
     }
   }
 
+  const [camWidths, setCamWidths] = useState([33.33, 33.33, 33.34])
+  const [resizingColIndex, setResizingColIndex] = useState(null)
+  const cardsContainerRef = useRef(null)
+
+  const handleColResizeStart = useCallback((colIndex, e) => {
+    e.preventDefault()
+    setResizingColIndex(colIndex)
+    const startX = e.clientX
+    const startWidths = [...camWidths]
+    const containerW = cardsContainerRef.current ? cardsContainerRef.current.clientWidth : 1000
+
+    const onMouseMove = (moveEv) => {
+      const deltaX = moveEv.clientX - startX
+      const deltaPercent = (deltaX / containerW) * 100
+
+      if (colIndex === 0) {
+        let w0 = startWidths[0] + deltaPercent
+        let w1 = startWidths[1] - deltaPercent
+        if (w0 < 15) {
+          w0 = 15
+          w1 = startWidths[0] + startWidths[1] - 15
+        }
+        if (w1 < 15) {
+          w1 = 15
+          w0 = startWidths[0] + startWidths[1] - 15
+        }
+        setCamWidths([w0, w1, startWidths[2]])
+      } else if (colIndex === 1) {
+        let w1 = startWidths[1] + deltaPercent
+        let w2 = startWidths[2] - deltaPercent
+        if (w1 < 15) {
+          w1 = 15
+          w2 = startWidths[1] + startWidths[2] - 15
+        }
+        if (w2 < 15) {
+          w2 = 15
+          w1 = startWidths[1] + startWidths[2] - 15
+        }
+        setCamWidths([startWidths[0], w1, w2])
+      }
+    }
+
+    const onMouseUp = () => {
+      setResizingColIndex(null)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }, [camWidths])
+
   useEffect(() => {
     pauseAll()
     setProgress(0)
@@ -329,8 +381,8 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       )}
 
       {/* 3 Bounce Clip Cards Container */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', flex: 1, minHeight: 0 }}>
-        {cameras.map(cam => {
+      <div ref={cardsContainerRef} style={{ display: 'flex', gap: '2px', marginBottom: '6px', flex: 1, minHeight: 0, position: 'relative' }}>
+        {cameras.map((cam, idx) => {
           const retryCount = retryCounts[cam.id] || 0
           const status = clipStatus[cam.id] || 'idle'
           const camTrajectoryClip = trajectoryClipNames[cam.id] ?? null
@@ -354,155 +406,193 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
               console.warn(`[EventPanel] Failed to load ${cam.id}: ${clipUrl}`)
             }
           }
-
           return (
-            <div key={`${cam.id}-${clipUrl ?? 'none'}-${retryCount}`} style={{ flex: 1, background: '#000', borderRadius: '10px', overflow: 'hidden', position: 'relative', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {/* Standalone Top-Left Camera Title Badge */}
-              <div style={{
-                position: 'absolute', top: 8, left: 8,
-                background: 'rgba(15, 15, 22, 0.65)',
-                backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-                padding: '3px 8px', fontSize: '10px', color: '#fff', borderRadius: '12px',
-                border: '1px solid rgba(255,255,255,0.12)', zIndex: 4, display: 'flex', alignItems: 'center', gap: '4px'
-              }}>
-                <span style={{ fontWeight: '700' }}>{cam.label}</span>
-                {showTrajectory && (
-                  <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '9px' }}>· TRAJECTORY</span>
-                )}
-                {status === 'loading' && (
-                  <span style={{ color: '#f59e0b', fontSize: '9px' }}>(loading…)</span>
-                )}
-              </div>
-
-              {/* Standalone Top-Right Analyze Button */}
-              <button
-                onClick={() => handleAnalyzeCam(cam.id)}
-                disabled={analyzingCams[cam.id] || analyzing}
-                title={`Run analysis for ${cam.label}`}
-                style={{
-                  position: 'absolute', top: 8, right: 8, zIndex: 4,
-                  background: analyzingCams[cam.id]
-                    ? '#555'
-                    : trajectoryClipNames[cam.id]
-                      ? 'rgba(16, 185, 129, 0.4)'
-                      : 'rgba(239, 68, 68, 0.85)',
-                  color: '#fff', border: '1px solid rgba(255,255,255,0.2)', padding: '3px 10px', borderRadius: '12px',
-                  cursor: (analyzingCams[cam.id] || analyzing) ? 'wait' : 'pointer',
-                  fontSize: '9px', fontWeight: 'bold', letterSpacing: '0.04em',
-                  opacity: analyzing ? 0.5 : 1, transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                  backdropFilter: 'blur(10px)'
-                }}
-              >
-                {analyzingCams[cam.id] ? '…' : trajectoryClipNames[cam.id] ? 'RE-ANALYSE' : 'ANALYSE'}
-              </button>
-
-              {(status === 'loading' || status === 'idle') && clipUrl && (
-                <div style={{
-                  position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'rgba(255,255,255,0.4)', fontSize: '11px', zIndex: 1, pointerEvents: 'none',
-                }}>
-                  {status === 'idle' ? 'Preparing…' : 'Fetching clip…'}
+            <React.Fragment key={`${cam.id}-${clipUrl ?? 'none'}-${retryCount}`}>
+              {idx > 0 && (
+                <div
+                  onMouseDown={(e) => handleColResizeStart(idx - 1, e)}
+                  title="Drag left/right to resize camera clip cards"
+                  style={{
+                    width: '8px', cursor: 'col-resize',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    zIndex: 10, userSelect: 'none', flexShrink: 0,
+                    background: resizingColIndex === idx - 1 ? 'rgba(59, 130, 246, 0.4)' : 'transparent',
+                    transition: 'background 0.2s ease'
+                  }}
+                >
+                  <div style={{ width: '2.5px', height: '36px', background: resizingColIndex === idx - 1 ? '#60a5fa' : 'rgba(255, 255, 255, 0.25)', borderRadius: '1.5px' }} />
                 </div>
               )}
-
-              {status === 'error' && (
-                <div style={{
-                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center', padding: '12px', textAlign: 'center',
-                  color: '#ef4444', fontSize: '11px', zIndex: 1,
-                }}>
-                  <div>Clip not available</div>
-                </div>
-              )}
-
-              {clipUrl && (
-                <video
-                  ref={cam.ref}
-                  key={clipUrl}
-                  src={clipUrl}
-                  crossOrigin="anonymous"
-                  muted
-                  playsInline
-                  preload="auto"
-                  onLoadStart={() => {
-                    setClipStatus(prev => ({ ...prev, [cam.id]: 'loading' }))
-                  }}
-                  onError={handleError}
-                  onCanPlay={() => {
-                    setClipStatus(prev => ({ ...prev, [cam.id]: 'ready' }))
-                  }}
-                  onTimeUpdate={(e) => {
-                    if (cam.id === 'hq') {
-                      setProgress(e.target.currentTime)
-                      if (e.target.duration && e.target.currentTime >= e.target.duration - 0.05) {
-                        setPlaying(false)
-                      }
-                    }
-                  }}
-                  onLoadedMetadata={(e) => {
-                    if (cam.id === 'hq') setDuration(e.target.duration || 2)
-                  }}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                />
-              )}
-
-              {/* Individual Floating Glass Controls Bar Overlaid Bottom of Each Clip */}
               <div style={{
-                position: 'absolute', bottom: 6, left: 6, right: 6,
-                background: 'rgba(15, 15, 22, 0.8)',
-                backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-                padding: '3px 8px', borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.12)',
-                zIndex: 4, display: 'flex', alignItems: 'center', gap: '6px'
+                width: `calc(${camWidths[idx]}% - ${idx > 0 && idx < 2 ? '12px' : '6px'})`,
+                background: '#000', borderRadius: '10px', overflow: 'hidden', position: 'relative',
+                border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, transition: resizingColIndex !== null ? 'none' : 'width 0.2s ease'
               }}>
+                {/* Standalone Top-Left Camera Title Badge */}
+                <div style={{
+                  position: 'absolute', top: 8, left: 8,
+                  background: 'rgba(15, 15, 22, 0.65)',
+                  backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+                  padding: '3px 8px', fontSize: '10px', color: '#fff', borderRadius: '12px',
+                  border: '1px solid rgba(255,255,255,0.12)', zIndex: 4, display: 'flex', alignItems: 'center', gap: '4px'
+                }}>
+                  <span style={{ fontWeight: '700' }}>{cam.label}</span>
+                  {showTrajectory && (
+                    <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '9px' }}>· TRAJECTORY</span>
+                  )}
+                  {status === 'loading' && (
+                    <span style={{ color: '#f59e0b', fontSize: '9px' }}>(loading…)</span>
+                  )}
+                </div>
+
+                {/* Standalone Top-Right Analyze Button */}
                 <button
-                  onClick={() => {
-                    if (cam.ref.current) {
-                      cam.ref.current.currentTime = Math.max(0, cam.ref.current.currentTime - (1/30))
-                    }
+                  onClick={() => handleAnalyzeCam(cam.id)}
+                  disabled={analyzingCams[cam.id] || analyzing}
+                  title={`Run analysis for ${cam.label}`}
+                  style={{
+                    position: 'absolute', top: 8, right: 8, zIndex: 4,
+                    background: analyzingCams[cam.id]
+                      ? '#555'
+                      : trajectoryClipNames[cam.id]
+                        ? 'rgba(16, 185, 129, 0.4)'
+                        : 'rgba(239, 68, 68, 0.85)',
+                    color: '#fff', border: '1px solid rgba(255,255,255,0.2)', padding: '3px 10px', borderRadius: '12px',
+                    cursor: (analyzingCams[cam.id] || analyzing) ? 'wait' : 'pointer',
+                    fontSize: '9px', fontWeight: 'bold', letterSpacing: '0.04em',
+                    opacity: analyzing ? 0.5 : 1, transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    backdropFilter: 'blur(10px)'
                   }}
-                  style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', borderRadius: '10px', padding: '2px 6px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
-                  -1F
+                  {analyzingCams[cam.id] ? '…' : trajectoryClipNames[cam.id] ? 'RE-ANALYSE' : 'ANALYSE'}
                 </button>
-                <button
-                  onClick={() => {
-                    if (cam.ref.current) {
-                      if (cam.ref.current.paused) cam.ref.current.play()
-                      else cam.ref.current.pause()
-                    }
-                  }}
-                  style={{ background: '#fff', border: 'none', color: '#000', borderRadius: '50%', width: '20px', height: '20px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  {cam.ref.current && !cam.ref.current.paused ? '⏸' : '▶'}
-                </button>
-                <button
-                  onClick={() => {
-                    if (cam.ref.current) {
-                      cam.ref.current.currentTime = Math.min(cam.ref.current.duration || 2, cam.ref.current.currentTime + (1/30))
-                    }
-                  }}
-                  style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', borderRadius: '10px', padding: '2px 6px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  +1F
-                </button>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-                  <input
-                    type="range"
-                    min="0"
-                    max={cam.ref.current?.duration || 2}
-                    step="0.01"
-                    value={cam.ref.current?.currentTime || 0}
-                    onChange={(e) => {
+
+                {(status === 'loading' || status === 'idle') && clipUrl && (
+                  <div style={{
+                    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'rgba(255,255,255,0.4)', fontSize: '11px', zIndex: 1, pointerEvents: 'none',
+                  }}>
+                    {status === 'idle' ? 'Preparing…' : 'Fetching clip…'}
+                  </div>
+                )}
+
+                {status === 'error' && (
+                  <div style={{
+                    position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: '8px', zIndex: 2,
+                    background: 'rgba(10,10,14,0.95)', color: '#ef4444', fontSize: '11px', textAlign: 'center', padding: '12px'
+                  }}>
+                    <span>Failed to load video</span>
+                    <button
+                      onClick={() => {
+                        setClipStatus(prev => ({ ...prev, [cam.id]: 'loading' }))
+                        setRetryCounts(prev => ({ ...prev, [cam.id]: (prev[cam.id] || 0) + 1 }))
+                      }}
+                      style={{
+                        background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
+                        color: '#fff', padding: '3px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '10px'
+                      }}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {missingClipMeta && (
+                  <div style={{
+                    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'rgba(255,255,255,0.3)', fontSize: '11px', zIndex: 2,
+                  }}>
+                    No clip metadata available
+                  </div>
+                )}
+
+                {clipUrl && (
+                  <video
+                    ref={cam.ref}
+                    src={clipUrl}
+                    playsInline
+                    muted
+                    preload="auto"
+                    onCanPlay={() => { setClipStatus(prev => ({ ...prev, [cam.id]: 'ready' })) }}
+                    onError={handleError}
+                    onEnded={() => {
                       if (cam.ref.current) {
-                        cam.ref.current.currentTime = parseFloat(e.target.value)
+                        cam.ref.current.pause()
                       }
                     }}
-                    style={{ width: '100%', height: '3px', cursor: 'pointer', accentColor: '#3b82f6' }}
+                    onTimeUpdate={(e) => {
+                      if (cam.id === 'hq') {
+                        setProgress(e.target.currentTime)
+                        if (e.target.duration && e.target.currentTime >= e.target.duration - 0.05) {
+                          setPlaying(false)
+                        }
+                      }
+                    }}
+                    onLoadedMetadata={(e) => {
+                      if (cam.id === 'hq') setDuration(e.target.duration || 2)
+                    }}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', zIndex: 0 }}
                   />
+                )}
+
+                {/* Overlaid Individual Per-Clip Floating Glass Control Bar */}
+                <div style={{
+                  position: 'absolute', bottom: 6, left: 6, right: 6, zIndex: 10,
+                  background: 'rgba(15, 15, 22, 0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                  borderRadius: '8px', border: '1px solid rgba(255,255,255,0.12)', padding: '3px 8px',
+                  display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.4)'
+                }}>
+                  <button
+                    onClick={() => {
+                      if (cam.ref.current) {
+                        cam.ref.current.currentTime = Math.max(0, cam.ref.current.currentTime - (1/30))
+                      }
+                    }}
+                    style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', borderRadius: '10px', padding: '2px 6px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    -1F
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (cam.ref.current) {
+                        if (cam.ref.current.paused) cam.ref.current.play()
+                        else cam.ref.current.pause()
+                      }
+                    }}
+                    style={{ background: '#fff', border: 'none', color: '#000', borderRadius: '50%', width: '18px', height: '18px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {cam.ref.current?.paused ? '▶' : '⏸'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (cam.ref.current) {
+                        cam.ref.current.currentTime = Math.min(cam.ref.current.duration || 2, cam.ref.current.currentTime + (1/30))
+                      }
+                    }}
+                    style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', borderRadius: '10px', padding: '2px 6px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    +1F
+                  </button>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type="range"
+                      min="0"
+                      max={cam.ref.current?.duration || 2}
+                      step="0.01"
+                      value={cam.ref.current?.currentTime || 0}
+                      onChange={(e) => {
+                        if (cam.ref.current) {
+                          cam.ref.current.currentTime = parseFloat(e.target.value)
+                        }
+                      }}
+                      style={{ width: '100%', height: '3px', cursor: 'pointer', accentColor: '#3b82f6' }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            </React.Fragment>
           )
         })}
       </div>
