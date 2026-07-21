@@ -165,24 +165,29 @@ export default function SeekBar({
     : null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        fontSize: '10px', fontFamily: 'var(--condensed)', letterSpacing: '0.1em',
-        textTransform: 'uppercase', color: 'var(--muted)',
+        fontSize: '9px', letterSpacing: '0.08em',
+        textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ display: 'flex', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             {mode === 'review' && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  // scrub backwards 1 frame (30fps)
                   if (onSeek) onSeek(activeTime - (1/30), true);
                 }}
-                style={{ background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', padding: '4px 10px', fontWeight: 'bold', transition: 'background 0.2s' }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#f4f4f5', borderRadius: '10px', cursor: 'pointer', fontSize: '9px',
+                  fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+                  padding: '2px 9px', fontWeight: '700', letterSpacing: '0.06em', transition: 'all 0.2s ease',
+                  backdropFilter: 'blur(10px)', boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
+                }}
               >
-                -1 FRAME
+                −1 FRAME
               </button>
             )}
             <button
@@ -191,16 +196,20 @@ export default function SeekBar({
                 if (onTogglePlay) onTogglePlay();
               }}
               style={{
-                background: 'linear-gradient(135deg, #e8e8e8, #c0c0c0)',
+                background: 'linear-gradient(135deg, #ffffff, #d4d4d8)',
                 border: 'none',
                 color: '#000',
-                borderRadius: '6px',
+                borderRadius: '50%',
                 cursor: 'pointer',
-                fontSize: '12px',
-                padding: '4px 12px',
+                fontSize: '9px',
+                width: '20px',
+                height: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 fontWeight: 'bold',
-                minWidth: '40px',
-                boxShadow: '0 2px 8px rgba(232, 232, 232, 0.2)'
+                boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                transition: 'all 0.2s'
               }}
             >
               {isPlaying ? '⏸' : '▶'}
@@ -209,10 +218,15 @@ export default function SeekBar({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  // scrub forwards 1 frame (30fps)
                   if (onSeek) onSeek(activeTime + (1/30), true);
                 }}
-                style={{ background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', padding: '4px 10px', fontWeight: 'bold', transition: 'background 0.2s' }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#f4f4f5', borderRadius: '10px', cursor: 'pointer', fontSize: '9px',
+                  fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+                  padding: '2px 9px', fontWeight: '700', letterSpacing: '0.06em', transition: 'all 0.2s ease',
+                  backdropFilter: 'blur(10px)', boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
+                }}
               >
                 +1 FRAME
               </button>
@@ -222,17 +236,21 @@ export default function SeekBar({
                 value={playbackRate}
                 onChange={(e) => onPlaybackRateChange && onPlaybackRateChange(parseFloat(e.target.value))}
                 style={{
-                  background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', padding: '4px 8px', marginLeft: '8px', fontWeight: 'bold'
+                  background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#f4f4f5', borderRadius: '10px', cursor: 'pointer', fontSize: '9px',
+                  fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+                  padding: '2px 6px', marginLeft: '2px', fontWeight: '700', outline: 'none',
+                  letterSpacing: '0.04em', backdropFilter: 'blur(10px)'
                 }}
               >
-                <option value={0.25}>0.25x</option>
-                <option value={0.5}>0.5x</option>
-                <option value={1.0}>1x</option>
+                <option value={0.25} style={{ background: '#1c1c24' }}>0.25x</option>
+                <option value={0.5} style={{ background: '#1c1c24' }}>0.5x</option>
+                <option value={1.0} style={{ background: '#1c1c24' }}>1.0x</option>
               </select>
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {mode === 'live' && behind !== null && behind > 3 && (
             <button
               onClick={(e) => {
@@ -240,59 +258,50 @@ export default function SeekBar({
                 if (liveEdge !== null) onSeek(liveEdge);
               }}
               style={{
-                background: 'var(--red)',
+                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
                 border: 'none',
                 color: '#fff',
-                borderRadius: '4px',
+                borderRadius: '10px',
                 cursor: 'pointer',
-                fontSize: '11px',
-                padding: '4px 12px',
-                fontWeight: 'bold',
+                fontSize: '9px',
+                padding: '2px 8px',
+                fontWeight: '700',
                 letterSpacing: '0.05em',
+                boxShadow: '0 2px 6px rgba(239, 68, 68, 0.4)',
                 transition: 'all 0.2s'
               }}
             >
               GO LIVE
             </button>
           )}
-          <span style={{ fontFamily: 'var(--mono)', fontSize: '11px', color: (mode === 'live' && behind !== null && behind > 3) ? 'var(--muted)' : 'var(--amber)' }}>
-            {(mode === 'live' && behind !== null && behind > 3) ? `−${behind}s` : 'LIVE'}
+          <span style={{ fontFamily: 'monospace', fontSize: '10px', fontWeight: '700', color: (mode === 'live' && behind !== null && behind > 3) ? 'rgba(255,255,255,0.4)' : '#10b981' }}>
+            {(mode === 'live' && behind !== null && behind > 3) ? `−${behind}s` : '● LIVE'}
           </span>
         </div>
       </div>
- 
+
+      {/* Track Container */}
       <div
         ref={trackRef}
         onMouseDown={onMouseDown}
-        style={{ position: 'relative', height: '24px', cursor: 'col-resize', display: 'flex', alignItems: 'center' }}
+        style={{ position: 'relative', height: '14px', cursor: 'col-resize', display: 'flex', alignItems: 'center' }}
       >
         <div style={{
           position: 'absolute', left: 0, right: 0, height: '4px',
-          background: 'rgba(255,255,255,0.07)', borderRadius: '2px', overflow: 'hidden',
+          background: 'rgba(255,255,255,0.08)', borderRadius: '2px', overflow: 'hidden',
+          border: '1px solid rgba(255,255,255,0.05)'
         }}>
           <div style={{
             position: 'absolute', left: 0, width: `${bufferedFrac * 100}%`, height: '100%',
-            background: 'rgba(232,232,232,0.15)',
+            background: 'rgba(255,255,255,0.2)', borderRadius: '2px',
           }} />
           <div style={{
             position: 'absolute', left: 0, width: `${playedFrac * 100}%`, height: '100%',
-            background: 'var(--amber)',
+            background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', borderRadius: '2px',
           }} />
         </div>
- 
-        {/* SEGMENT TICKS — hidden
-        {visibleTicks.map((seg, i) => {
-          const frac = toFraction(seg.start, rangeStart, rangeEnd)
-          return (
-            <div key={i} style={{
-              position: 'absolute', left: `${frac * 100}%`, width: '1px', height: '10px',
-              background: 'rgba(255,255,255,0.18)', transform: 'translateX(-0.5px)', pointerEvents: 'none',
-            }} />
-          )
-        })}
-        */}
- 
-        {/* EVENT DOTS */}
+
+        {/* EVENT DOTS (Exact Same Size as Playhead Thumb: 10px) */}
         {visibleEvents.map((ev) => {
           const frac = toFraction(ev.time, rangeStart, rangeEnd)
           const evKey = bounceEventKey(ev)
@@ -300,9 +309,9 @@ export default function SeekBar({
           const isHovered = hoveredEvent && bounceEventKey(hoveredEvent) === evKey
           const isCurrent = Math.abs(activeTime - ev.time) < 1.0
           const isPast = ev.time <= activeTime
-          const dotColor = isCurrent ? '#fff' : (isLongGap ? '#4a90e2' : 'var(--amber)')
-          const hoverGlow = isLongGap ? 'rgba(74,144,226,0.8)' : 'rgba(232,232,232,0.8)'
- 
+          const dotColor = isLongGap ? '#ef4444' : '#ffffff'
+          const hoverGlow = isLongGap ? 'rgba(239, 68, 68, 0.9)' : 'rgba(255, 255, 255, 0.9)'
+
           return (
             <div
               key={evKey}
@@ -316,7 +325,7 @@ export default function SeekBar({
               }}
               style={{
                 position: 'absolute', left: `${frac * 100}%`,
-                width: '24px', height: '24px',
+                width: '20px', height: '20px',
                 transform: 'translate(-50%, -50%)', 
                 top: '50%',
                 zIndex: isHovered || isCurrent ? 4 : 3, 
@@ -328,34 +337,36 @@ export default function SeekBar({
               }}
             >
               <div style={{
-                width: isCurrent || isHovered ? '12px' : '8px', 
-                height: isCurrent || isHovered ? '12px' : '8px',
+                width: isCurrent || isHovered ? '10px' : '7.5px', 
+                height: isCurrent || isHovered ? '10px' : '7.5px',
                 borderRadius: '50%', 
                 background: dotColor,
-                boxShadow: isHovered ? `0 0 12px 4px ${hoverGlow}` : (isCurrent ? '0 0 10px rgba(255,255,255,0.8)' : 'none'),
-                transition: 'background 0.2s, width 0.2s, height 0.2s, box-shadow 0.2s, opacity 0.2s', 
-                border: '1px solid #000',
-                opacity: isPast || isHovered ? 1 : 0.25,
+                boxShadow: isHovered ? `0 0 10px 3px ${hoverGlow}` : (isCurrent ? '0 0 8px rgba(255,255,255,0.9)' : 'none'),
+                transition: 'all 0.2s ease', 
+                border: '1px solid rgba(0,0,0,0.6)',
+                opacity: isPast || isHovered ? 1 : 0.8,
               }} />
             </div>
           )
         })}
 
+        {/* Playhead Glowing Thumb */}
         <div style={{
           position: 'absolute', left: `${playedFrac * 100}%`, transform: 'translateX(-50%)',
-          width: '12px', height: '12px', borderRadius: '50%', background: 'var(--amber)',
-          boxShadow: '0 0 0 2px rgba(232,232,232,0.2)', pointerEvents: 'none', zIndex: 2,
+          width: '10px', height: '10px', borderRadius: '50%', background: '#fff',
+          boxShadow: '0 0 8px rgba(96,165,250,0.9), 0 0 0 2px rgba(255,255,255,0.3)',
+          pointerEvents: 'none', zIndex: 5,
         }} />
 
         <div style={{
-          position: 'absolute', right: 0, width: '2px', height: '14px', background: 'var(--red)',
-          borderRadius: '1px', opacity: 0.8, pointerEvents: 'none',
+          position: 'absolute', right: 0, width: '2px', height: '10px', background: '#ef4444',
+          borderRadius: '1px', opacity: 0.9, pointerEvents: 'none',
         }} />
       </div>
 
-      <div style={{ position: 'relative', height: '12px', fontSize: '9px', fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
+      <div style={{ position: 'relative', height: '10px', fontSize: '8px', fontFamily: 'monospace', color: 'rgba(255,255,255,0.4)' }}>
         <span style={{ position: 'absolute', left: 0 }}>{formatOffset(rangeStart - (liveEdge ?? rangeStart))}</span>
-        <span style={{ position: 'absolute', right: 0, color: 'var(--red)', opacity: 0.7 }}>EDGE</span>
+        <span style={{ position: 'absolute', right: 0, color: '#ef4444', opacity: 0.8, fontWeight: 'bold' }}>EDGE</span>
       </div>
     </div>
   )

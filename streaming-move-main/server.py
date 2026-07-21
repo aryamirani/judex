@@ -35,6 +35,18 @@ _parser.add_argument(
     default="pi@192.168.0.111",
     help="SSH target for source Pi (track_video_index.json lives here)",
 )
+_parser.add_argument(
+    "--offline", "--sim", action="store_true", default=False,
+    help="Run in offline simulation mode using local datasets without SSH",
+)
+_parser.add_argument(
+    "--start-segment", type=int, default=0,
+    help="Starting segment index for offline simulation mode",
+)
+_parser.add_argument(
+    "--start-frame", type=int, default=None,
+    help="Starting frame index for offline simulation mode",
+)
 _args = _parser.parse_args()
 
 SPEED = _args.speed
@@ -90,6 +102,8 @@ def _fetch_session_from_source_pi():
 def resolve_session_id():
     if _args.session:
         return str(_args.session)
+    if _args.offline:
+        return "1870"
     return _fetch_session_from_source_pi()
 
 SESSION_ID = resolve_session_id()
@@ -102,6 +116,11 @@ FRAME_IDX_PATHS = {
 DATA_DIR = os.path.join(ASSIGNMENT_DIR, "sync_reports")
 if not os.path.exists(DATA_DIR):
     DATA_DIR = os.path.join(ASSIGNMENT_DIR, "apr17", "sync_reports")
+
+CV_OUTPUT_DIR = os.path.join(ASSIGNMENT_DIR, "cv_output_july21")
+if not os.path.exists(CV_OUTPUT_DIR):
+    CV_OUTPUT_DIR = os.path.join(ASSIGNMENT_DIR, "cv_output")
+
 TEST_WORK_DIR = os.path.join(ASSIGNMENT_DIR, "test_work")
 
 WINDOW_SIZE = 35
@@ -170,7 +189,35 @@ _frame_idx_rows = {"source": 0, "sink": 0, "hq": 0}
 _frame_idx_lock = threading.Lock()
 
 
+def _resolve_local_path(remote_path):
+    if "hls_sync_" in remote_path:
+        return os.path.join(DATA_DIR, f"segments_{SESSION_ID}", "sync", f"hls_sync_{SESSION_ID}_triple.csv")
+    elif "hls_segment_frame_index.csv" in remote_path:
+        for cam in ["source", "sink", "hq"]:
+            if f"manifests/{cam}/" in remote_path or f"/{cam}/" in remote_path:
+                return os.path.join(DATA_DIR, f"segments_{SESSION_ID}", "manifests", cam, "hls_segment_frame_index.csv")
+    elif "flight_shots" in remote_path:
+        return os.path.join(CV_OUTPUT_DIR, "correlation", "flight_shots.csv")
+    return None
+
 def _ssh_fetch(remote_path, skip_lines=0, allow_empty=True):
+    local_p = _resolve_local_path(remote_path)
+    if _args.offline or (local_p and os.path.exists(local_p)):
+        if local_p and os.path.exists(local_p):
+            try:
+                with open(local_p, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                if skip_lines > 0:
+                    lines = lines[skip_lines:]
+                return "".join(lines)
+            except Exception as e:
+                print(f"[local fetch] Error reading {local_p}: {e}")
+                if allow_empty:
+                    return ""
+                raise e
+        elif _args.offline:
+            return ""
+
     try:
         remote_cmd = (f"cat {remote_path}" if skip_lines == 0
                       else f"tail -n +{skip_lines + 1} {remote_path} 2>/dev/null || true")
@@ -1031,6 +1078,8 @@ def master_stream_worker():
 
 def _run_tracknet_status():
     """SSH to Jetson and run tracknet_control.py status. Returns stdout string."""
+    if _args.offline:
+        return "source_sink_tracknet_forceful: off (offline mode)"
     try:
         result = subprocess.run(
             _ssh_argv(JETSON_HOST, "cd /home/jetson/Desktop/judex-cv && python3 tracknet_control.py status"),
@@ -1071,12 +1120,104 @@ for d in SERVE_DIRS.values():
 from fastapi.responses import PlainTextResponse
 import math
 
+_offline_start_time = None
+_offline_sim_lock = threading.Lock()
+
+def _get_offline_released_segments(cam):
+    global _offline_start_time
+    with _offline_sim_lock:
+        if _offline_start_time is None:
+            _offline_start_time = time.time()
+        sim_elapsed = (time.time() - _offline_start_time) * SPEED
+
+    cam_ts_dir = os.path.join(DATA_DIR, f"ts_segments_{cam}", SESSION_ID)
+    if not os.path.exists(cam_ts_dir):
+        return [], 0, []
+
+    all_files = sorted(os.listdir(cam_ts_dir))
+    ts_files = [f for f in all_files if f.endswith(".ts")]
+    if not ts_files:
+        return [], 0, []
+
+    start_seg = _args.start_segment
+    if _args.start_frame is not None and cam in seg_to_frame:
+        with _frame_idx_lock:
+            for s_idx in sorted(seg_to_frame[cam].keys()):
+                sf = seg_to_frame[cam][s_idx]
+                fc = seg_frame_count[cam].get(s_idx, 120)
+                if sf <= _args.start_frame < sf + fc:
+                    start_seg = s_idx
+                    break
+
+    initial_count = 3
+    additional = int(sim_elapsed / 4.0)
+    total_count = initial_count + additional
+
+    start_pos = 0
+    for idx, f in enumerate(ts_files):
+        s_idx = parse_abs_seg_idx(f)
+        if s_idx is not None and s_idx >= start_seg:
+            start_pos = idx
+            break
+
+    released = ts_files[start_pos : start_pos + total_count]
+    if not released:
+        released = ts_files[start_pos:]
+
+    window = released[-WINDOW_SIZE:]
+    first_window_seg_idx = parse_abs_seg_idx(window[0]) if window else start_seg
+    media_sequence = first_window_seg_idx if first_window_seg_idx is not None else start_seg
+
+    with _offline_sim_lock:
+        for ts_name in window:
+            if ts_name not in _logged_segments[cam]["loaded"]:
+                print(f"[EVICTION LOGIC] Segment {ts_name} of {cam} loaded in server m3u8 playlist", flush=True)
+                _logged_segments[cam]["loaded"].add(ts_name)
+
+        window_set = set(window)
+        for loaded_seg in list(_logged_segments[cam]["loaded"]):
+            if loaded_seg not in window_set:
+                if loaded_seg not in _logged_segments[cam]["removed"]:
+                    print(f"[EVICTION LOGIC] Segment {loaded_seg} of {cam} removed from server m3u8 playlist (max {WINDOW_SIZE} segments)", flush=True)
+                    _logged_segments[cam]["removed"].add(loaded_seg)
+
+    return window, media_sequence, released
+
+
 @app.get("/stream/{cam}/live.m3u8")
 def get_live_m3u8(cam: str):
     from fastapi.responses import PlainTextResponse
     import os
     import urllib.request
-    
+
+    if cam not in ("source", "sink", "hq"):
+        return PlainTextResponse("Camera not found", status_code=404)
+
+    if _args.offline:
+        window_files, media_sequence, _ = _get_offline_released_segments(cam)
+        if not window_files:
+            return PlainTextResponse(f"Directory not found or empty for camera {cam}", status_code=404)
+
+        out_lines = [
+            "#EXTM3U",
+            "#EXT-X-VERSION:4",
+            "#EXT-X-TARGETDURATION:6",
+            f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
+            "#EXT-X-ALLOW-CACHE:NO",
+        ]
+
+        host_port = f"http://localhost:{_args.port}"
+        with _frame_idx_lock:
+            for ts_name in window_files:
+                seg_idx = parse_abs_seg_idx(ts_name)
+                dur = 4.0
+                if seg_idx is not None and seg_idx in seg_frame_count[cam]:
+                    dur = seg_frame_count[cam][seg_idx] / FPS
+                out_lines.append(f"#EXTINF:{dur:.6f},")
+                out_lines.append(f"{host_port}/stream/{cam}/{ts_name}")
+
+        return PlainTextResponse("\n".join(out_lines), media_type="application/vnd.apple.mpegurl")
+
     cam_path = CAM_PATHS.get(cam)
     if not cam_path:
         return PlainTextResponse("Camera not found", status_code=404)
@@ -1187,11 +1328,21 @@ def get_live_m3u8(cam: str):
 
 from fastapi.responses import FileResponse, StreamingResponse
 
+@app.get("/stream/{cam}/{segment}")
 @app.get("/stream/{cam}/{segment}.ts")
 def serve_segment(cam: str, segment: str):
-    from fastapi.responses import Response, PlainTextResponse
+    from fastapi.responses import Response, PlainTextResponse, FileResponse
     import urllib.request
     import time
+
+    if _args.offline:
+        ts_filename = segment if segment.endswith(".ts") else f"{segment}.ts"
+        local_ts_path = os.path.join(DATA_DIR, f"ts_segments_{cam}", SESSION_ID, ts_filename)
+        if os.path.exists(local_ts_path):
+            return FileResponse(local_ts_path, media_type="video/mp2t", headers={"Cache-Control": "no-cache"})
+        print(f"[serve_segment offline] File not found: {local_ts_path}")
+        return PlainTextResponse(f"Segment not found locally: {ts_filename}", status_code=404)
+
     cam_path = CAM_PATHS.get(cam, "")
     if cam_path.startswith("http://") or cam_path.startswith("https://"):
         base_url = cam_path.rsplit('/', 1)[0]
@@ -1233,13 +1384,22 @@ def serve_bounce_clip(cam: str, clip_name: str):
 
     if cam not in ("source", "sink", "hq"):
         raise HTTPException(status_code=400, detail="Invalid camera")
-    if not re.fullmatch(r"bounce_\d+_\d+\.mp4", clip_name):
+    if not re.fullmatch(r"(bounce|dirchange)_\d+_\d+\.mp4", clip_name):
         raise HTTPException(status_code=400, detail="Invalid clip name")
 
-    local_path = os.path.join(BOUNCE_CLIPS_DIR, cam, clip_name)
-    if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-        return FileResponse(local_path, media_type="video/mp4",
-                            headers={"Cross-Origin-Resource-Policy": "cross-origin"})
+    candidates = [
+        os.path.join(CV_OUTPUT_DIR, "bounce_clips", cam, clip_name),
+        os.path.join(ASSIGNMENT_DIR, "cv_output_july21", "bounce_clips", cam, clip_name),
+        os.path.join(ASSIGNMENT_DIR, "cv_output", "bounce_clips", cam, clip_name),
+        os.path.join(BOUNCE_CLIPS_DIR, cam, clip_name),
+    ]
+    for local_path in candidates:
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            return FileResponse(local_path, media_type="video/mp4",
+                                headers={"Cross-Origin-Resource-Policy": "cross-origin"})
+
+    if _args.offline:
+        raise HTTPException(status_code=404, detail=f"Clip not found locally: {clip_name}")
 
     remote_path = f"/home/jetson/Desktop/cv_output/bounce_clips/{cam}/{clip_name}"
     print(f"[serve_bounce_clip] Fetching {remote_path} from Jetson…")
@@ -1447,6 +1607,12 @@ def analyze_bounce(req: AnalyzeBounceRequest):
     """
     from fastapi import HTTPException
     import json as _json
+
+    if _args.offline:
+        raise HTTPException(
+            status_code=400,
+            detail="Graphics analysis via SSH to Jetson is disabled in offline simulation mode."
+        )
 
     _ensure_tracknet_off_for_analyse()
 
@@ -1673,6 +1839,9 @@ def set_tracknet(req: TracknetSetRequest):
     if req.mode not in ("off", "auto"):
         raise HTTPException(status_code=400, detail="mode must be 'off' or 'auto'")
 
+    if _args.offline:
+        return {"status": "ok", "forceful": req.mode, "raw": "offline mode"}
+
     cmd = f"cd /home/jetson/Desktop/judex-cv && python3 tracknet_control.py set source_sink_tracknet_forceful {req.mode}"
     print(f"[tracknet set] Sending: forceful={req.mode}")
     result = subprocess.run(
@@ -1890,9 +2059,36 @@ def get_events():
     _refresh_flight_shots()
     with _events_lock, _sync_lock, _frame_idx_lock:
         refreshed = [_refresh_event_positions(ev) for ev in _events_by_id.values()]
-        # One event per bounce_frame — CSV can contain duplicate shot rows for the same clip
+
+        max_released_seg = {}
+        for cam in ["source", "sink", "hq"]:
+            if _args.offline:
+                _, _, released = _get_offline_released_segments(cam)
+                if released:
+                    max_released_seg[cam] = parse_abs_seg_idx(released[-1])
+                else:
+                    max_released_seg[cam] = -1
+            else:
+                admitted = _admitted_segments[cam]
+                if admitted:
+                    max_released_seg[cam] = parse_abs_seg_idx(admitted[-1][1])
+                else:
+                    max_released_seg[cam] = -1
+
+        # Filter events so Review Mode ONLY displays events from segments loaded in live mode
         by_bounce = {}
         for ev in refreshed:
+            segs = ev.get("segments")
+            if segs and isinstance(segs, dict):
+                is_loaded = True
+                for cam, seg_idx in segs.items():
+                    if seg_idx is not None and max_released_seg.get(cam) is not None:
+                        if max_released_seg[cam] != -1 and seg_idx > max_released_seg[cam]:
+                            is_loaded = False
+                            break
+                if not is_loaded:
+                    continue
+
             bf = ev.get("bounce_frame") or _safe_frame_int((ev.get("metadata") or {}).get("bounce_frame"))
             if bf is None:
                 by_bounce[f"id:{ev['id']}"] = ev
@@ -1925,6 +2121,9 @@ def prefetch_bounces(req: PrefetchRequest):
     print(f"Prefetching {len(req.bounce_frames)} bounce clips...")
     if not req.bounce_frames:
         return {"status": "ok"}
+        
+    if _args.offline:
+        return {"status": "ok", "message": "Bounce clips available locally in offline mode"}
         
     def _download_worker():
         import threading

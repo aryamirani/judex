@@ -244,40 +244,60 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
   return (
     <div style={{
       width: '100%', height: '100%',
-      background: '#0a0a0a', padding: '16px 32px',
-      display: 'flex', flexDirection: 'column', boxSizing: 'border-box',
+      background: 'rgba(10, 10, 14, 0.98)', padding: '6px 12px 10px',
+      display: 'flex', flexDirection: 'column', boxSizing: 'border-box', position: 'relative',
     }}>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+      {/* Floating Top Controls Overlay Pill */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: '6px', zIndex: 10, padding: '2px 4px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button onClick={handlePrev} disabled={currentIndex <= 0} style={{
+            background: 'rgba(255,255,255,0.1)', color: currentIndex <= 0 ? 'rgba(255,255,255,0.2)' : '#fff',
+            border: '1px solid rgba(255,255,255,0.15)',
+            padding: '3px 10px', borderRadius: '12px', cursor: currentIndex <= 0 ? 'default' : 'pointer',
+            fontWeight: '700', fontSize: '10px', transition: 'all 0.2s ease', backdropFilter: 'blur(8px)'
+          }}>
+            ◀ PREV
+          </button>
+
           {clipBaseName
             ? (
-              <span style={{ color: '#e8e8e8', fontWeight: 'bold', fontSize: '15px', fontFamily: 'monospace' }}>
+              <span style={{ color: '#fff', fontWeight: '800', fontSize: '11px', fontFamily: 'monospace', letterSpacing: '0.05em', background: 'rgba(255,255,255,0.1)', padding: '3px 10px', borderRadius: '12px', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.12)' }}>
                 {clipBaseName}
               </span>
             )
             : (
-              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', fontFamily: 'monospace' }}>
+              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', fontFamily: 'monospace' }}>
                 No clip file
               </span>
             )
           }
+
+          <button onClick={handleNext} disabled={currentIndex >= events.length - 1 || currentIndex === -1} style={{
+            background: 'rgba(255,255,255,0.1)', color: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'rgba(255,255,255,0.2)' : '#fff',
+            border: '1px solid rgba(255,255,255,0.15)',
+            padding: '3px 10px', borderRadius: '12px', cursor: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'default' : 'pointer',
+            fontWeight: '700', fontSize: '10px', transition: 'all 0.2s ease', backdropFilter: 'blur(8px)'
+          }}>
+            NEXT ▶
+          </button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Graphic / Bounce toggle — only clickable once at least one trajectory clip exists */}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
             onClick={() => setShowGraphics(v => !v)}
             disabled={Object.keys(trajectoryClipNames).length === 0}
             title={showGraphics ? 'Switch to Bounce Clip' : 'Switch to Graphic Clip'}
             style={{
-              background: showGraphics
-                ? 'linear-gradient(135deg, #50e3c2, #2aa98a)'
-                : 'rgba(255,255,255,0.1)',
-              color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px',
+              background: showGraphics ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(255,255,255,0.12)',
+              color: '#fff', border: '1px solid rgba(255,255,255,0.15)', padding: '3px 12px', borderRadius: '14px',
               cursor: Object.keys(trajectoryClipNames).length === 0 ? 'not-allowed' : 'pointer',
               opacity: Object.keys(trajectoryClipNames).length === 0 ? 0.35 : 1,
-              fontWeight: 'bold', fontSize: '12px', letterSpacing: '0.05em',
-              transition: 'background 0.25s, opacity 0.25s',
+              fontWeight: '700', fontSize: '10px', letterSpacing: '0.05em',
+              transition: 'all 0.2s ease', backdropFilter: 'blur(10px)'
             }}
           >
             {showGraphics ? 'GRAPHIC' : 'BOUNCE'}
@@ -285,46 +305,31 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
           <button
             onClick={handleAnalyze}
             disabled={analyzing}
-            title={graphicsReady
-              ? 'Run TrackNet trajectory analysis on Jetson (all cameras)'
-              : 'TrackNet still on — analyse will run load_graphics first, then continue'}
+            title="Run TrackNet trajectory analysis for all cameras"
             style={{
               background: analyzing
                 ? '#444'
                 : Object.keys(trajectoryClipNames).length > 0
-                  ? 'linear-gradient(135deg, #50e3c2, #2aa98a)'
-                  : 'linear-gradient(135deg, #e74c3c, #c0392b)',
-              color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '6px',
-              cursor: analyzing ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '12px',
-              letterSpacing: '0.05em', transition: 'background 0.3s',
+                  ? 'linear-gradient(135deg, #10b981, #059669)'
+                  : 'linear-gradient(135deg, #ef4444, #dc2626)',
+              color: '#fff', border: 'none', padding: '3px 14px', borderRadius: '14px',
+              cursor: analyzing ? 'wait' : 'pointer', fontWeight: '700', fontSize: '10px',
+              letterSpacing: '0.05em', transition: 'all 0.2s ease',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
             }}
           >
             {analyzing ? 'ANALYSING…' : Object.keys(trajectoryClipNames).length > 0 ? 'RE-ANALYSE ALL' : 'ANALYSE ALL'}
           </button>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '20px' }}>✕</button>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', cursor: 'pointer', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}>✕</button>
         </div>
       </div>
 
-      {analyzing && (
-        <div style={{ color: '#f39c12', fontSize: '12px', marginBottom: '8px', fontFamily: 'monospace' }}>
-          ⏳ Running graphics on Jetson… if TrackNet is on, load_graphics runs first.
-        </div>
-      )}
-      {!graphicsReady && !analyzing && (
-        <div style={{ color: '#f39c12', fontSize: '12px', marginBottom: '8px', fontFamily: 'monospace' }}>
-          ⏳ TrackNet not off yet — Analyse will turn it off via load_graphics, then run.
-        </div>
-      )}
       {analyzeError && (
-        <div style={{ color: '#ff6b6b', fontSize: '12px', marginBottom: '8px' }}>{analyzeError}</div>
-      )}
-      {missingClipMeta && (
-        <div style={{ color: '#ff6b6b', fontSize: '12px', marginBottom: '8px' }}>
-          Missing bounce_frame or csv_row — cannot build clip URL.
-        </div>
+        <div style={{ color: '#ff6b6b', fontSize: '10px', marginBottom: '4px' }}>{analyzeError}</div>
       )}
 
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flex: 1, minHeight: 0 }}>
+      {/* 3 Bounce Clip Cards Container */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', flex: 1, minHeight: 0 }}>
         {cameras.map(cam => {
           const retryCount = retryCounts[cam.id] || 0
           const status = clipStatus[cam.id] || 'idle'
@@ -351,65 +356,62 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
           }
 
           return (
-            <div key={`${cam.id}-${clipUrl ?? 'none'}-${retryCount}`} style={{ flex: 1, background: '#000', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
-              <div style={{ position: 'absolute', top: 8, left: 8, right: 8, background: 'rgba(0,0,0,0.6)', padding: '4px 8px', fontSize: '12px', color: '#fff', borderRadius: '4px', zIndex: 2, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {cam.label}
+            <div key={`${cam.id}-${clipUrl ?? 'none'}-${retryCount}`} style={{ flex: 1, background: '#000', borderRadius: '10px', overflow: 'hidden', position: 'relative', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {/* Standalone Top-Left Camera Title Badge */}
+              <div style={{
+                position: 'absolute', top: 8, left: 8,
+                background: 'rgba(15, 15, 22, 0.65)',
+                backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+                padding: '3px 8px', fontSize: '10px', color: '#fff', borderRadius: '12px',
+                border: '1px solid rgba(255,255,255,0.12)', zIndex: 4, display: 'flex', alignItems: 'center', gap: '4px'
+              }}>
+                <span style={{ fontWeight: '700' }}>{cam.label}</span>
                 {showTrajectory && (
-                  <span style={{ color: '#50e3c2', fontWeight: 'bold' }}>· TRAJECTORY</span>
+                  <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '9px' }}>· TRAJECTORY</span>
                 )}
                 {status === 'loading' && (
-                  <span style={{ color: '#f39c12' }}>(loading…)</span>
+                  <span style={{ color: '#f59e0b', fontSize: '9px' }}>(loading…)</span>
                 )}
-                {!showTrajectory && retryCount > 0 && retryCount < 5 && status === 'loading' && (
-                  <span style={{ color: '#f39c12' }}>retry {retryCount}/5</span>
-                )}
-                {status === 'error' && (
-                  <span style={{ color: '#e74c3c' }}>(failed)</span>
-                )}
-                <button
-                  onClick={() => handleAnalyzeCam(cam.id)}
-                  disabled={analyzingCams[cam.id] || analyzing}
-                  title={graphicsReady
-                    ? `Run TrackNet analysis for ${cam.label} only`
-                    : 'TrackNet still on — analyse will run load_graphics first, then continue'}
-                  style={{
-                    marginLeft: 'auto',
-                    background: analyzingCams[cam.id]
-                      ? '#555'
-                      : trajectoryClipNames[cam.id]
-                        ? 'rgba(80,227,194,0.25)'
-                        : 'rgba(231,76,60,0.75)',
-                    color: '#fff', border: 'none', padding: '2px 8px', borderRadius: '4px',
-                    cursor: (analyzingCams[cam.id] || analyzing) ? 'wait' : 'pointer',
-                    fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.04em',
-                    opacity: analyzing ? 0.5 : 1,
-                    transition: 'background 0.2s',
-                    flexShrink: 0,
-                  }}
-                >
-                  {analyzingCams[cam.id] ? '…' : trajectoryClipNames[cam.id] ? 'RE-ANALYSE' : 'ANALYSE'}
-                </button>
               </div>
+
+              {/* Standalone Top-Right Analyze Button */}
+              <button
+                onClick={() => handleAnalyzeCam(cam.id)}
+                disabled={analyzingCams[cam.id] || analyzing}
+                title={`Run analysis for ${cam.label}`}
+                style={{
+                  position: 'absolute', top: 8, right: 8, zIndex: 4,
+                  background: analyzingCams[cam.id]
+                    ? '#555'
+                    : trajectoryClipNames[cam.id]
+                      ? 'rgba(16, 185, 129, 0.4)'
+                      : 'rgba(239, 68, 68, 0.85)',
+                  color: '#fff', border: '1px solid rgba(255,255,255,0.2)', padding: '3px 10px', borderRadius: '12px',
+                  cursor: (analyzingCams[cam.id] || analyzing) ? 'wait' : 'pointer',
+                  fontSize: '9px', fontWeight: 'bold', letterSpacing: '0.04em',
+                  opacity: analyzing ? 0.5 : 1, transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  backdropFilter: 'blur(10px)'
+                }}
+              >
+                {analyzingCams[cam.id] ? '…' : trajectoryClipNames[cam.id] ? 'RE-ANALYSE' : 'ANALYSE'}
+              </button>
 
               {(status === 'loading' || status === 'idle') && clipUrl && (
                 <div style={{
                   position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'rgba(255,255,255,0.5)', fontSize: '13px', zIndex: 1, pointerEvents: 'none',
+                  color: 'rgba(255,255,255,0.4)', fontSize: '11px', zIndex: 1, pointerEvents: 'none',
                 }}>
-                  {status === 'idle' ? 'Preparing…' : 'Fetching clip from server…'}
+                  {status === 'idle' ? 'Preparing…' : 'Fetching clip…'}
                 </div>
               )}
 
               {status === 'error' && (
                 <div style={{
                   position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center', padding: '16px', textAlign: 'center',
-                  color: '#e74c3c', fontSize: '12px', zIndex: 1,
+                  alignItems: 'center', justifyContent: 'center', padding: '12px', textAlign: 'center',
+                  color: '#ef4444', fontSize: '11px', zIndex: 1,
                 }}>
                   <div>Clip not available</div>
-                  <div style={{ color: 'rgba(255,255,255,0.35)', marginTop: 8, fontFamily: 'monospace', fontSize: '10px', wordBreak: 'break-all' }}>
-                    {clipUrl}
-                  </div>
                 </div>
               )}
 
@@ -443,49 +445,69 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
                   style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 />
               )}
+
+              {/* Individual Floating Glass Controls Bar Overlaid Bottom of Each Clip */}
+              <div style={{
+                position: 'absolute', bottom: 6, left: 6, right: 6,
+                background: 'rgba(15, 15, 22, 0.8)',
+                backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+                padding: '3px 8px', borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.12)',
+                zIndex: 4, display: 'flex', alignItems: 'center', gap: '6px'
+              }}>
+                <button
+                  onClick={() => {
+                    if (cam.ref.current) {
+                      cam.ref.current.currentTime = Math.max(0, cam.ref.current.currentTime - (1/30))
+                    }
+                  }}
+                  style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', borderRadius: '10px', padding: '2px 6px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  -1F
+                </button>
+                <button
+                  onClick={() => {
+                    if (cam.ref.current) {
+                      if (cam.ref.current.paused) cam.ref.current.play()
+                      else cam.ref.current.pause()
+                    }
+                  }}
+                  style={{ background: '#fff', border: 'none', color: '#000', borderRadius: '50%', width: '20px', height: '20px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  {cam.ref.current && !cam.ref.current.paused ? '⏸' : '▶'}
+                </button>
+                <button
+                  onClick={() => {
+                    if (cam.ref.current) {
+                      cam.ref.current.currentTime = Math.min(cam.ref.current.duration || 2, cam.ref.current.currentTime + (1/30))
+                    }
+                  }}
+                  style={{ background: 'rgba(255,255,255,0.12)', border: 'none', color: '#fff', borderRadius: '10px', padding: '2px 6px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  +1F
+                </button>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                  <input
+                    type="range"
+                    min="0"
+                    max={cam.ref.current?.duration || 2}
+                    step="0.01"
+                    value={cam.ref.current?.currentTime || 0}
+                    onChange={(e) => {
+                      if (cam.ref.current) {
+                        cam.ref.current.currentTime = parseFloat(e.target.value)
+                      }
+                    }}
+                    style={{ width: '100%', height: '3px', cursor: 'pointer', accentColor: '#3b82f6' }}
+                  />
+                </div>
+              </div>
             </div>
           )
         })}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', position: 'relative' }}>
-        <button onClick={handlePrev} disabled={currentIndex <= 0} style={{
-          background: 'rgba(255,255,255,0.1)', color: currentIndex <= 0 ? 'rgba(255,255,255,0.2)' : '#fff', border: 'none',
-          padding: '8px 16px', borderRadius: '6px', cursor: currentIndex <= 0 ? 'default' : 'pointer', fontWeight: 'bold', fontSize: '12px',
-        }}>
-          ◀ PREV EVENT
-        </button>
-        <button
-          onClick={handlePlayPause}
-          disabled={missingClipMeta || !Object.values(clipStatus).some(s => s === 'ready')}
-          style={{
-            background: 'linear-gradient(135deg, #e8e8e8, #c0c0c0)', color: '#000', border: 'none',
-            width: '40px', height: '40px', borderRadius: '50%',
-            cursor: missingClipMeta ? 'not-allowed' : 'pointer',
-            opacity: missingClipMeta ? 0.4 : 1,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px',
-          }}
-        >
-          {playing ? '⏸' : '▶'}
-        </button>
-        <button onClick={handleNext} disabled={currentIndex >= events.length - 1 || currentIndex === -1} style={{
-          background: 'rgba(255,255,255,0.1)', color: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'rgba(255,255,255,0.2)' : '#fff', border: 'none',
-          padding: '8px 16px', borderRadius: '6px', cursor: (currentIndex >= events.length - 1 || currentIndex === -1) ? 'default' : 'pointer', fontWeight: 'bold', fontSize: '12px',
-        }}>
-          NEXT EVENT ▶
-        </button>
-        <div style={{ flex: 1, position: 'relative' }}>
-          <input
-            type="range"
-            min="0"
-            max={duration}
-            step="0.01"
-            value={progress}
-            onChange={handleSeek}
-            style={{ width: '100%', cursor: 'pointer' }}
-          />
-        </div>
-      </div>
+
     </div>
   )
 }

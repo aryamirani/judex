@@ -1557,77 +1557,85 @@ export default function App() {
   const displayBufferedEnd = inReview ? (bufferedEnd ?? displayLiveEdge) : bufferedEnd
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0a0a0a', color: '#fff' }}>
-      <header style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222' }}>
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', height: '100vh', background: '#07070a', color: '#fff', overflow: 'hidden' }}>
+      {/* Floating Translucent Frosted Glass Header */}
+      <header style={{
+        position: 'absolute', top: '14px', left: '50%', transform: 'translateX(-50%)', zIndex: 100,
+        width: 'calc(100% - 48px)', maxWidth: '1100px', height: '52px',
+        padding: '0 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        background: 'rgba(20, 20, 28, 0.65)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        borderRadius: '16px',
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)'
+      }}>
         {/* Left: brand + camera tabs */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, flexWrap: 'nowrap', flexShrink: 0 }}>
-          <span style={{ fontWeight: 'bold', letterSpacing: '2px', fontSize: '16px', whiteSpace: 'nowrap', flexShrink: 0 }}>Judex AI</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, flexShrink: 0 }}>
+          <span style={{ fontWeight: '800', letterSpacing: '1.5px', fontSize: '15px', whiteSpace: 'nowrap', flexShrink: 0, color: '#fff' }}>Judex AI</span>
           <CameraSelector active={activeCam} onSwitch={handleSwitchCam} />
         </div>
         {/* Center: current mode */}
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           <span style={{
-            fontSize: '13px', fontWeight: '700', letterSpacing: '3px', textTransform: 'uppercase',
-            padding: '5px 16px', borderRadius: '20px',
-            background: inReview ? 'rgba(74,144,226,0.15)' : 'rgba(232,232,232,0.08)',
-            color: inReview ? '#4a90e2' : '#e8e8e8',
-            border: inReview ? '1px solid rgba(74,144,226,0.35)' : '1px solid rgba(232,232,232,0.25)',
+            fontSize: '11px', fontWeight: '800', letterSpacing: '2px', textTransform: 'uppercase',
+            padding: '4px 14px', borderRadius: '20px',
+            background: inReview ? 'rgba(74,144,226,0.2)' : 'rgba(255,255,255,0.08)',
+            color: inReview ? '#64b5f6' : '#e0e0e0',
+            border: inReview ? '1px solid rgba(74,144,226,0.4)' : '1px solid rgba(255,255,255,0.15)',
           }}>
             {inReview ? 'Review' : 'Live'}
           </span>
         </div>
         {/* Right: TrackNet toggle + mode toggle button */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '16px' }}>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '14px' }}>
 
           {/* TrackNet forceful toggle */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-            <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '9px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              TrackNet Status
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.3)', padding: '3px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '9px', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              TrackNet
             </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{
-              fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold',
-              color: tracknetForceful === 'off' ? '#fff' : 'rgba(255,255,255,0.3)',
-              transition: 'color 0.25s',
-            }}>OFF</span>
-            <button
-              onClick={handleTracknetToggle}
-              disabled={tracknetLoading}
-              title={`TrackNet forceful: "${tracknetForceful}". Click to toggle.`}
-              style={{
-                position: 'relative', width: '44px', height: '22px',
-                borderRadius: '11px', border: 'none', cursor: tracknetLoading ? 'wait' : 'pointer',
-                background: tracknetLoading
-                  ? '#555'
-                  : tracknetForceful === 'auto' ? '#2ecc71' : '#555',
-                transition: 'background 0.25s',
-                padding: 0,
-              }}
-            >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{
-                position: 'absolute', top: '3px',
-                left: tracknetForceful === 'auto' ? '25px' : '3px',
-                width: '16px', height: '16px', borderRadius: '50%',
-                background: '#fff',
-                transition: 'left 0.25s',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
-              }} />
-            </button>
-            <span style={{
-              fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold',
-              color: tracknetForceful === 'auto' ? '#2ecc71' : 'rgba(255,255,255,0.3)',
-              transition: 'color 0.25s',
-            }}>AUTO</span>
-          </div>
+                fontSize: '9px', fontFamily: 'monospace', fontWeight: 'bold',
+                color: tracknetForceful === 'off' ? '#fff' : 'rgba(255,255,255,0.3)',
+              }}>OFF</span>
+              <button
+                onClick={handleTracknetToggle}
+                disabled={tracknetLoading}
+                title={`TrackNet forceful: "${tracknetForceful}". Click to toggle.`}
+                style={{
+                  position: 'relative', width: '38px', height: '18px',
+                  borderRadius: '10px', border: 'none', cursor: tracknetLoading ? 'wait' : 'pointer',
+                  background: tracknetLoading ? '#555' : tracknetForceful === 'auto' ? '#2ecc71' : '#444',
+                  transition: 'background 0.25s', padding: 0,
+                }}
+              >
+                <span style={{
+                  position: 'absolute', top: '2px',
+                  left: tracknetForceful === 'auto' ? '21px' : '2px',
+                  width: '14px', height: '14px', borderRadius: '50%',
+                  background: '#fff',
+                  transition: 'left 0.25s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                }} />
+              </button>
+              <span style={{
+                fontSize: '9px', fontFamily: 'monospace', fontWeight: 'bold',
+                color: tracknetForceful === 'auto' ? '#2ecc71' : 'rgba(255,255,255,0.3)',
+              }}>AUTO</span>
+            </div>
           </div>
 
           <button
             onClick={inReview ? exitReview : enterReview}
             style={{
-              padding: '6px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-              background: inReview ? 'linear-gradient(135deg, #4a90e2, #2e6db4)' : 'linear-gradient(135deg, #e8e8e8, #c0c0c0)',
-              color: '#000', fontWeight: '800', fontSize: '11px', letterSpacing: '1px',
-              boxShadow: inReview ? '0 4px 15px rgba(74, 144, 226, 0.4)' : '0 4px 15px rgba(232, 232, 232, 0.2)',
+              padding: '6px 16px', borderRadius: '20px', cursor: 'pointer',
+              background: inReview ? 'linear-gradient(135deg, #3a82f6, #1d4ed8)' : 'rgba(255,255,255,0.15)',
+              color: '#fff', fontWeight: '700', fontSize: '11px', letterSpacing: '1px',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              boxShadow: inReview ? '0 4px 15px rgba(59, 130, 246, 0.4)' : '0 2px 10px rgba(0,0,0,0.2)',
               transition: 'all 0.2s ease-in-out',
               textTransform: 'uppercase'
             }}
@@ -1637,83 +1645,101 @@ export default function App() {
         </div>
       </header>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {CAMERAS.map(cam => (
-          <div
-            key={cam}
-            style={{
-              position: 'absolute', inset: 0,
-              opacity: cam === activeCam ? 1 : 0,
-              pointerEvents: cam === activeCam ? 'auto' : 'none',
-              transition: 'opacity 0.1s ease-in-out'
-            }}
-          >
-            <video
-              ref={videoRefs[cam]}
-              muted={true}
-              playsInline
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingTop: '0px' }}>
+        {/* Main Video Area */}
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {CAMERAS.map(cam => (
+            <div
+              key={cam}
               style={{
-                width: '100%', height: '100%', objectFit: 'contain'
+                position: 'absolute', inset: 0,
+                opacity: cam === activeCam ? 1 : 0,
+                pointerEvents: cam === activeCam ? 'auto' : 'none',
+                transition: 'opacity 0.15s ease-in-out'
               }}
-            />
-            {/* NO FRAMES OVERLAY */}
-            {gapState[cam] && (
-              <div style={{
-                position: 'absolute', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.95)',
-                display: 'flex', justifyContent: 'center', alignItems: 'center',
-                color: '#ff4444', fontSize: '32px', fontWeight: 'bold', letterSpacing: '4px', zIndex: 10
-              }}>
-                NO FRAMES AVAILABLE
-              </div>
-            )}
-          </div>
-        ))}
+            >
+              <video
+                ref={videoRefs[cam]}
+                muted={true}
+                playsInline
+                style={{
+                  width: '100%', height: '100%', objectFit: 'contain'
+                }}
+              />
+              {gapState[cam] && (
+                <div style={{
+                  position: 'absolute', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.95)',
+                  display: 'flex', justifyContent: 'center', alignItems: 'center',
+                  color: '#ff4444', fontSize: '32px', fontWeight: 'bold', letterSpacing: '4px', zIndex: 10
+                }}>
+                  NO FRAMES AVAILABLE
+                </div>
+              )}
+            </div>
+          ))}
 
-        {inReview && (
+          {/* Review Mode: Floating Transparent Overlay Over Video */}
+          {inReview && (
+            <div style={{
+              position: 'absolute', bottom: '16px', left: '24px', right: '24px', zIndex: 50,
+              pointerEvents: 'auto'
+            }}>
+              <SeekBar
+                currentTime={currentTime}
+                liveEdge={displayLiveEdge}
+                bufferStart={displayBufferStart}
+                bufferedEnd={displayBufferedEnd}
+                segments={displaySegments}
+                events={mappedEvents}
+                onSeek={handleSeek}
+                playbackRate={playbackRate}
+                onPlaybackRateChange={setPlaybackRate}
+                onEventSelect={setSelectedEvent}
+                mode={mode}
+                isPlaying={isPlaying}
+                onTogglePlay={handleTogglePlay}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Live Mode: Full-Width Screen-Wide Minimal Frosted Glass Bar Below Video */}
+        {!inReview && (
           <div style={{
-            position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(255,0,0,0.8)', padding: '6px 16px', borderRadius: '20px',
-            fontSize: '12px', fontWeight: 'bold', letterSpacing: '2px', pointerEvents: 'none'
-          }}>REVIEW MODE ACTIVE</div>
-        )}
-        {inReview && graphicsLoading && (
-          <div style={{
-            position: 'absolute', top: 52, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(243,156,18,0.85)', padding: '5px 14px', borderRadius: '16px',
-            fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', pointerEvents: 'none',
-            color: '#000',
+            padding: '4px 20px 4px',
+            background: 'rgba(18, 18, 26, 0.88)',
+            backdropFilter: 'blur(24px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+            borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+            zIndex: 10
           }}>
-            WAITING FOR TRACKNET OFF… ({graphicsTracknetForceful})
+            <SeekBar
+              currentTime={currentTime}
+              liveEdge={displayLiveEdge}
+              bufferStart={displayBufferStart}
+              bufferedEnd={displayBufferedEnd}
+              segments={displaySegments}
+              events={mappedEvents}
+              onSeek={handleSeek}
+              playbackRate={playbackRate}
+              onPlaybackRateChange={setPlaybackRate}
+              onEventSelect={setSelectedEvent}
+              mode={mode}
+              isPlaying={isPlaying}
+              onTogglePlay={handleTogglePlay}
+            />
           </div>
         )}
 
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '40px 32px 20px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))' }}>
-          <SeekBar
-            currentTime={currentTime}
-            liveEdge={displayLiveEdge}
-            bufferStart={displayBufferStart}
-            bufferedEnd={displayBufferedEnd}
-            segments={displaySegments}
-            events={mappedEvents}
-            onSeek={handleSeek}
-            playbackRate={playbackRate}
-            onPlaybackRateChange={setPlaybackRate}
-            onEventSelect={setSelectedEvent}
-            mode={mode}
-            isPlaying={isPlaying}
-            onTogglePlay={handleTogglePlay}
-          />
-        </div>
-
-        </div>
-
+        {/* Bottom Review Clips Event Panel */}
         <div style={{ 
-          height: selectedEvent ? '50%' : '0px', 
-          transition: 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)', 
+          height: selectedEvent ? '44%' : '0px', 
+          transition: 'height 0.35s cubic-bezier(0.4, 0, 0.2, 1)', 
           overflow: 'hidden',
-          background: '#0a0a0a',
-          borderTop: selectedEvent ? '1px solid #222' : 'none',
+          background: 'rgba(10, 10, 14, 0.96)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderTop: selectedEvent ? '1px solid rgba(255, 255, 255, 0.1)' : 'none',
           display: 'flex',
           flexDirection: 'column'
         }}>
