@@ -159,6 +159,9 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
 
       const data = await res.json()
       setTrajectoryClipNames(data.clip_names || {})
+      if (data.clip_names && Object.keys(data.clip_names).length > 0) {
+        setShowGraphics(true)
+      }
     } catch (e) {
       console.error('[analyze]', e)
       setAnalyzeError(e.message || 'Analysis failed')
@@ -201,6 +204,9 @@ export default function EventPanel({ event, events = [], activeCam, onNavigate, 
       }
       const data = await res.json()
       setTrajectoryClipNames(prev => ({ ...prev, ...(data.clip_names || {}) }))
+      if (data.clip_names && Object.keys(data.clip_names).length > 0) {
+        setShowGraphics(true)
+      }
     } catch (e) {
       console.error('[analyze cam]', e)
       setAnalyzeError(e.message || 'Analysis failed')

@@ -1608,24 +1608,31 @@ def analyze_bounce(req: AnalyzeBounceRequest):
     from fastapi import HTTPException
     import json as _json
 
-    if _args.offline:
-        raise HTTPException(
-            status_code=400,
-            detail="Graphics analysis via SSH to Jetson is disabled in offline simulation mode."
-        )
-
-    _ensure_tracknet_off_for_analyse()
-
-    ssh_base = ["ssh", "-i", SSH_KEY_PATH, "-o", "StrictHostKeyChecking=accept-new",
-                "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", JETSON_HOST]
-    results_path = "/home/jetson/Desktop/cv_output/bounce_clips/tracknet/results.jsonl"
-
     valid_cams = ("hq", "sink", "source")
     requested = [c for c in (req.cameras or []) if c in valid_cams]
     cameras_to_run = requested if requested else list(valid_cams)
     # One run_graphics.sh invocation per requested camera (each with --camera), or a
     # single invocation with no --camera flag when running all cameras.
     run_targets = requested if requested else [None]
+
+    if _args.offline:
+        import glob
+        clip_names = {}
+        row_str = f"{req.csv_row:05d}"
+        if os.path.isdir(TRAJECTORY_CLIPS_DIR):
+            for cam in cameras_to_run:
+                pattern = os.path.join(TRAJECTORY_CLIPS_DIR, f"bounce_{row_str}_{cam}_*motion*.mp4")
+                matches = sorted(glob.glob(pattern))
+                if matches:
+                    clip_names[cam] = os.path.basename(matches[-1])
+        if clip_names:
+            print(f"[analyze_bounce offline] Found pre-rendered clip_names={clip_names} for csv_row={req.csv_row}")
+            return {"status": "ok", "clip_names": clip_names}
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No pre-rendered offline trajectory clip available for bounce row {req.csv_row}."
+            )
 
     try:
         # Snapshot results.jsonl length so we can read only the entries this run produces.
