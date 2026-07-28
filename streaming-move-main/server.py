@@ -201,8 +201,8 @@ def _resolve_local_path(remote_path):
     return None
 
 def _ssh_fetch(remote_path, skip_lines=0, allow_empty=True):
-    local_p = _resolve_local_path(remote_path)
-    if _args.offline or (local_p and os.path.exists(local_p)):
+    if _args.offline:
+        local_p = _resolve_local_path(remote_path)
         if local_p and os.path.exists(local_p):
             try:
                 with open(local_p, "r", encoding="utf-8", errors="replace") as f:
@@ -215,8 +215,7 @@ def _ssh_fetch(remote_path, skip_lines=0, allow_empty=True):
                 if allow_empty:
                     return ""
                 raise e
-        elif _args.offline:
-            return ""
+        return ""
 
     try:
         remote_cmd = (f"cat {remote_path}" if skip_lines == 0
@@ -1387,12 +1386,18 @@ def serve_bounce_clip(cam: str, clip_name: str):
     if not re.fullmatch(r"(bounce|dirchange)_\d+_\d+\.mp4", clip_name):
         raise HTTPException(status_code=400, detail="Invalid clip name")
 
-    candidates = [
-        os.path.join(CV_OUTPUT_DIR, "bounce_clips", cam, clip_name),
-        os.path.join(ASSIGNMENT_DIR, "cv_output_july21", "bounce_clips", cam, clip_name),
-        os.path.join(ASSIGNMENT_DIR, "cv_output", "bounce_clips", cam, clip_name),
-        os.path.join(BOUNCE_CLIPS_DIR, cam, clip_name),
-    ]
+    if _args.offline:
+        candidates = [
+            os.path.join(CV_OUTPUT_DIR, "bounce_clips", cam, clip_name),
+            os.path.join(ASSIGNMENT_DIR, "cv_output_july21", "bounce_clips", cam, clip_name),
+            os.path.join(ASSIGNMENT_DIR, "cv_output", "bounce_clips", cam, clip_name),
+            os.path.join(BOUNCE_CLIPS_DIR, cam, clip_name),
+        ]
+    else:
+        candidates = [
+            os.path.join(BOUNCE_CLIPS_DIR, cam, clip_name),
+        ]
+
     for local_path in candidates:
         if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
             return FileResponse(local_path, media_type="video/mp4",
